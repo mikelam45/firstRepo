@@ -2,8 +2,8 @@
 // =============================================================================
 // Part B — SuperTrend Strategy + Trailing Stop-Loss
 // -----------------------------------------------------------------------------
-// Extends Part A (Buy/Sell flips, fixed TP, opposite-signal exits) with a
-// trailing stop-loss.
+// Extends Part A (Buy/Sell flips, fixed TP/SL in absolute price units,
+// opposite-signal exits) with a trailing stop-loss.
 //
 // Trailing model
 //   • Track best favorable price since entry (highest high long / lowest low short).
@@ -23,9 +23,11 @@
 //   3. Use the same symbol/timeframe as Part A for a fair comparison
 //
 // Recommended starting parameters (tune on your symbol/TF)
-//   ATR Period=10 | ATR Multiplier=3.0 | TP %=4.0 | Fixed SL %=1.5
+//   ATR Period=10 | ATR Multiplier=3.0
+//   TP (price)=100 | Fixed SL (price)=50   ← absolute price units, NOT %
 //   Enable Trailing=true | Mode=Percent | Trail Offset %=1.0
 //   Trail Activation %=1.0 | Interaction=Tighter of fixed & trail
+//   Tip: set TP/SL to suit the instrument (e.g. BTC ~ hundreds, FX ~ 0.00xx)
 // =============================================================================
 strategy(
      title              = "Part B SuperTrend + Trailing SL",
@@ -48,11 +50,15 @@ src        = input.source(hl2, "Source", group="SuperTrend")
 multiplier = input.float(3.0,  "ATR Multiplier", step=0.1, minval=0.1, group="SuperTrend")
 changeATR  = input.bool(true,  "Use RMA ATR (uncheck = SMA of TR)", group="SuperTrend")
 
-// --- Inputs: Fixed risk (from Part A) ---------------------------------------
+// --- Inputs: Fixed risk (absolute price distance from entry) ----------------
 useTP      = input.bool(true, "Enable Take Profit", group="Risk")
-tpPerc     = input.float(4.0, "Take Profit %", step=0.1, minval=0.1, group="Risk")
+tpPoints   = input.float(100.0, "Take Profit (price)", step=0.01, minval=0.0001,
+     tooltip="Absolute price distance from entry. Long TP = entry + value; Short TP = entry − value.",
+     group="Risk")
 useFixedSL = input.bool(true, "Enable Fixed Stop Loss", group="Risk")
-slPerc     = input.float(1.5, "Fixed Stop Loss %", step=0.1, minval=0.1, group="Risk")
+slPoints   = input.float(50.0, "Fixed Stop Loss (price)", step=0.01, minval=0.0001,
+     tooltip="Absolute price distance from entry. Long SL = entry − value; Short SL = entry + value.",
+     group="Risk")
 enableLong  = input.bool(true, "Enable Long",  group="Trade Direction")
 enableShort = input.bool(true, "Enable Short", group="Trade Direction")
 
@@ -159,11 +165,11 @@ if inShort
             candidate := candidate <= trailStop - minMove ? candidate : trailStop
         trailStop := candidate
 
-// --- Resolve stop / TP levels -----------------------------------------------
-fixedLongSL  = useFixedSL ? entryPrice * (1.0 - slPerc / 100.0) : na
-fixedShortSL = useFixedSL ? entryPrice * (1.0 + slPerc / 100.0) : na
-longTP       = useTP ? entryPrice * (1.0 + tpPerc / 100.0) : na
-shortTP      = useTP ? entryPrice * (1.0 - tpPerc / 100.0) : na
+// --- Resolve stop / TP levels (numeric price distance from entry) -----------
+fixedLongSL  = useFixedSL ? entryPrice - slPoints : na
+fixedShortSL = useFixedSL ? entryPrice + slPoints : na
+longTP       = useTP ? entryPrice + tpPoints : na
+shortTP      = useTP ? entryPrice - tpPoints : na
 
 longStop = na
 if inLong
