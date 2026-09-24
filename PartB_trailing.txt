@@ -1,0 +1,231 @@
+//@version=5
+// =============================================================================
+// Part B — SuperTrend Strategy + Trailing Stop-Loss
+// -----------------------------------------------------------------------------
+// Extends Part A (Buy/Sell flips, fixed TP, opposite-signal exits) with a
+// trailing stop-loss.
+//
+// Trailing model
+//   • Track best favorable price since entry (highest high long / lowest low short).
+//   • Stop trails a configurable distance behind that extreme.
+//   • Distance mode: Percent  OR  ATR Multiple.
+//   • Activation: trailing starts only after price moves X% in favor
+//     (0% = start immediately). Until then, fixed SL applies (if enabled).
+//   • After activation, Fixed SL vs Trailing:
+//       - "Trail only"           → use trailing stop
+//       - "Tighter of fixed & trail" → safer of the two
+//   • Take Profit stays active with the stop (whichever hits first).
+//   • Opposite SuperTrend signal still closes the position.
+//
+// How to use in TradingView
+//   1. Pine Editor → New blank strategy → paste → Save → Add to chart
+//   2. Strategy Tester from 2023-01-01 (script also filters dates)
+//   3. Use the same symbol/timeframe as Part A for a fair comparison
+//
+// Recommended starting parameters (tune on your symbol/TF)
+//   ATR Period=10 | ATR Multiplier=3.0 | TP %=4.0 | Fixed SL %=1.5
+//   Enable Trailing=true | Mode=Percent | Trail Offset %=1.0
+//   Trail Activation %=1.0 | Interaction=Tighter of fixed & trail
+// =============================================================================
+strategy(
+     title              = "Part B SuperTrend + Trailing SL",
+     overlay            = true,
+     format             = format.price,
+     precision          = 2,
+     initial_capital    = 10000,
+     default_qty_type   = strategy.percent_of_equity,
+     default_qty_value  = 100,
+     pyramiding         = 0,
+     commission_type    = strategy.commission.percent,
+     commission_value   = 0.04,
+     slippage           = 2,
+     process_orders_on_close = true,
+     calc_on_every_tick = false)
+
+// --- Inputs: SuperTrend -----------------------------------------------------
+atrPeriod  = input.int(10,     "ATR Period", minval=1, group="SuperTrend")
+src        = input.source(hl2, "Source", group="SuperTrend")
+multiplier = input.float(3.0,  "ATR Multiplier", step=0.1, minval=0.1, group="SuperTrend")
+changeATR  = input.bool(true,  "Use RMA ATR (uncheck = SMA of TR)", group="SuperTrend")
+
+// --- Inputs: Fixed risk (from Part A) ---------------------------------------
+useTP      = input.bool(true, "Enable Take Profit", group="Risk")
+tpPerc     = input.float(4.0, "Take Profit %", step=0.1, minval=0.1, group="Risk")
+useFixedSL = input.bool(true, "Enable Fixed Stop Loss", group="Risk")
+slPerc     = input.float(1.5, "Fixed Stop Loss %", step=0.1, minval=0.1, group="Risk")
+enableLong  = input.bool(true, "Enable Long",  group="Trade Direction")
+enableShort = input.bool(true, "Enable Short", group="Trade Direction")
+
+// --- Inputs: Trailing SL (Part B) -------------------------------------------
+useTrail        = input.bool(true, "Enable Trailing SL", group="Trailing SL")
+trailMode       = input.string("Percent", "Trail Distance Mode",
+     options=["Percent", "ATR Multiple"], group="Trailing SL")
+trailOffsetPerc = input.float(1.0, "Trail Offset %", step=0.1, minval=0.1,
+     tooltip="When mode = Percent: stop trails this % behind the extreme.",
+     group="Trailing SL")
+trailOffsetATR  = input.float(1.5, "Trail Offset (ATR multiples)", step=0.1, minval=0.1,
+     tooltip="When mode = ATR Multiple: stop trails this many ATRs behind the extreme.",
+     group="Trailing SL")
+trailActivation = input.float(1.0, "Trail Activation % (0 = immediate)", step=0.1, minval=0.0,
+     tooltip="Trailing starts after this % favorable move. Until then fixed SL applies.",
+     group="Trailing SL")
+trailStepPerc   = input.float(0.0, "Trail Step % (0 = no step)", step=0.1, minval=0.0,
+     tooltip="Minimum increment for trail moves. 0 = continuous (no step filter).",
+     group="Trailing SL")
+slInteraction   = input.string("Tighter of fixed & trail", "Fixed SL vs Trailing",
+     options=["Trail only (after activation)", "Tighter of fixed & trail"],
+     group="Trailing SL")
+
+// --- Inputs: Display / Backtest ---------------------------------------------
+showSignals  = input.bool(true, "Show Buy/Sell Signals", group="Display")
+highlighting = input.bool(true, "Highlighter On/Off", group="Display")
+showTrail    = input.bool(true, "Show Active Stop Line", group="Display")
+
+useDateFilter = input.bool(true, "Limit backtest to date range", group="Backtest")
+startDate     = input.time(timestamp("2023-01-01 00:00"), "Start Date", group="Backtest")
+endDate       = input.time(timestamp("2099-12-31 23:59"), "End Date", group="Backtest")
+inDateRange   = not useDateFilter or (time >= startDate and time <= endDate)
+
+// --- SuperTrend core (same as indicator / Part A) ---------------------------
+atr2 = ta.sma(ta.tr(true), atrPeriod)
+atr  = changeATR ? ta.atr(atrPeriod) : atr2
+
+up  = src - multiplier * atr
+up1 = nz(up[1], up)
+up := close[1] > up1 ? math.max(up, up1) : up
+
+dn  = src + multiplier * atr
+dn1 = nz(dn[1], dn)
+dn := close[1] < dn1 ? math.min(dn, dn1) : dn
+
+var int trend = 1
+trend := nz(trend[1], trend)
+trend := trend == -1 and close > dn1 ? 1 : trend == 1 and close < up1 ? -1 : trend
+
+buySignal  = trend == 1 and trend[1] == -1
+sellSignal = trend == -1 and trend[1] == 1
+
+// --- Trailing state ---------------------------------------------------------
+var float bestPrice   = na
+var float trailStop   = na
+var bool  trailActive = false
+
+entryPrice = strategy.position_avg_price
+inLong     = strategy.position_size > 0
+inShort    = strategy.position_size < 0
+
+// Detect position open / flip to reset trail state
+becameLong  = inLong  and strategy.position_size[1] <= 0
+becameShort = inShort and strategy.position_size[1] >= 0
+
+if becameLong
+    bestPrice   := high
+    trailStop   := na
+    trailActive := false
+
+if becameShort
+    bestPrice   := low
+    trailStop   := na
+    trailActive := false
+
+if strategy.position_size == 0
+    bestPrice   := na
+    trailStop   := na
+    trailActive := false
+
+// Update trail while in a long
+if inLong
+    bestPrice := na(bestPrice) ? high : math.max(nz(bestPrice), high)
+    favorMove = (bestPrice - entryPrice) / entryPrice * 100.0
+    if useTrail and favorMove >= trailActivation
+        trailActive := true
+        rawTrail = trailMode == "Percent" ? bestPrice * (1.0 - trailOffsetPerc / 100.0) : bestPrice - trailOffsetATR * atr
+        candidate = na(trailStop) ? rawTrail : math.max(trailStop, rawTrail)
+        if trailStepPerc > 0 and not na(trailStop)
+            minMove = trailStop * trailStepPerc / 100.0
+            candidate := candidate >= trailStop + minMove ? candidate : trailStop
+        trailStop := candidate
+
+// Update trail while in a short
+if inShort
+    bestPrice := na(bestPrice) ? low : math.min(nz(bestPrice), low)
+    favorMove = (entryPrice - bestPrice) / entryPrice * 100.0
+    if useTrail and favorMove >= trailActivation
+        trailActive := true
+        rawTrail = trailMode == "Percent" ? bestPrice * (1.0 + trailOffsetPerc / 100.0) : bestPrice + trailOffsetATR * atr
+        candidate = na(trailStop) ? rawTrail : math.min(trailStop, rawTrail)
+        if trailStepPerc > 0 and not na(trailStop)
+            minMove = trailStop * trailStepPerc / 100.0
+            candidate := candidate <= trailStop - minMove ? candidate : trailStop
+        trailStop := candidate
+
+// --- Resolve stop / TP levels -----------------------------------------------
+fixedLongSL  = useFixedSL ? entryPrice * (1.0 - slPerc / 100.0) : na
+fixedShortSL = useFixedSL ? entryPrice * (1.0 + slPerc / 100.0) : na
+longTP       = useTP ? entryPrice * (1.0 + tpPerc / 100.0) : na
+shortTP      = useTP ? entryPrice * (1.0 - tpPerc / 100.0) : na
+
+longStop = na
+if inLong
+    if trailActive and useTrail and not na(trailStop)
+        longStop := slInteraction == "Trail only (after activation)" ? trailStop : (useFixedSL ? math.max(fixedLongSL, trailStop) : trailStop)
+    else if useFixedSL
+        longStop := fixedLongSL
+
+shortStop = na
+if inShort
+    if trailActive and useTrail and not na(trailStop)
+        shortStop := slInteraction == "Trail only (after activation)" ? trailStop : (useFixedSL ? math.min(fixedShortSL, trailStop) : trailStop)
+    else if useFixedSL
+        shortStop := fixedShortSL
+
+// --- Entries / exits --------------------------------------------------------
+if inDateRange
+    if enableLong and buySignal
+        strategy.close("Short", comment="Buy signal — close short")
+        strategy.entry("Long", strategy.long, comment="Buy")
+
+    if enableShort and sellSignal
+        strategy.close("Long", comment="Sell signal — close long")
+        strategy.entry("Short", strategy.short, comment="Sell")
+
+if inDateRange and inLong
+    strategy.exit("Long Exit", from_entry="Long",
+         limit=longTP,
+         stop=longStop,
+         comment_profit="Long TP",
+         comment_loss="Long SL/Trail")
+
+if inDateRange and inShort
+    strategy.exit("Short Exit", from_entry="Short",
+         limit=shortTP,
+         stop=shortStop,
+         comment_profit="Short TP",
+         comment_loss="Short SL/Trail")
+
+if useDateFilter and not inDateRange and strategy.position_size != 0
+    strategy.close_all(comment="End of backtest window")
+
+// --- Plots ------------------------------------------------------------------
+upPlot = plot(trend == 1 ? up : na, title="Up Trend", style=plot.style_linebr, linewidth=2, color=color.green)
+dnPlot = plot(trend == 1 ? na : dn, title="Down Trend", style=plot.style_linebr, linewidth=2, color=color.red)
+
+plotshape(buySignal and showSignals ? up : na, title="Buy", text="Buy",
+     location=location.absolute, style=shape.labelup, size=size.tiny,
+     color=color.green, textcolor=color.white)
+plotshape(sellSignal and showSignals ? dn : na, title="Sell", text="Sell",
+     location=location.absolute, style=shape.labeldown, size=size.tiny,
+     color=color.red, textcolor=color.white)
+
+activeStop = inLong ? longStop : inShort ? shortStop : na
+plot(showTrail ? activeStop : na, title="Active Stop (Fixed/Trail)",
+     style=plot.style_linebr, linewidth=2, color=color.orange)
+
+mPlot = plot(ohlc4, title="", display=display.none)
+fill(mPlot, upPlot, title="UpTrend Highlighter",
+     color=highlighting ? (trend == 1 ? color.new(color.green, 90) : na) : na)
+fill(mPlot, dnPlot, title="DownTrend Highlighter",
+     color=highlighting ? (trend == -1 ? color.new(color.red, 90) : na) : na)
+
+alertcondition(buySignal,  title="SuperTrend Buy",  message="SuperTrend Buy!")
+alertcondition(sellSignal, title="SuperTrend Sell", message="SuperTrend Sell!")
