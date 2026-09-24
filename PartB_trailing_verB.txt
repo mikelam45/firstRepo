@@ -166,19 +166,19 @@ if inShort
         trailStop := candidate
 
 // --- Resolve stop / TP levels (numeric price distance from entry) -----------
-fixedLongSL  = useFixedSL ? entryPrice - slPoints : na
-fixedShortSL = useFixedSL ? entryPrice + slPoints : na
-longTP       = useTP ? entryPrice + tpPoints : na
-shortTP      = useTP ? entryPrice - tpPoints : na
+float fixedLongSL  = useFixedSL ? entryPrice - slPoints : na
+float fixedShortSL = useFixedSL ? entryPrice + slPoints : na
+float longTP       = useTP ? entryPrice + tpPoints : na
+float shortTP      = useTP ? entryPrice - tpPoints : na
 
-longStop = na
+float longStop = na
 if inLong
     if trailActive and useTrail and not na(trailStop)
         longStop := slInteraction == "Trail only (after activation)" ? trailStop : (useFixedSL ? math.max(fixedLongSL, trailStop) : trailStop)
     else if useFixedSL
         longStop := fixedLongSL
 
-shortStop = na
+float shortStop = na
 if inShort
     if trailActive and useTrail and not na(trailStop)
         shortStop := slInteraction == "Trail only (after activation)" ? trailStop : (useFixedSL ? math.min(fixedShortSL, trailStop) : trailStop)
