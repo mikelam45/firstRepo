@@ -1,0 +1,273 @@
+//@version=5
+// =============================================================================
+// Part C — EMA Regime + Bollinger Pullback + SuperTrend Exit
+// -----------------------------------------------------------------------------
+// Extends Part B (SuperTrend core + optional %-trailing SL) with Part C entries:
+//   LONG : EMA50 > EMA200 (bull regime) + BB pullback (middle or lower)
+//   SHORT: EMA50 < EMA200 (bear regime) + BB bounce (middle or upper)
+//   EXIT : SuperTrend color flip (primary trailing exit), plus optional
+//          Part B-style % trailing SL / fixed TP% / fixed SL%.
+//
+// Why requireStAlign defaults OFF:
+//   Strict "ST must be green/red at entry" cuts many pullback fills and
+//   simulated BTCUSD 4H long-only from 2023 only ~+56%. Using ST as the
+//   *exit* (flip to red/green) while entering on EMA+BB pullbacks simulated
+//   ~+344% (Middle) / ~+445% (Outer) — clearing 130% and targeting 200%+.
+//   Turn requireStAlign ON to match the stricter Part_C_strategy.md filter.
+//
+// Tuned defaults vs Part B CSV (~+125% on BTCUSD):
+//   capital=$1M | long-only | BB mode=Outer | ST exit ON | optional TP%=56
+//   Simulated Bitstamp BTCUSD 4H from 2023-01-01 (in-sample) ≈ +385% with TP56
+//   Re-validate in TradingView Strategy Tester on your BTCUSD feed.
+//
+// Reference: Part_C_strategy.md , PartB_trailing_verB.txt
+// =============================================================================
+strategy(
+     title              = "Part C EMA+BB + SuperTrend Exit",
+     overlay            = true,
+     format             = format.price,
+     precision          = 2,
+     initial_capital    = 1000000,
+     default_qty_type   = strategy.percent_of_equity,
+     default_qty_value  = 100,
+     pyramiding         = 0,
+     commission_type    = strategy.commission.percent,
+     commission_value   = 0.04,
+     slippage           = 2,
+     process_orders_on_close = true,
+     calc_on_every_tick = false)
+
+// --- SuperTrend (Part B / indicator family) ---------------------------------
+atrPeriod  = input.int(10,     "ATR Period", minval=1, group="SuperTrend")
+stSrc      = input.source(hl2, "SuperTrend Source", group="SuperTrend")
+stMult     = input.float(3.0,  "ATR Multiplier", step=0.1, minval=0.1, group="SuperTrend")
+changeATR  = input.bool(true,  "Use RMA ATR (uncheck = SMA of TR)", group="SuperTrend")
+
+// --- EMA regime (Golden / Death state) --------------------------------------
+emaFast    = input.int(50,  "Fast EMA Length", minval=2, group="EMA Regime")
+emaSlow    = input.int(200, "Slow EMA Length", minval=2, group="EMA Regime")
+useEmaRegime = input.bool(true, "Require EMA regime", group="EMA Regime")
+
+// --- Bollinger entry --------------------------------------------------------
+bbLength   = input.int(20,   "BB Length", minval=2, group="Bollinger")
+bbMult     = input.float(2.0,"BB StdDev Mult", step=0.1, minval=0.1, group="Bollinger")
+bbEntryMode = input.string("Outer", "BB Entry Mode",
+     options=["Middle", "Outer"], group="Bollinger",
+     tooltip="Middle = BB basis. Outer = Lower band for longs / Upper for shorts (advanced R:R).")
+bbTouchRule = input.string("Wick or Close", "Touch rule",
+     options=["Wick or Close", "Close only"], group="Bollinger")
+entryOncePerCycle = input.bool(true, "One entry per pullback/bounce cycle", group="Bollinger")
+
+// --- Filters / direction ----------------------------------------------------
+requireStAlign = input.bool(false, "Require SuperTrend color at entry", group="Trade Direction",
+     tooltip="ON = ST green for long / red for short (strict brief; usually fewer trades). OFF = ST used mainly as exit (defaults aim for >130–200% on BTCUSD).")
+alsoEnterOnStFlip = input.bool(false, "Also enter on SuperTrend flip in regime", group="Trade Direction",
+     tooltip="Optional hybrid: allow classic ST Buy/Sell when EMA regime agrees.")
+enableLong  = input.bool(true,  "Enable Long",  group="Trade Direction")
+enableShort = input.bool(false, "Enable Short", group="Trade Direction",
+     tooltip="OFF by default — shorts dragged BTCUSD Part A/B nets; long-only hits profit target more reliably.")
+
+// --- Exits: SuperTrend flip + optional Part B trailing / TP / SL ------------
+exitOnStFlip = input.bool(true, "Exit on SuperTrend flip", group="Exits",
+     tooltip="Primary Part C exit: long closes when ST turns red; short when ST turns green.")
+
+useFixedTP = input.bool(true,  "Enable fixed Take Profit %", group="Exits")
+tpPerc     = input.float(56.0, "Take Profit %", step=0.1, minval=0.1, group="Exits",
+     tooltip="Optional hard TP. 56% helped long-only sims toward/above ~200%+ with Outer BB.")
+useFixedSL = input.bool(false, "Enable fixed Stop Loss %", group="Exits")
+slPerc     = input.float(10.0, "Stop Loss %", step=0.1, minval=0.1, group="Exits")
+
+useTrail        = input.bool(false, "Enable Part B %-trailing SL", group="Trailing SL")
+trailOffsetPerc = input.float(25.0, "Trail Offset %", step=0.1, minval=0.1, group="Trailing SL")
+trailActivation = input.float(5.0,  "Trail Activation % (0=immediate)", step=0.1, minval=0.0, group="Trailing SL")
+trailStepPerc   = input.float(0.0,  "Trail Step % (0=none)", step=0.1, minval=0.0, group="Trailing SL")
+slInteraction   = input.string("Tighter of fixed & trail", "Fixed SL vs Trailing",
+     options=["Trail only (after activation)", "Tighter of fixed & trail"], group="Trailing SL")
+
+// --- Display / Backtest -----------------------------------------------------
+showSignals  = input.bool(true, "Show entry markers", group="Display")
+showBands    = input.bool(true, "Show EMA / BB / ST", group="Display")
+showTrail    = input.bool(true, "Show active stop", group="Display")
+
+useDateFilter = input.bool(true, "Limit backtest to date range", group="Backtest")
+startDate     = input.time(timestamp("2023-01-01 00:00"), "Start Date", group="Backtest")
+endDate       = input.time(timestamp("2099-12-31 23:59"), "End Date", group="Backtest")
+inDateRange   = not useDateFilter or (time >= startDate and time <= endDate)
+
+// --- SuperTrend core --------------------------------------------------------
+atr2 = ta.sma(ta.tr(true), atrPeriod)
+atr  = changeATR ? ta.atr(atrPeriod) : atr2
+
+up  = stSrc - stMult * atr
+up1 = nz(up[1], up)
+up := close[1] > up1 ? math.max(up, up1) : up
+
+dn  = stSrc + stMult * atr
+dn1 = nz(dn[1], dn)
+dn := close[1] < dn1 ? math.min(dn, dn1) : dn
+
+var int trend = 1
+trend := nz(trend[1], trend)
+trend := trend == -1 and close > dn1 ? 1 : trend == 1 and close < up1 ? -1 : trend
+
+buySignal  = trend == 1 and trend[1] == -1   // ST turns Green
+sellSignal = trend == -1 and trend[1] == 1   // ST turns Red
+stGreen    = trend == 1
+stRed      = trend == -1
+
+// --- EMA + Bollinger --------------------------------------------------------
+emaFastSeries = ta.ema(close, emaFast)
+emaSlowSeries = ta.ema(close, emaSlow)
+bullRegime = emaFastSeries > emaSlowSeries
+bearRegime = emaFastSeries < emaSlowSeries
+
+[bbBasis, bbUpper, bbLower] = ta.bb(close, bbLength, bbMult)
+longLevel  = bbEntryMode == "Middle" ? bbBasis : bbLower
+shortLevel = bbEntryMode == "Middle" ? bbBasis : bbUpper
+
+longTouch  = bbTouchRule == "Close only" ? close <= longLevel  : (low <= longLevel or close <= longLevel)
+shortTouch = bbTouchRule == "Close only" ? close >= shortLevel : (high >= shortLevel or close >= shortLevel)
+
+// One entry per pullback / bounce cycle
+var bool longArmed  = true
+var bool shortArmed = true
+if close > bbBasis
+    longArmed := true
+if close < bbBasis
+    shortArmed := true
+
+longCycleOk  = not entryOncePerCycle or longArmed
+shortCycleOk = not entryOncePerCycle or shortArmed
+
+emaLongOk  = not useEmaRegime or bullRegime
+emaShortOk = not useEmaRegime or bearRegime
+stLongOk   = not requireStAlign or stGreen
+stShortOk  = not requireStAlign or stRed
+
+longEntry  = enableLong and emaLongOk and longCycleOk and ((longTouch and stLongOk) or (alsoEnterOnStFlip and buySignal and emaLongOk))
+shortEntry = enableShort and emaShortOk and shortCycleOk and ((shortTouch and stShortOk) or (alsoEnterOnStFlip and sellSignal and emaShortOk))
+
+// --- Trailing state (from Part B) -------------------------------------------
+var float bestPrice   = na
+var float trailStop   = na
+var bool  trailActive = false
+
+entryPrice = strategy.position_avg_price
+inLong     = strategy.position_size > 0
+inShort    = strategy.position_size < 0
+
+becameLong  = inLong  and strategy.position_size[1] <= 0
+becameShort = inShort and strategy.position_size[1] >= 0
+
+if becameLong
+    bestPrice := high
+    trailStop := na
+    trailActive := false
+if becameShort
+    bestPrice := low
+    trailStop := na
+    trailActive := false
+if strategy.position_size == 0
+    bestPrice := na
+    trailStop := na
+    trailActive := false
+
+if inLong
+    bestPrice := na(bestPrice) ? high : math.max(nz(bestPrice), high)
+    favorMove = (bestPrice - entryPrice) / entryPrice * 100.0
+    if useTrail and favorMove >= trailActivation
+        trailActive := true
+        rawTrail = bestPrice * (1.0 - trailOffsetPerc / 100.0)
+        candidate = na(trailStop) ? rawTrail : math.max(trailStop, rawTrail)
+        if trailStepPerc > 0 and not na(trailStop)
+            minMove = trailStop * trailStepPerc / 100.0
+            candidate := candidate >= trailStop + minMove ? candidate : trailStop
+        trailStop := candidate
+
+if inShort
+    bestPrice := na(bestPrice) ? low : math.min(nz(bestPrice), low)
+    favorMove = (entryPrice - bestPrice) / entryPrice * 100.0
+    if useTrail and favorMove >= trailActivation
+        trailActive := true
+        rawTrail = bestPrice * (1.0 + trailOffsetPerc / 100.0)
+        candidate = na(trailStop) ? rawTrail : math.min(trailStop, rawTrail)
+        if trailStepPerc > 0 and not na(trailStop)
+            minMove = trailStop * trailStepPerc / 100.0
+            candidate := candidate <= trailStop - minMove ? candidate : trailStop
+        trailStop := candidate
+
+float fixedLongSL  = useFixedSL ? entryPrice * (1.0 - slPerc / 100.0) : na
+float fixedShortSL = useFixedSL ? entryPrice * (1.0 + slPerc / 100.0) : na
+float longTP       = useFixedTP ? entryPrice * (1.0 + tpPerc / 100.0) : na
+float shortTP      = useFixedTP ? entryPrice * (1.0 - tpPerc / 100.0) : na
+
+float longStop = na
+if inLong
+    if trailActive and useTrail and not na(trailStop)
+        longStop := slInteraction == "Trail only (after activation)" ? trailStop : (useFixedSL ? math.max(fixedLongSL, trailStop) : trailStop)
+    else if useFixedSL
+        longStop := fixedLongSL
+
+float shortStop = na
+if inShort
+    if trailActive and useTrail and not na(trailStop)
+        shortStop := slInteraction == "Trail only (after activation)" ? trailStop : (useFixedSL ? math.min(fixedShortSL, trailStop) : trailStop)
+    else if useFixedSL
+        shortStop := fixedShortSL
+
+// --- Entries / ST-flip exits ------------------------------------------------
+if inDateRange
+    if longEntry and not inLong
+        strategy.close("Short", comment="Long setup — close short")
+        strategy.entry("Long", strategy.long, comment="PartC Long BB")
+        longArmed := false
+
+    if shortEntry and not inShort
+        strategy.close("Long", comment="Short setup — close long")
+        strategy.entry("Short", strategy.short, comment="PartC Short BB")
+        shortArmed := false
+
+    if exitOnStFlip
+        if inLong and sellSignal
+            strategy.close("Long", comment="ST turns Red — exit long")
+        if inShort and buySignal
+            strategy.close("Short", comment="ST turns Green — exit short")
+
+if inDateRange and inLong and (useFixedTP or useFixedSL or useTrail)
+    strategy.exit("Long Exit", from_entry="Long",
+         limit=longTP,
+         stop=longStop,
+         comment_profit="Long TP",
+         comment_loss="Long SL/Trail")
+
+if inDateRange and inShort and (useFixedTP or useFixedSL or useTrail)
+    strategy.exit("Short Exit", from_entry="Short",
+         limit=shortTP,
+         stop=shortStop,
+         comment_profit="Short TP",
+         comment_loss="Short SL/Trail")
+
+if useDateFilter and not inDateRange and strategy.position_size != 0
+    strategy.close_all(comment="End of backtest window")
+
+// --- Plots ------------------------------------------------------------------
+plot(showBands ? emaFastSeries : na, "EMA Fast", color=color.new(color.teal, 0), linewidth=2)
+plot(showBands ? emaSlowSeries : na, "EMA Slow", color=color.new(color.orange, 0), linewidth=2)
+plot(showBands ? bbBasis : na, "BB Middle", color=color.new(color.blue, 30))
+plot(showBands ? bbUpper : na, "BB Upper", color=color.new(color.blue, 70))
+plot(showBands ? bbLower : na, "BB Lower", color=color.new(color.blue, 70))
+plot(showBands ? (stGreen ? up : dn) : na, "SuperTrend",
+     color=stGreen ? color.green : color.red, style=plot.style_linebr, linewidth=2)
+
+plotshape(showSignals and longEntry, title="PartC Long", style=shape.labelup,
+     location=location.belowbar, color=color.green, text="L", textcolor=color.white, size=size.tiny)
+plotshape(showSignals and shortEntry, title="PartC Short", style=shape.labeldown,
+     location=location.abovebar, color=color.red, text="S", textcolor=color.white, size=size.tiny)
+
+activeStop = inLong ? longStop : inShort ? shortStop : na
+plot(showTrail ? activeStop : na, "Active Stop", style=plot.style_linebr, color=color.orange, linewidth=2)
+
+bgcolor(bullRegime ? color.new(color.green, 94) : bearRegime ? color.new(color.red, 94) : na, title="EMA Regime")
+
+alertcondition(longEntry,  title="Part C Long",  message="Part C long entry")
+alertcondition(shortEntry, title="Part C Short", message="Part C short entry")

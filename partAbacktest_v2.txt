@@ -1,0 +1,281 @@
+//@version=5
+// =============================================================================
+// Part A v2 — SuperTrend Strategy (profit-focused enhancements)
+// -----------------------------------------------------------------------------
+// Same SuperTrend Buy/Sell flip logic as SuperTrend_indicator.txt / Part A, plus
+// enhancements driven by BTCUSD trade-log review:
+//   1) EMA regime filter (long-biased; shorts only below EMA)
+//   2) ADX trend-strength filter (skip chop)
+//   3) ATR-based TP / SL (scales with volatility)
+//   4) Partial take-profit + breakeven + optional % trail on runner
+//   5) Anti-whipsaw: min bars between entries + cooldown after loss
+//   6) Lower default size (25% equity) vs Part A 100%
+//   7) Backtest window from 2023-01-01
+//
+// How to use:
+//   Pine Editor → paste → Add to chart → Strategy Tester from 2023-01-01
+//   Compare on same symbol/TF as Part A (e.g. BTCUSD 4H)
+//
+// Recommended starting parameters (BTCUSD-oriented):
+//   ATR Period=14 | Mult=4.0 | EMA=200 | ADX=14 threshold=20
+//   SL=1.5 ATR | TP1=2.0 ATR (50%) | Runner trail=1.0 ATR after BE
+//   Long only OR Long+Short with regime filter ON
+// =============================================================================
+strategy(
+     title              = "Part A v2 SuperTrend Enhanced",
+     overlay            = true,
+     format             = format.price,
+     precision          = 2,
+     initial_capital    = 10000,
+     default_qty_type   = strategy.percent_of_equity,
+     default_qty_value  = 25,
+     pyramiding         = 0,
+     commission_type    = strategy.commission.percent,
+     commission_value   = 0.04,
+     slippage           = 2,
+     process_orders_on_close = true,
+     calc_on_every_tick = false)
+
+// --- SuperTrend -------------------------------------------------------------
+atrPeriod  = input.int(14,    "ATR Period", minval=1, group="SuperTrend")
+src        = input.source(hl2, "Source", group="SuperTrend")
+multiplier = input.float(4.0, "ATR Multiplier", step=0.1, minval=0.1, group="SuperTrend")
+changeATR  = input.bool(true, "Use RMA ATR (uncheck = SMA of TR)", group="SuperTrend")
+
+// --- Direction / regime -----------------------------------------------------
+enableLong   = input.bool(true,  "Enable Long", group="Trade Direction")
+enableShort  = input.bool(false, "Enable Short", group="Trade Direction",
+     tooltip="CSV review: shorts were a large net drag on BTCUSD. Default off.")
+useEmaFilter = input.bool(true,  "Use EMA regime filter", group="Trade Direction")
+emaLen       = input.int(200,    "EMA Length", minval=2, group="Trade Direction")
+useAdxFilter = input.bool(true,  "Use ADX trend filter", group="Trade Direction")
+adxLen       = input.int(14,     "ADX Length", minval=2, group="Trade Direction")
+adxMin       = input.float(20.0, "Min ADX", step=0.5, minval=0.0, group="Trade Direction")
+
+// --- ATR risk / exits -------------------------------------------------------
+slAtrMult    = input.float(1.5, "Stop Loss (ATR multiples)", step=0.1, minval=0.1, group="Risk ATR")
+tp1AtrMult   = input.float(2.0, "TP1 (ATR multiples)", step=0.1, minval=0.1, group="Risk ATR")
+tp1QtyPct    = input.float(50.0, "TP1 close % of position", step=5.0, minval=10.0, maxval=100.0, group="Risk ATR")
+useRunnerTP  = input.bool(false, "Enable hard TP2 on runner", group="Risk ATR")
+tp2AtrMult   = input.float(4.0, "TP2 runner (ATR multiples)", step=0.1, minval=0.1, group="Risk ATR")
+moveToBE     = input.bool(true, "Move SL to breakeven after TP1", group="Risk ATR")
+beOffsetAtr  = input.float(0.1, "BE offset (ATR)", step=0.05, minval=0.0, group="Risk ATR")
+useTrail     = input.bool(true, "Trail runner after TP1", group="Risk ATR")
+trailAtrMult = input.float(1.0, "Trail offset (ATR multiples)", step=0.1, minval=0.1, group="Risk ATR")
+exitOnSignal = input.bool(true, "Exit remainder on opposite SuperTrend signal", group="Risk ATR")
+
+// --- Anti-whipsaw -----------------------------------------------------------
+minBarsBetween = input.int(6,  "Min bars between new entries", minval=0, group="Anti-Whipsaw")
+lossCooldown   = input.int(4,  "Cooldown bars after a losing exit", minval=0, group="Anti-Whipsaw")
+maxBarsInTrade = input.int(0,  "Max bars in trade (0=off)", minval=0, group="Anti-Whipsaw")
+
+// --- Display / Backtest -----------------------------------------------------
+showSignals  = input.bool(true, "Show Buy/Sell Signals", group="Display")
+highlighting = input.bool(true, "Highlighter On/Off", group="Display")
+showFilters  = input.bool(true, "Show EMA / stop levels", group="Display")
+
+useDateFilter = input.bool(true, "Limit backtest to date range", group="Backtest")
+startDate     = input.time(timestamp("2023-01-01 00:00"), "Start Date", group="Backtest")
+endDate       = input.time(timestamp("2099-12-31 23:59"), "End Date", group="Backtest")
+inDateRange   = not useDateFilter or (time >= startDate and time <= endDate)
+
+// --- SuperTrend core (indicator-equivalent) ---------------------------------
+atr2 = ta.sma(ta.tr(true), atrPeriod)
+atr  = changeATR ? ta.atr(atrPeriod) : atr2
+
+up  = src - multiplier * atr
+up1 = nz(up[1], up)
+up := close[1] > up1 ? math.max(up, up1) : up
+
+dn  = src + multiplier * atr
+dn1 = nz(dn[1], dn)
+dn := close[1] < dn1 ? math.min(dn, dn1) : dn
+
+var int trend = 1
+trend := nz(trend[1], trend)
+trend := trend == -1 and close > dn1 ? 1 : trend == 1 and close < up1 ? -1 : trend
+
+buySignal  = trend == 1 and trend[1] == -1
+sellSignal = trend == -1 and trend[1] == 1
+
+// --- Filters ----------------------------------------------------------------
+emaFilter = ta.ema(close, emaLen)
+[diPlus, diMinus, adxVal] = ta.dmi(adxLen, adxLen)
+adxOk   = not useAdxFilter or adxVal >= adxMin
+longOk  = (not useEmaFilter or close > emaFilter) and adxOk
+shortOk = (not useEmaFilter or close < emaFilter) and adxOk
+
+// --- Anti-whipsaw state -----------------------------------------------------
+var int lastEntryBar = na
+var int cooldownUntil = na
+
+canEnter = (minBarsBetween <= 0 or na(lastEntryBar) or (bar_index - lastEntryBar) >= minBarsBetween) and
+     (lossCooldown <= 0 or na(cooldownUntil) or bar_index > cooldownUntil)
+
+// Detect closed losing trade → start cooldown
+tradeJustClosed = strategy.closedtrades > strategy.closedtrades[1]
+if tradeJustClosed and lossCooldown > 0
+    lastProfit = strategy.closedtrades.profit(strategy.closedtrades - 1)
+    if lastProfit < 0
+        cooldownUntil := bar_index + lossCooldown
+
+// --- Position helpers -------------------------------------------------------
+entryPrice = strategy.position_avg_price
+inLong     = strategy.position_size > 0
+inShort    = strategy.position_size < 0
+atrEntry   = atr   // live ATR; acceptable for exits; optional: freeze at entry below
+
+var float frozenAtr = na
+var bool  tp1Done   = false
+var float bestPrice = na
+var float trailStop = na
+var int   entryBar  = na
+
+becameLong  = inLong  and strategy.position_size[1] <= 0
+becameShort = inShort and strategy.position_size[1] >= 0
+
+if becameLong or becameShort
+    frozenAtr := atr
+    tp1Done   := false
+    bestPrice := becameLong ? high : low
+    trailStop := na
+    entryBar  := bar_index
+
+if strategy.position_size == 0
+    frozenAtr := na
+    tp1Done   := false
+    bestPrice := na
+    trailStop := na
+    entryBar  := na
+
+riskAtr = nz(frozenAtr, atr)
+
+// Update trail extremes
+if inLong
+    bestPrice := na(bestPrice) ? high : math.max(bestPrice, high)
+if inShort
+    bestPrice := na(bestPrice) ? low : math.min(bestPrice, low)
+
+// --- Exit level math --------------------------------------------------------
+float longSL  = na
+float shortSL = na
+float longTP1 = na
+float shortTP1 = na
+float longTP2 = na
+float shortTP2 = na
+
+if inLong
+    baseSL = entryPrice - slAtrMult * riskAtr
+    longTP1 := entryPrice + tp1AtrMult * riskAtr
+    longTP2 := entryPrice + tp2AtrMult * riskAtr
+    if tp1Done and moveToBE
+        beLevel = entryPrice + beOffsetAtr * riskAtr
+        baseSL := math.max(baseSL, beLevel)
+    if tp1Done and useTrail
+        trailStop := bestPrice - trailAtrMult * riskAtr
+        baseSL := math.max(baseSL, trailStop)
+    longSL := baseSL
+
+if inShort
+    baseSL = entryPrice + slAtrMult * riskAtr
+    shortTP1 := entryPrice - tp1AtrMult * riskAtr
+    shortTP2 := entryPrice - tp2AtrMult * riskAtr
+    if tp1Done and moveToBE
+        beLevel = entryPrice - beOffsetAtr * riskAtr
+        baseSL := math.min(baseSL, beLevel)
+    if tp1Done and useTrail
+        trailStop := bestPrice + trailAtrMult * riskAtr
+        baseSL := math.min(baseSL, trailStop)
+    shortSL := baseSL
+
+// Mark TP1 filled when strategy reduces size after entry (partial close)
+if inLong and not tp1Done and strategy.position_size < strategy.position_size[1] and strategy.position_size[1] > 0
+    tp1Done := true
+if inShort and not tp1Done and math.abs(strategy.position_size) < math.abs(strategy.position_size[1]) and strategy.position_size[1] < 0
+    tp1Done := true
+
+// Also mark TP1 done if price already traded through TP1 (in case of full fill timing)
+if inLong and not tp1Done and high >= longTP1
+    tp1Done := true
+if inShort and not tp1Done and low <= shortTP1
+    tp1Done := true
+
+// --- Entries ----------------------------------------------------------------
+if inDateRange and canEnter
+    if enableLong and buySignal and longOk
+        strategy.close("Short", comment="Buy signal — close short")
+        strategy.entry("Long", strategy.long, comment="Buy")
+        lastEntryBar := bar_index
+
+    if enableShort and sellSignal and shortOk
+        strategy.close("Long", comment="Sell signal — close long")
+        strategy.entry("Short", strategy.short, comment="Sell")
+        lastEntryBar := bar_index
+
+// Opposite signal exit for remainder (optional)
+if inDateRange and exitOnSignal
+    if inLong and sellSignal
+        strategy.close("Long", comment="Sell signal — close long")
+    if inShort and buySignal
+        strategy.close("Short", comment="Buy signal — close short")
+
+// Time stop
+if inDateRange and maxBarsInTrade > 0 and not na(entryBar) and (bar_index - entryBar) >= maxBarsInTrade
+    if inLong
+        strategy.close("Long", comment="Time stop")
+    if inShort
+        strategy.close("Short", comment="Time stop")
+
+// --- Exits: TP1 partial + SL / trail / optional TP2 -------------------------
+tp1ClosePct = math.min(tp1QtyPct, 100.0)
+
+if inDateRange and inLong
+    // Partial TP1
+    if not tp1Done and tp1QtyPct < 100
+        strategy.exit("Long TP1", from_entry="Long", qty_percent=tp1ClosePct,
+             limit=longTP1, comment_profit="Long TP1")
+    // Runner: SL (possibly BE/trail) + optional hard TP2
+    strategy.exit("Long Runner", from_entry="Long",
+         stop=longSL,
+         limit=useRunnerTP ? longTP2 : (tp1QtyPct >= 100 ? longTP1 : na),
+         comment_profit=tp1QtyPct >= 100 ? "Long TP1" : "Long TP2",
+         comment_loss="Long SL/Trail")
+
+if inDateRange and inShort
+    if not tp1Done and tp1QtyPct < 100
+        strategy.exit("Short TP1", from_entry="Short", qty_percent=tp1ClosePct,
+             limit=shortTP1, comment_profit="Short TP1")
+    strategy.exit("Short Runner", from_entry="Short",
+         stop=shortSL,
+         limit=useRunnerTP ? shortTP2 : (tp1QtyPct >= 100 ? shortTP1 : na),
+         comment_profit=tp1QtyPct >= 100 ? "Short TP1" : "Short TP2",
+         comment_loss="Short SL/Trail")
+
+if useDateFilter and not inDateRange and strategy.position_size != 0
+    strategy.close_all(comment="End of backtest window")
+
+// --- Plots ------------------------------------------------------------------
+upPlot = plot(trend == 1 ? up : na, title="Up Trend", style=plot.style_linebr, linewidth=2, color=color.green)
+dnPlot = plot(trend == 1 ? na : dn, title="Down Trend", style=plot.style_linebr, linewidth=2, color=color.red)
+plot(showFilters ? emaFilter : na, title="EMA Regime", color=color.new(color.blue, 0), linewidth=2)
+
+plotshape(buySignal and showSignals ? up : na, title="Buy", text="Buy",
+     location=location.absolute, style=shape.labelup, size=size.tiny,
+     color=color.green, textcolor=color.white)
+plotshape(sellSignal and showSignals ? dn : na, title="Sell", text="Sell",
+     location=location.absolute, style=shape.labeldown, size=size.tiny,
+     color=color.red, textcolor=color.white)
+
+activeStop = inLong ? longSL : inShort ? shortSL : na
+plot(showFilters ? activeStop : na, title="Active Stop", style=plot.style_linebr, color=color.orange, linewidth=2)
+
+mPlot = plot(ohlc4, title="", display=display.none)
+fill(mPlot, upPlot, title="UpTrend Highlighter",
+     color=highlighting ? (trend == 1 ? color.new(color.green, 90) : na) : na)
+fill(mPlot, dnPlot, title="DownTrend Highlighter",
+     color=highlighting ? (trend == -1 ? color.new(color.red, 90) : na) : na)
+
+bgcolor(useAdxFilter and adxVal < adxMin ? color.new(color.gray, 92) : na, title="Chop (ADX low)")
+
+alertcondition(buySignal and longOk,  title="v2 SuperTrend Buy",  message="Part A v2 Buy (filters OK)")
+alertcondition(sellSignal and shortOk, title="v2 SuperTrend Sell", message="Part A v2 Sell (filters OK)")
