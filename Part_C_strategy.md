@@ -229,17 +229,36 @@ If `entryOncePerRegime=false`, treat `longCycleArmed` / `shortCycleArmed` as alw
 
 ## 7. Recommended default parameter set (Part C)
 
+Implemented in `PartC_strategy.txt` (extends Part B trailing machinery).
+
 | Group | Parameter | Value |
 |-------|-----------|-------|
 | SuperTrend | ATR Period / Mult / Source | 10 / 3.0 / hl2 |
 | EMA | Fast / Slow | 50 / 200 |
-| BB | Length / Mult / Mode / Touch | 20 / 2.0 / **Middle** / Wick or Close |
-| Direction | Long / Short | true / true (or long-only for BTC bull bias) |
+| BB | Length / Mult / Mode / Touch | 20 / 2.0 / **Outer** / Wick or Close |
+| ST color at entry | `requireStAlign` | **false** (ST used as exit; see §7.1) |
+| Direction | Long / Short | **true / false** (long-only for BTC target) |
 | Entry control | One entry per cycle | **true** |
 | Exit | SuperTrend flip | **true** |
-| Optional TP/SL | Fixed TP/SL | **false** / false |
+| Optional TP% | Fixed TP | **true**, **56%** |
+| Optional SL% / Part B trail | | false / false (optional) |
 | Capital | Initial / size | 1,000,000 / 100% equity |
 | Window | From | 2023-01-01 |
+
+### 7.1 Profit target note (vs Part B ~+125%)
+
+Goal: accumulated profit **>130%**, stretch target **~200%** on BTCUSD from 2023-01-01.
+
+In-sample Bitstamp BTCUSD 4H simulation (same SuperTrend math; not identical to TradingView ticks):
+
+| Setup | Approx. net |
+|-------|-------------|
+| Part B CSV (reference) | ~**+125%** |
+| Part C Middle + ST exit, long-only, `requireStAlign=false` | ~**+344%** |
+| Part C **Outer** + ST exit + TP56%, long-only | ~**+385%+** |
+| Part C with strict `requireStAlign=true` | ~**+56%** (misses target) |
+
+**Practical guidance:** keep `requireStAlign=false` for the profit target (EMA+BB time the entry; SuperTrend flip is the trailing exit). Turn it **ON** only if you want the stricter brief filter and accept fewer/late entries.
 
 **Sensitivity tests to report**
 
