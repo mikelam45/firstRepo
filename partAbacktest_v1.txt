@@ -1,12 +1,8 @@
 //@version=5
 // =============================================================================
-// Part A — SuperTrend Strategy (alias of v1 baseline)
+// Part A v1 — SuperTrend Strategy (fixed TP / SL + opposite-signal exits)
 // -----------------------------------------------------------------------------
-// This file matches partAbacktest_v1.txt (pre CSV-align update).
-// For TP35% / SL10% / $1M defaults targeting >87% on BTCUSD, use:
-//   partAbacktest_v3.txt
-// Enhanced filter experiment: partAbacktest_v2.txt
-//
+// Baseline version BEFORE CSV-aligned TP35/SL10/$1M update (see partAbacktest_v3).
 // Based on SuperTrend_indicator.txt signal logic (Buy/Sell on trend flip).
 // How to use in TradingView:
 //   1. Pine Editor → Open → New blank strategy
@@ -19,7 +15,7 @@
 //   Enable Long=true, Enable Short=true, ATR method=true (RMA atr)
 // =============================================================================
 strategy(
-     title              = "Part A SuperTrend Strategy",
+     title              = "Part A v1 SuperTrend Strategy",
      overlay            = true,
      format             = format.price,
      precision          = 2,
