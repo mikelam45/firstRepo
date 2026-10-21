@@ -25,7 +25,11 @@ def cmd_smoke(_: argparse.Namespace) -> int:
 def cmd_review(args: argparse.Namespace) -> int:
     load_env()
     try:
-        result = run_review(args.keywords)
+        result = run_review(
+            args.keywords,
+            mail_path=getattr(args, "mail_path", None),
+            mail_folder=getattr(args, "mail_folder", None),
+        )
     except ValueError as exc:
         print(str(exc), file=sys.stderr)
         return 1
@@ -58,6 +62,16 @@ def main(argv: list[str] | None = None) -> None:
         "--keywords",
         default=None,
         help="Comma-separated topic keywords (overrides role YAML for this run)",
+    )
+    p_review.add_argument(
+        "--mail-path",
+        default=None,
+        help="Mailbox folder path (overrides THUNDERBIRD_MAIL_PATH)",
+    )
+    p_review.add_argument(
+        "--mail-folder",
+        default=None,
+        help="mbox folder name inside mail path (overrides TARGET_MAIL_FOLDER)",
     )
     p_review.set_defaults(func=cmd_review)
 

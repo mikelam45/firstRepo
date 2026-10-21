@@ -44,14 +44,47 @@ def _default_keywords_text() -> str:
         return ""
 
 
+def _default_mail_path() -> str:
+    return os.environ.get("THUNDERBIRD_MAIL_PATH", "./fixtures/mbox")
+
+
+def _default_mail_folder() -> str:
+    return os.environ.get("TARGET_MAIL_FOLDER", "Applications")
+
+
+def _page_context(
+    *,
+    keywords: str | None = None,
+    mail_path: str | None = None,
+    mail_folder: str | None = None,
+    result: dict | None = None,
+    error: str | None = None,
+) -> dict:
+    path = mail_path if mail_path is not None else _default_mail_path()
+    folder = mail_folder if mail_folder is not None else _default_mail_folder()
+    checks, code = run_smoke(mail_path=path, mail_folder=folder)
+    return {
+        "role_title": _role_title(),
+        "keywords": keywords if keywords is not None else _default_keywords_text(),
+        "mail_path": path,
+        "mail_folder": folder,
+        "smoke": checks,
+        "smoke_ok": code == 0,
+        "result": result,
+        "error": error,
+        "port": PORT,
+        "version": __version__,
+    }
+
+
 @app.get("/health")
 def health() -> dict:
     return {"status": "ok", "version": __version__, "port": PORT}
 
 
 @app.get("/api/smoke")
-def api_smoke() -> JSONResponse:
-    checks, code = run_smoke()
+def api_smoke(mail_path: str | None = None, mail_folder: str | None = None) -> JSONResponse:
+    checks, code = run_smoke(mail_path=mail_path, mail_folder=mail_folder)
     return JSONResponse(checks, status_code=200 if code == 0 else (503 if code == 1 else 200))
 
 
@@ -62,8 +95,10 @@ async def api_review(request: Request) -> JSONResponse:
     except Exception:  # noqa: BLE001
         body = {}
     keywords = body.get("keywords")
+    mail_path = body.get("mail_path") or body.get("mailbox_path")
+    mail_folder = body.get("mail_folder") or body.get("mailbox_folder")
     try:
-        result = run_review(keywords)
+        result = run_review(keywords, mail_path=mail_path, mail_folder=mail_folder)
         return JSONResponse(result)
     except ValueError as exc:
         return JSONResponse({"error": str(exc)}, status_code=400)
@@ -71,46 +106,38 @@ async def api_review(request: Request) -> JSONResponse:
 
 @app.get("/", response_class=HTMLResponse)
 def index(request: Request) -> HTMLResponse:
-    checks, code = run_smoke()
-    return templates.TemplateResponse(
-        request,
-        "index.html",
-        {
-            "role_title": _role_title(),
-            "keywords": _default_keywords_text(),
-            "smoke": checks,
-            "smoke_ok": code == 0,
-            "port": PORT,
-            "version": __version__,
-        },
-    )
+    return templates.TemplateResponse(request, "index.html", _page_context())
 
 
 @app.post("/review", response_class=HTMLResponse)
 def review_form(
     request: Request,
     keywords: str = Form(...),
+    mail_path: str = Form(...),
+    mail_folder: str = Form(""),
 ) -> HTMLResponse:
     error = None
     result = None
     try:
-        result = run_review(keywords)
+        if not mail_path.strip():
+            raise ValueError("Mailbox folder path is required")
+        result = run_review(
+            keywords,
+            mail_path=mail_path.strip(),
+            mail_folder=mail_folder.strip() or None,
+        )
     except ValueError as exc:
         error = str(exc)
-    checks, code = run_smoke()
     return templates.TemplateResponse(
         request,
         "index.html",
-        {
-            "role_title": _role_title(),
-            "keywords": keywords,
-            "smoke": checks,
-            "smoke_ok": code == 0,
-            "result": result,
-            "error": error,
-            "port": PORT,
-            "version": __version__,
-        },
+        _page_context(
+            keywords=keywords,
+            mail_path=mail_path,
+            mail_folder=mail_folder,
+            result=result,
+            error=error,
+        ),
     )
 
 

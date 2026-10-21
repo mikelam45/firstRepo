@@ -104,11 +104,28 @@ def llm_chat(messages: list[dict], *, max_tokens: int | None = None) -> dict:
         return resp.json()
 
 
-def run_smoke() -> tuple[dict, int]:
+def resolve_mail_paths(
+    mail_path: str | None = None,
+    mail_folder: str | None = None,
+) -> tuple[Path, str, Path]:
+    """Return (mail_dir, folder_name, mbox_path) from UI/CLI overrides or env."""
+    load_env()
+    base = (mail_path or "").strip() or os.environ.get("THUNDERBIRD_MAIL_PATH", "/data/mail")
+    folder = (mail_folder or "").strip() or os.environ.get("TARGET_MAIL_FOLDER", "INBOX")
+    path = Path(base).expanduser()
+    if path.is_file():
+        return path.parent, path.name, path
+    return path, folder, path / folder
+
+
+def run_smoke(
+    mail_path: str | None = None,
+    mail_folder: str | None = None,
+) -> tuple[dict, int]:
     """Return (checks, exit_code). 0=ok, 1=fail, 2=warn."""
     load_env()
 
-    mail_path = Path(os.environ.get("THUNDERBIRD_MAIL_PATH", "/data/mail"))
+    mail_dir, folder, mbox = resolve_mail_paths(mail_path, mail_folder)
     output_dir = Path(os.environ.get("OUTPUT_DIR", "/data/output"))
     role_config = Path(os.environ.get("ROLE_CONFIG_PATH", "/app/config/role_requirements.yaml"))
     port = int(os.environ.get("PORT", "3036"))
@@ -122,8 +139,11 @@ def run_smoke() -> tuple[dict, int]:
     host = urlparse(cfg["api_url"]).netloc if cfg["api_url"] else ""
     checks: dict = {
         "ok": False,
-        "mail_path": str(mail_path),
-        "mail_path_exists": mail_path.exists(),
+        "mail_path": str(mail_dir),
+        "mail_folder": folder,
+        "mbox_path": str(mbox),
+        "mail_path_exists": mail_dir.exists(),
+        "mbox_exists": mbox.is_file() or mbox.is_dir(),
         "output_dir": str(output_dir),
         "role_config_exists": role_config.is_file(),
         "review_keywords": keywords,
@@ -140,8 +160,8 @@ def run_smoke() -> tuple[dict, int]:
         "port": port,
     }
 
-    if not mail_path.exists():
-        checks["error"] = "THUNDERBIRD_MAIL_PATH / mail volume missing"
+    if not mail_dir.exists():
+        checks["error"] = f"Mailbox folder path not found: {mail_dir}"
         return checks, 1
 
     if not cfg["cert_exists"]:
@@ -175,15 +195,21 @@ def run_smoke() -> tuple[dict, int]:
         return checks, 1
 
 
-def run_review(keywords: str | list[str] | None = None) -> dict:
+def run_review(
+    keywords: str | list[str] | None = None,
+    *,
+    mail_path: str | None = None,
+    mail_folder: str | None = None,
+) -> dict:
     load_env()
     resolved = resolve_keywords(keywords)
-    mail_path = Path(os.environ.get("THUNDERBIRD_MAIL_PATH", "/data/mail"))
-    folder = os.environ.get("TARGET_MAIL_FOLDER", "INBOX")
-    mbox = mail_path / folder
+    mail_dir, folder, mbox = resolve_mail_paths(mail_path, mail_folder)
     output_dir = Path(os.environ.get("OUTPUT_DIR", "/data/output"))
     output_dir.mkdir(parents=True, exist_ok=True)
     cfg = _llm_config()
+
+    if not str(mail_dir):
+        raise ValueError("Mailbox folder path is required")
 
     return {
         "status": "not_implemented",
@@ -192,6 +218,8 @@ def run_review(keywords: str | list[str] | None = None) -> dict:
             "implement ingest→LLM→artifacts next."
         ),
         "review_keywords": resolved,
+        "mail_path": str(mail_dir),
+        "mail_folder": folder,
         "mbox_path": str(mbox),
         "mbox_exists": mbox.is_file() or mbox.is_dir(),
         "output_dir": str(output_dir),

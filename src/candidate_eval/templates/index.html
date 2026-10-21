@@ -153,9 +153,25 @@
     </section>
 
     <section class="panel">
-      <h2>Keyword-scoped review</h2>
+      <h2>Mailbox &amp; keywords</h2>
       {% if error %}<p class="error">{{ error }}</p>{% endif %}
       <form method="post" action="/review">
+        <label for="mail_path">Mailbox folder path</label>
+        <input id="mail_path" name="mail_path" type="text" required
+               value="{{ mail_path }}"
+               placeholder="./fixtures/mbox  or  /Users/you/Library/Thunderbird/Profiles/.../Mail/Local Folders"
+               autocomplete="off"
+               spellcheck="false" />
+        <p class="hint">Type the local Thunderbird mail directory (or fixtures path) to scan for this run.</p>
+
+        <label for="mail_folder">Mailbox folder name</label>
+        <input id="mail_folder" name="mail_folder" type="text"
+               value="{{ mail_folder }}"
+               placeholder="INBOX  or  Applications"
+               autocomplete="off"
+               spellcheck="false" />
+        <p class="hint">mbox file / folder name inside that path (e.g. <code>INBOX</code>, <code>Applications</code>).</p>
+
         <label for="keywords">Review keywords</label>
         <input id="keywords" name="keywords" type="text" required
                value="{{ keywords }}"
