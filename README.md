@@ -2,26 +2,30 @@
 
 Criteria-driven screening for applicant emails/CVs. **Deploy locally with Podman or Docker**: bind-mount Thunderbird/fixtures mail, write scorecards to a host output folder, and call an OpenAI-compatible LLM on the host.
 
-## Local deployment (port **3036**)
+## Run on your MacBook (port **3036**)
 
-HTTP UI + API bind to **http://127.0.0.1:3036** by default.
+```bash
+git clone https://github.com/mikelam45/firstRepo.git
+cd firstRepo
+git checkout cursor/candidate-eval-spec-65c3
+
+# Place secrets (not in git):
+#   SSLcert/qwen-tls.crt
+#   SSLcert/token_qwen3_8.txt
+
+bash scripts/run_local_mac.sh
+```
+
+Then open **http://127.0.0.1:3036** (health: `/health`, LLM test: UI button or `/api/llm-test`).
+
+### Podman / Docker (optional)
 
 ```bash
 cp .env.example .env
-# Point MAIL_HOST_PATH at Thunderbird Local Folders or keep ./fixtures/mbox
-# Set LLM_BASE_URL for your host LLM
-
-# Podman / Docker (publishes 3036)
-podman compose up --build          # or: docker compose up --build
-
-# Bare-metal (no container runtime)
-pip install -r requirements.txt && pip install -e .
-export THUNDERBIRD_MAIL_PATH=./fixtures/mbox OUTPUT_DIR=./output/candidate_reviews \
-  ROLE_CONFIG_PATH=./config/role_requirements.yaml PORT=3036
-python3 -m candidate_eval.cli serve --port 3036
+# add SSLcert secrets, then:
+podman compose up --build --force-recreate
+# or: docker compose up --build --force-recreate
 ```
-
-Open **http://127.0.0.1:3036** — enter review keywords and run. Health: `/health`, smoke: `/api/smoke`.
 
 | File | Purpose |
 | --- | --- |
