@@ -107,15 +107,48 @@ def llm_chat(messages: list[dict], *, max_tokens: int | None = None) -> dict:
 def resolve_mail_paths(
     mail_path: str | None = None,
     mail_folder: str | None = None,
-) -> tuple[Path, str, Path]:
-    """Return (mail_dir, folder_name, mbox_path) from UI/CLI overrides or env."""
+) -> dict:
+    """Resolve Thunderbird mailbox URI or filesystem path from UI/CLI/env."""
     load_env()
     base = (mail_path or "").strip() or os.environ.get("THUNDERBIRD_MAIL_PATH", "/data/mail")
-    folder = (mail_folder or "").strip() or os.environ.get("TARGET_MAIL_FOLDER", "INBOX")
+    folder_override = (mail_folder or "").strip()
+    default_folder = os.environ.get("TARGET_MAIL_FOLDER", "INBOX")
+
+    # Thunderbird mailbox URI, e.g. mailbox://user@host/Inbox/SE_2026
+    if base.lower().startswith("mailbox:"):
+        parsed = urlparse(base)
+        uri_folder = parsed.path.lstrip("/")
+        folder = folder_override or uri_folder or default_folder
+        return {
+            "scheme": "mailbox",
+            "mail_path": base,
+            "mail_account": parsed.netloc,
+            "mail_folder": folder,
+            "mbox_path": base if not folder_override else f"mailbox://{parsed.netloc}/{folder}",
+            "mail_path_exists": True,  # logical URI — validated at ingest time
+            "mbox_exists": True,
+            "is_uri": True,
+        }
+
     path = Path(base).expanduser()
+    folder = folder_override or default_folder
     if path.is_file():
-        return path.parent, path.name, path
-    return path, folder, path / folder
+        mbox = path
+        mail_dir = path.parent
+        folder = path.name
+    else:
+        mail_dir = path
+        mbox = path / folder
+    return {
+        "scheme": "filesystem",
+        "mail_path": str(mail_dir),
+        "mail_account": None,
+        "mail_folder": folder,
+        "mbox_path": str(mbox),
+        "mail_path_exists": mail_dir.exists(),
+        "mbox_exists": mbox.is_file() or mbox.is_dir(),
+        "is_uri": False,
+    }
 
 
 def run_smoke(
@@ -125,7 +158,7 @@ def run_smoke(
     """Return (checks, exit_code). 0=ok, 1=fail, 2=warn."""
     load_env()
 
-    mail_dir, folder, mbox = resolve_mail_paths(mail_path, mail_folder)
+    mail = resolve_mail_paths(mail_path, mail_folder)
     output_dir = Path(os.environ.get("OUTPUT_DIR", "/data/output"))
     role_config = Path(os.environ.get("ROLE_CONFIG_PATH", "/app/config/role_requirements.yaml"))
     port = int(os.environ.get("PORT", "3036"))
@@ -139,11 +172,13 @@ def run_smoke(
     host = urlparse(cfg["api_url"]).netloc if cfg["api_url"] else ""
     checks: dict = {
         "ok": False,
-        "mail_path": str(mail_dir),
-        "mail_folder": folder,
-        "mbox_path": str(mbox),
-        "mail_path_exists": mail_dir.exists(),
-        "mbox_exists": mbox.is_file() or mbox.is_dir(),
+        "mail_path": mail["mail_path"],
+        "mail_account": mail.get("mail_account"),
+        "mail_folder": mail["mail_folder"],
+        "mbox_path": mail["mbox_path"],
+        "mail_scheme": mail["scheme"],
+        "mail_path_exists": mail["mail_path_exists"],
+        "mbox_exists": mail["mbox_exists"],
         "output_dir": str(output_dir),
         "role_config_exists": role_config.is_file(),
         "review_keywords": keywords,
@@ -160,8 +195,8 @@ def run_smoke(
         "port": port,
     }
 
-    if not mail_dir.exists():
-        checks["error"] = f"Mailbox folder path not found: {mail_dir}"
+    if not mail["mail_path_exists"]:
+        checks["error"] = f"Mailbox folder path not found: {mail['mail_path']}"
         return checks, 1
 
     if not cfg["cert_exists"]:
@@ -203,12 +238,12 @@ def run_review(
 ) -> dict:
     load_env()
     resolved = resolve_keywords(keywords)
-    mail_dir, folder, mbox = resolve_mail_paths(mail_path, mail_folder)
+    mail = resolve_mail_paths(mail_path, mail_folder)
     output_dir = Path(os.environ.get("OUTPUT_DIR", "/data/output"))
     output_dir.mkdir(parents=True, exist_ok=True)
     cfg = _llm_config()
 
-    if not str(mail_dir):
+    if not mail["mail_path"]:
         raise ValueError("Mailbox folder path is required")
 
     return {
@@ -218,10 +253,12 @@ def run_review(
             "implement ingest→LLM→artifacts next."
         ),
         "review_keywords": resolved,
-        "mail_path": str(mail_dir),
-        "mail_folder": folder,
-        "mbox_path": str(mbox),
-        "mbox_exists": mbox.is_file() or mbox.is_dir(),
+        "mail_path": mail["mail_path"],
+        "mail_account": mail.get("mail_account"),
+        "mail_folder": mail["mail_folder"],
+        "mail_scheme": mail["scheme"],
+        "mbox_path": mail["mbox_path"],
+        "mbox_exists": mail["mbox_exists"],
         "output_dir": str(output_dir),
         "api_url": cfg["api_url"],
         "model_name": cfg["model_name"],

@@ -159,18 +159,18 @@
         <label for="mail_path">Mailbox folder path</label>
         <input id="mail_path" name="mail_path" type="text" required
                value="{{ mail_path }}"
-               placeholder="./fixtures/mbox  or  /Users/you/Library/Thunderbird/Profiles/.../Mail/Local Folders"
+               placeholder="mailbox://user@host/Inbox/Folder  or  ./fixtures/mbox"
                autocomplete="off"
                spellcheck="false" />
-        <p class="hint">Type the local Thunderbird mail directory (or fixtures path) to scan for this run.</p>
+        <p class="hint">Thunderbird mailbox URI (e.g. <code>mailbox://mikelam@systex.com.hk/Inbox/SE_2026</code>) or a local mail directory.</p>
 
         <label for="mail_folder">Mailbox folder name</label>
         <input id="mail_folder" name="mail_folder" type="text"
                value="{{ mail_folder }}"
-               placeholder="INBOX  or  Applications"
+               placeholder="Inbox/SE_2026"
                autocomplete="off"
                spellcheck="false" />
-        <p class="hint">mbox file / folder name inside that path (e.g. <code>INBOX</code>, <code>Applications</code>).</p>
+        <p class="hint">Folder within the account (auto-filled from the URI path when using <code>mailbox://</code>).</p>
 
         <label for="keywords">Review keywords</label>
         <input id="keywords" name="keywords" type="text" required
