@@ -1,0 +1,3 @@
+name,tier,weighted_score,keyword_coverage,years_experience,notice_days,salary_expectation,knockout_status,top_matched_keywords,email
+Alex Riviera,1,4.20,0.75,7,30,170000,pass,"kubernetes;system design;remote",alex.riviera@example.com
+Sam Lee,3,1.80,0.00,3,90,220000,fail,"",sam.lee@example.com

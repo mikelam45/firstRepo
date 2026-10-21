@@ -1,0 +1,43 @@
+From applicants@example.com Wed Oct 01 10:00:00 2025
+Return-Path: <alex.riviera@example.com>
+From: Alex Riviera <alex.riviera@example.com>
+To: jobs@example.com
+Subject: Application — Senior Backend Engineer
+Message-ID: <fixture-strong-001@example.com>
+Date: Wed, 01 Oct 2025 10:00:00 +0000
+Content-Type: text/plain; charset=UTF-8
+
+Hello hiring team,
+
+I am applying for the Senior Backend Engineer role. I have 7 years of backend
+experience, led an EKS / Kubernetes migration, regularly run system design
+reviews, and am available remote in the US with a 30-day notice. Compensation
+expectation is 170000 USD. I am authorized to work in the US.
+
+Resume highlights:
+- Kubernetes (EKS) production ownership
+- System design for high-throughput APIs
+- Collaborative mentoring and clear written RFCs
+- Open to remote
+
+Thank you,
+Alex Riviera
+alex.riviera@example.com
+
+From applicants@example.com Wed Oct 01 11:00:00 2025
+Return-Path: <sam.lee@example.com>
+From: Sam Lee <sam.lee@example.com>
+To: jobs@example.com
+Subject: Interested in backend role
+Message-ID: <fixture-weak-002@example.com>
+Date: Wed, 01 Oct 2025 11:00:00 +0000
+Content-Type: text/plain; charset=UTF-8
+
+Hi,
+
+I mostly do WordPress and theme customization. Looking for any remote work.
+No Kubernetes or system design experience. Can start in 90 days. Targeting
+220000 USD.
+
+Sam Lee
+sam.lee@example.com
