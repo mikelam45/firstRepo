@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from functools import lru_cache
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -10,35 +11,85 @@ import httpx
 import yaml
 from dotenv import load_dotenv
 
+# Container paths compose.yml sets; on bare-metal Mac these must map to the repo.
+_CONTAINER_APP_PREFIX = "/app/"
 
+
+@lru_cache(maxsize=1)
 def project_root() -> Path:
-    """Repo root: .../src/candidate_eval/service.py -> parents[2]."""
+    """Repo / app root for relative env paths — never process cwd alone.
+
+    Order: PROJECT_ROOT, APP_HOME, walk from this file (src layout), walk from
+    cwd for pyproject.toml markers, else parents[2] of this module (editable).
+    """
+    for key in ("PROJECT_ROOT", "APP_HOME"):
+        raw = (os.environ.get(key) or "").strip()
+        if raw:
+            return Path(raw).expanduser().resolve()
+
+    here = Path(__file__).resolve().parent
+    for candidate in (here, *here.parents):
+        if _looks_like_project_root(candidate):
+            return candidate
+
+    cwd = Path.cwd()
+    for candidate in (cwd, *cwd.parents):
+        if _looks_like_project_root(candidate):
+            return candidate
+
+    # Editable src layout fallback: .../src/candidate_eval/service.py -> repo
     return Path(__file__).resolve().parents[2]
 
 
+def _looks_like_project_root(path: Path) -> bool:
+    if not (path / "pyproject.toml").is_file():
+        return False
+    return (
+        (path / "SSLcert").is_dir()
+        or (path / "compose.yml").is_file()
+        or (path / "config" / "role_requirements.yaml").is_file()
+    )
+
+
+def resolve_repo_path(raw: str | None, *, default_rel: str | None = None) -> Path:
+    """Resolve CERT_FILE / TOKEN_FILE (and similar) against project_root().
+
+    - Absolute paths that exist (e.g. compose /app/SSLcert/...) are used as-is.
+    - Absolute /app/... paths that are missing on the host are remapped to the
+      same relative path under project_root() (Mac .env leftover from compose).
+    - Relative paths (./SSLcert/...) always resolve against project_root(), not cwd.
+    """
+    value = (raw or "").strip() or (default_rel or "")
+    if not value:
+        return Path()
+
+    path = Path(value).expanduser()
+    root = project_root()
+
+    if path.is_absolute():
+        if path.exists():
+            return path.resolve()
+        # Mac bare-metal with compose-style /app/... in .env
+        text = path.as_posix()
+        if text.startswith(_CONTAINER_APP_PREFIX):
+            remapped = (root / text[len(_CONTAINER_APP_PREFIX) :]).resolve()
+            return remapped
+        return path.resolve()
+
+    # Strip leading ./ so join is clean; always repo-relative.
+    return (root / path).resolve()
+
+
+# Back-compat alias used by earlier Mac path fix.
+resolve_secret_path = resolve_repo_path
+
+
 def load_env() -> None:
-    # Load .env from repo root first so Mac runs work even if cwd differs.
+    """Load .env from project root first so Mac runs work even if cwd differs."""
     root_env = project_root() / ".env"
     if root_env.is_file():
         load_dotenv(root_env, override=False)
     load_dotenv(override=False)
-
-
-def resolve_secret_path(raw: str, *, default_rel: str | None = None) -> Path:
-    """Resolve CERT_FILE/TOKEN_FILE against cwd, then repo root (Mac-friendly)."""
-    value = (raw or "").strip() or (default_rel or "")
-    if not value:
-        return Path()
-    path = Path(value).expanduser()
-    if path.is_absolute():
-        return path
-    if path.is_file():
-        return path.resolve()
-    rooted = project_root() / path
-    if rooted.is_file():
-        return rooted.resolve()
-    # Prefer repo-root relative for error messages even if missing
-    return rooted.resolve()
 
 
 def resolve_keywords(cli_keywords: str | list[str] | None = None) -> list[str]:
@@ -48,7 +99,7 @@ def resolve_keywords(cli_keywords: str | list[str] | None = None) -> list[str]:
         keywords = [k.strip() for k in cli_keywords.split(",") if k.strip()]
     else:
         raw = os.environ.get("ROLE_CONFIG_PATH", "./config/role_requirements.yaml")
-        config_path = resolve_secret_path(raw, default_rel="./config/role_requirements.yaml")
+        config_path = resolve_repo_path(raw, default_rel="./config/role_requirements.yaml")
         if not config_path.is_file():
             raise ValueError(f"ROLE_CONFIG_PATH not found: {config_path}")
         data = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
@@ -62,15 +113,16 @@ def resolve_keywords(cli_keywords: str | list[str] | None = None) -> list[str]:
 
 
 def _llm_config() -> dict:
-    """Resolve CERT_FILE / TOKEN_FILE / API_URL / MODEL_NAME from env."""
-    cert_path = resolve_secret_path(
-        os.environ.get("CERT_FILE", ""),
-        default_rel="./SSLcert/qwen-tls.crt",
-    )
-    token_path = resolve_secret_path(
-        os.environ.get("TOKEN_FILE", ""),
-        default_rel="./SSLcert/token_qwen3_8.txt",
-    )
+    """Resolve CERT_FILE / TOKEN_FILE / API_URL / MODEL_NAME from env.
+
+    Relative values resolve against project_root(). Absolute /app/SSLcert/...
+    from compose work in-container; on Mac they remap to <repo>/SSLcert/...
+    """
+    cert_raw = (os.environ.get("CERT_FILE") or "").strip()
+    token_raw = (os.environ.get("TOKEN_FILE") or "").strip()
+    cert_path = resolve_repo_path(cert_raw, default_rel="./SSLcert/qwen-tls.crt")
+    token_path = resolve_repo_path(token_raw, default_rel="./SSLcert/token_qwen3_8.txt")
+
     api_url = os.environ.get("API_URL", "").strip()
     model_name = (
         os.environ.get("MODEL_NAME", "").strip()
@@ -92,12 +144,18 @@ def _llm_config() -> dict:
     if cert_path.is_file():
         verify = str(cert_path)
 
+    cert_display = str(cert_path) if str(cert_path) != "." else ""
+    token_display = str(token_path) if str(token_path) != "." else ""
+
     return {
-        "cert_file": str(cert_path) if str(cert_path) != "." else "",
+        "cert_file": cert_display,
+        "cert_file_raw": cert_raw or "./SSLcert/qwen-tls.crt",
         "cert_exists": cert_path.is_file(),
-        "token_file": str(token_path) if str(token_path) != "." else "",
+        "token_file": token_display,
+        "token_file_raw": token_raw or "./SSLcert/token_qwen3_8.txt",
         "token_exists": token_path.is_file(),
         "token_loaded": bool(token),
+        "project_root": str(project_root()),
         "api_url": api_url,
         "model_name": model_name,
         "verify": verify,
