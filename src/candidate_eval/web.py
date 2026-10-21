@@ -6,7 +6,6 @@ import os
 from pathlib import Path
 
 import yaml
-from dotenv import load_dotenv
 from fastapi import FastAPI, Form, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
@@ -16,12 +15,13 @@ from candidate_eval.service import (
     _llm_config,
     load_env,
     resolve_keywords,
+    resolve_repo_path,
     run_review,
     run_smoke,
     test_llm_connectivity,
 )
 
-load_dotenv(override=False)
+load_env()
 
 PORT = int(os.environ.get("PORT", "3036"))
 HOST = os.environ.get("HOST", "0.0.0.0")
@@ -37,7 +37,10 @@ app = FastAPI(
 
 
 def _role_title() -> str:
-    path = Path(os.environ.get("ROLE_CONFIG_PATH", "./config/role_requirements.yaml"))
+    path = resolve_repo_path(
+        os.environ.get("ROLE_CONFIG_PATH", ""),
+        default_rel="./config/role_requirements.yaml",
+    )
     if not path.is_file():
         return "Candidate review"
     data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
@@ -63,9 +66,12 @@ def _llm_env_summary() -> dict:
     load_env()
     cfg = _llm_config()
     return {
-        "cert_file": cfg["cert_file"] or os.environ.get("CERT_FILE", ""),
+        "project_root": cfg["project_root"],
+        "cert_file": cfg["cert_file"],
+        "cert_file_raw": cfg["cert_file_raw"],
         "cert_exists": cfg["cert_exists"],
-        "token_file": cfg["token_file"] or os.environ.get("TOKEN_FILE", ""),
+        "token_file": cfg["token_file"],
+        "token_file_raw": cfg["token_file_raw"],
         "token_exists": cfg["token_exists"],
         "api_url": cfg["api_url"] or os.environ.get("API_URL", ""),
         "model_name": cfg["model_name"]

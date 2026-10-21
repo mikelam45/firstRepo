@@ -52,8 +52,10 @@ Inside the container, `THUNDERBIRD_MAIL_PATH=/data/mail` and `TARGET_MAIL_FOLDER
 Configured in `.env` (see [`.env.example`](../.env.example) and [`SSLcert/README.md`](../SSLcert/README.md)):
 
 ```env
+# Mac / bare-metal (.env) — resolved against repo root, not cwd
 CERT_FILE="./SSLcert/qwen-tls.crt"
 TOKEN_FILE="./SSLcert/token_qwen3_8.txt"
+# Compose overrides to /app/SSLcert/qwen-tls.crt and /app/SSLcert/token_qwen3_8.txt
 API_URL="https://redhataiqwen38-27b-int4-rhoai-test.apps.demo.rhoai.demo/v1/chat/completions"
 MODEL_NAME="Qwen38-27b-int4"
 ```

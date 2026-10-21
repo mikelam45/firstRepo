@@ -200,9 +200,12 @@ def test_llm_connectivity() -> tuple[dict, int]:
     result: dict = {
         "ok": False,
         "test": "llm_connectivity",
+        "project_root": cfg["project_root"],
         "cert_file": cfg["cert_file"],
+        "cert_file_raw": cfg["cert_file_raw"],
         "cert_exists": cfg["cert_exists"],
         "token_file": cfg["token_file"],
+        "token_file_raw": cfg["token_file_raw"],
         "token_exists": cfg["token_exists"],
         "token_loaded": cfg["token_loaded"],
         "api_url": cfg["api_url"],
@@ -326,8 +329,14 @@ def run_smoke(
     load_env()
 
     mail = resolve_mail_paths(mail_path, mail_folder)
-    output_dir = Path(os.environ.get("OUTPUT_DIR", "/data/output"))
-    role_config = Path(os.environ.get("ROLE_CONFIG_PATH", "/app/config/role_requirements.yaml"))
+    output_dir = resolve_repo_path(
+        os.environ.get("OUTPUT_DIR", ""),
+        default_rel="./output/candidate_reviews",
+    )
+    role_config = resolve_repo_path(
+        os.environ.get("ROLE_CONFIG_PATH", ""),
+        default_rel="./config/role_requirements.yaml",
+    )
     port = int(os.environ.get("PORT", "3036"))
     cfg = _llm_config()
 
@@ -339,6 +348,7 @@ def run_smoke(
     host = urlparse(cfg["api_url"]).netloc if cfg["api_url"] else ""
     checks: dict = {
         "ok": False,
+        "project_root": cfg["project_root"],
         "mail_path": mail["mail_path"],
         "mail_account": mail.get("mail_account"),
         "mail_folder": mail["mail_folder"],
@@ -350,8 +360,10 @@ def run_smoke(
         "role_config_exists": role_config.is_file(),
         "review_keywords": keywords,
         "cert_file": cfg["cert_file"],
+        "cert_file_raw": cfg["cert_file_raw"],
         "cert_exists": cfg["cert_exists"],
         "token_file": cfg["token_file"],
+        "token_file_raw": cfg["token_file_raw"],
         "token_exists": cfg["token_exists"],
         "token_loaded": cfg["token_loaded"],
         "api_url": cfg["api_url"],
@@ -427,7 +439,10 @@ def run_review(
     load_env()
     resolved = resolve_keywords(keywords)
     mail = resolve_mail_paths(mail_path, mail_folder)
-    output_dir = Path(os.environ.get("OUTPUT_DIR", "/data/output"))
+    output_dir = resolve_repo_path(
+        os.environ.get("OUTPUT_DIR", ""),
+        default_rel="./output/candidate_reviews",
+    )
     output_dir.mkdir(parents=True, exist_ok=True)
     cfg = _llm_config()
 
@@ -452,6 +467,7 @@ def run_review(
         "model_name": cfg["model_name"],
         "cert_file": cfg["cert_file"],
         "token_file": cfg["token_file"],
+        "project_root": cfg["project_root"],
         "deployment": "podman-or-docker-local",
         "port": int(os.environ.get("PORT", "3036")),
     }

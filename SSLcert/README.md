@@ -17,11 +17,22 @@ cp ~/Downloads/token_qwen3_8.txt SSLcert/token_qwen3_8.txt
 ls -la SSLcert/
 ```
 
-`.env` (Mac / bare-metal):
+`.env` (Mac / bare-metal — always these relative values):
 
 ```env
 CERT_FILE="./SSLcert/qwen-tls.crt"
 TOKEN_FILE="./SSLcert/token_qwen3_8.txt"
 ```
 
-Podman/Docker compose overrides these to `/app/SSLcert/...` and bind-mounts this directory.
+Resolved on disk (example):
+
+```text
+<repo>/SSLcert/qwen-tls.crt
+<repo>/SSLcert/token_qwen3_8.txt
+```
+
+`bash scripts/run_local_mac.sh` forces the Mac relative values and exports `PROJECT_ROOT`.
+The app resolves them against the repo root even if your shell cwd differs.
+
+Podman/Docker: `compose.yml` sets `CERT_FILE=/app/SSLcert/qwen-tls.crt` and
+`TOKEN_FILE=/app/SSLcert/token_qwen3_8.txt`, and bind-mounts this directory to `/app/SSLcert`.

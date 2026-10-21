@@ -8,13 +8,20 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
+export PROJECT_ROOT="$ROOT"
 
 PORT="${PORT:-3036}"
 # Bind all interfaces so localhost + LAN both work; open via 127.0.0.1 in browser.
 BIND_HOST="${BIND_HOST:-0.0.0.0}"
 
+CERT_ABS="$ROOT/SSLcert/qwen-tls.crt"
+TOKEN_ABS="$ROOT/SSLcert/token_qwen3_8.txt"
+CERT_ENV="./SSLcert/qwen-tls.crt"
+TOKEN_ENV="./SSLcert/token_qwen3_8.txt"
+
 doctor() {
   echo "==> Repo: $ROOT"
+  echo "==> PROJECT_ROOT=$PROJECT_ROOT"
   echo "==> Checking port ${PORT}..."
   if lsof -nP -iTCP:"${PORT}" -sTCP:LISTEN 2>/dev/null; then
     echo "OK: something is listening on ${PORT}"
@@ -30,9 +37,13 @@ doctor() {
     echo "FAIL: cannot curl health endpoint"
     echo "Start with: bash scripts/run_local_mac.sh"
   fi
-  echo "==> Secrets"
-  [[ -f SSLcert/qwen-tls.crt ]] && echo "  cert: present" || echo "  cert: MISSING (LLM test will fail; UI can still open)"
-  [[ -f SSLcert/token_qwen3_8.txt ]] && echo "  token: present" || echo "  token: MISSING (LLM test will fail; UI can still open)"
+  echo "==> Secrets (Mac bare-metal — repo-relative, resolved absolute):"
+  echo "  CERT_FILE=$CERT_ENV"
+  echo "       -> $CERT_ABS"
+  if [[ -f "$CERT_ABS" ]]; then echo "       present"; else echo "       MISSING"; fi
+  echo "  TOKEN_FILE=$TOKEN_ENV"
+  echo "       -> $TOKEN_ABS"
+  if [[ -f "$TOKEN_ABS" ]]; then echo "       present"; else echo "       MISSING"; fi
 }
 
 if [[ "${1:-}" == "doctor" ]]; then
@@ -41,6 +52,7 @@ if [[ "${1:-}" == "doctor" ]]; then
 fi
 
 echo "==> Repo: $ROOT"
+echo "==> PROJECT_ROOT=$PROJECT_ROOT"
 echo "==> Will serve http://127.0.0.1:${PORT}  (bind ${BIND_HOST}:${PORT})"
 
 if [[ ! -f .env ]]; then
@@ -48,20 +60,30 @@ if [[ ! -f .env ]]; then
   echo "==> Created .env from .env.example"
 fi
 
-# Mac bare-metal paths (not container)
+# Force Mac bare-metal paths in .env (never leave /app/SSLcert from compose).
 python3 - <<'PY'
 from pathlib import Path
+import re
+
 p = Path(".env")
-t = p.read_text()
-repl = {
-    'ROLE_CONFIG_PATH="/app/config/role_requirements.yaml"': 'ROLE_CONFIG_PATH="./config/role_requirements.yaml"',
-    'OUTPUT_DIR="/data/output"': 'OUTPUT_DIR="./output/candidate_reviews"',
-    'CERT_FILE="/app/SSLcert/qwen-tls.crt"': 'CERT_FILE="./SSLcert/qwen-tls.crt"',
-    'TOKEN_FILE="/app/SSLcert/token_qwen3_8.txt"': 'TOKEN_FILE="./SSLcert/token_qwen3_8.txt"',
+text = p.read_text(encoding="utf-8")
+replacements = {
+    "ROLE_CONFIG_PATH": './config/role_requirements.yaml',
+    "OUTPUT_DIR": './output/candidate_reviews',
+    "CERT_FILE": './SSLcert/qwen-tls.crt',
+    "TOKEN_FILE": './SSLcert/token_qwen3_8.txt',
 }
-for a, b in repl.items():
-    t = t.replace(a, b)
-p.write_text(t)
+for key, value in replacements.items():
+    pattern = re.compile(rf"^{key}=.*$", re.MULTILINE)
+    line = f'{key}="{value}"'
+    if pattern.search(text):
+        text = pattern.sub(line, text)
+    else:
+        text = text.rstrip() + "\n" + line + "\n"
+p.write_text(text, encoding="utf-8")
+print("==> .env Mac paths:")
+for key in ("CERT_FILE", "TOKEN_FILE", "ROLE_CONFIG_PATH", "OUTPUT_DIR"):
+    print(f"     {key}={replacements[key]}")
 PY
 
 mkdir -p SSLcert output/candidate_reviews
@@ -95,15 +117,15 @@ if [[ ! -f SSLcert/token_qwen3_8.txt ]]; then
   done
 fi
 
-if [[ ! -f SSLcert/qwen-tls.crt || ! -f SSLcert/token_qwen3_8.txt ]]; then
+if [[ ! -f "$CERT_ABS" || ! -f "$TOKEN_ABS" ]]; then
   echo "!! Warning: place secrets here (exact names):"
-  echo "     $ROOT/SSLcert/qwen-tls.crt"
-  echo "     $ROOT/SSLcert/token_qwen3_8.txt"
+  echo "     $CERT_ABS"
+  echo "     $TOKEN_ABS"
   echo "   Portal UI will still start; LLM test needs those files."
 else
-  echo "==> Secrets OK:"
-  echo "     $ROOT/SSLcert/qwen-tls.crt"
-  echo "     $ROOT/SSLcert/token_qwen3_8.txt"
+  echo "==> Secrets OK (absolute):"
+  echo "     $CERT_ABS"
+  echo "     $TOKEN_ABS"
 fi
 
 LLM_HOST="${RHOAI_LLM_HOST:-redhataiqwen38-27b-int4-rhoai-test.apps.demo.rhoai.demo}"
@@ -141,17 +163,23 @@ set -a
 # shellcheck disable=SC1091
 source .env
 set +a
+export PROJECT_ROOT="$ROOT"
 export HOST="$BIND_HOST"
 export PORT
 export ROLE_CONFIG_PATH="${ROLE_CONFIG_PATH:-./config/role_requirements.yaml}"
 export OUTPUT_DIR="${OUTPUT_DIR:-./output/candidate_reviews}"
-export CERT_FILE="${CERT_FILE:-./SSLcert/qwen-tls.crt}"
-export TOKEN_FILE="${TOKEN_FILE:-./SSLcert/token_qwen3_8.txt}"
+# Always pin Mac repo-relative secrets (compose uses /app/SSLcert via compose.yml).
+export CERT_FILE="$CERT_ENV"
+export TOKEN_FILE="$TOKEN_ENV"
 
 echo
 echo "============================================"
 echo "  OPEN IN BROWSER:  http://127.0.0.1:${PORT}"
 echo "  Health check:     http://127.0.0.1:${PORT}/health"
+echo "  CERT_FILE:        $CERT_FILE"
+echo "       resolved:    $CERT_ABS"
+echo "  TOKEN_FILE:       $TOKEN_FILE"
+echo "       resolved:    $TOKEN_ABS"
 echo "  Leave this terminal open (Ctrl+C to stop)"
 echo "============================================"
 echo
