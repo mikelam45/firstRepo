@@ -18,6 +18,8 @@ bash scripts/run_local_mac.sh
 
 Then open **http://127.0.0.1:3036** (health: `/health`, LLM test: UI button or `/api/llm-test`).
 
+The portal UI loads without waiting on the RHOAI LLM (Runtime checks are local config only). Use **Test LLM connectivity** when the model host is reachable (VPN / hosts entry).
+
 ### Podman / Docker (optional)
 
 ```bash
