@@ -22,7 +22,7 @@ services:
       CERT_FILE: /app/SSLcert/qwen-tls.crt
       TOKEN_FILE: /app/SSLcert/token_qwen3_8.txt
       API_URL: ${API_URL:-https://redhataiqwen38-27b-int4-rhoai-test.apps.demo.rhoai.demo/v1/chat/completions}
-      MODEL_NAME: ${MODEL_NAME:-redhataiqwen38-27b-int4}
+      MODEL_NAME: ${MODEL_NAME:-Qwen38-27b-int4}
       HOST: 0.0.0.0
       PORT: "3036"
     ports:
@@ -30,6 +30,8 @@ services:
     extra_hosts:
       - "host.containers.internal:host-gateway"
       - "host.docker.internal:host-gateway"
+      # Private RHOAI demo endpoint name → IP
+      - "redhataiqwen38-27b-int4-rhoai-test.apps.demo.rhoai.demo:192.168.147.135"
     volumes:
       - ${MAIL_HOST_PATH:-./fixtures/mbox}:/data/mail:ro
       - ${OUTPUT_HOST_PATH:-./output/candidate_reviews}:/data/output:rw

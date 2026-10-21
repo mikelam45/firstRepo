@@ -55,8 +55,19 @@ Configured in `.env` (see [`.env.example`](../.env.example) and [`SSLcert/README
 CERT_FILE="./SSLcert/qwen-tls.crt"
 TOKEN_FILE="./SSLcert/token_qwen3_8.txt"
 API_URL="https://redhataiqwen38-27b-int4-rhoai-test.apps.demo.rhoai.demo/v1/chat/completions"
-MODEL_NAME="redhataiqwen38-27b-int4"
+MODEL_NAME="Qwen38-27b-int4"
 ```
+
+### Name resolution
+
+The demo hostname is private. Map it before testing:
+
+```text
+192.168.147.135 redhataiqwen38-27b-int4-rhoai-test.apps.demo.rhoai.demo
+```
+
+- Podman/Docker: already in [`compose.yml`](../compose.yml) `extra_hosts`
+- Bare-metal: `sudo bash scripts/setup_hosts.sh`
 
 Smoke/`llm_chat` uses the cert for TLS verify, reads the bearer token from `TOKEN_FILE`, and POSTs to `API_URL` with `MODEL_NAME`.
 
