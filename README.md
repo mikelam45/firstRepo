@@ -2,24 +2,31 @@
 
 Criteria-driven screening for applicant emails/CVs. **Deploy locally with Podman or Docker**: bind-mount Thunderbird/fixtures mail, write scorecards to a host output folder, and call an OpenAI-compatible LLM on the host.
 
-## Local deployment (Podman / Docker)
+## Local deployment (port **3036**)
+
+HTTP UI + API bind to **http://127.0.0.1:3036** by default.
 
 ```bash
 cp .env.example .env
 # Point MAIL_HOST_PATH at Thunderbird Local Folders or keep ./fixtures/mbox
-# Set LLM_BASE_URL for your host LLM (Podman default: host.containers.internal)
+# Set LLM_BASE_URL for your host LLM
 
+# Podman / Docker (publishes 3036)
 podman compose up --build          # or: docker compose up --build
-podman compose run --rm screener review --keywords "kubernetes,react,system design,remote"
+
+# Bare-metal (no container runtime)
+pip install -r requirements.txt && pip install -e .
+export THUNDERBIRD_MAIL_PATH=./fixtures/mbox OUTPUT_DIR=./output/candidate_reviews \
+  ROLE_CONFIG_PATH=./config/role_requirements.yaml PORT=3036
+python3 -m candidate_eval.cli serve --port 3036
 ```
+
+Open **http://127.0.0.1:3036** — enter review keywords and run. Health: `/health`, smoke: `/api/smoke`.
 
 | File | Purpose |
 | --- | --- |
-| [`Dockerfile`](Dockerfile) | Local screener image (non-root) |
-| [`compose.yml`](compose.yml) | Volumes + `host-gateway` aliases for host LLM |
-| [`.env.example`](.env.example) | Container paths, mount overrides, LLM URL |
-
-Default command runs **`smoke`**: checks mail mount, required `review_keywords`, and `GET /models` on the LLM.
+| [`Dockerfile`](Dockerfile) / [`compose.yml`](compose.yml) | Image + port `3036:3036`, volumes, host LLM |
+| [`.env.example`](.env.example) | `PORT=3036`, mounts, LLM URL |
 
 ## Spec & SOP
 

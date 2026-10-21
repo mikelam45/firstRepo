@@ -34,7 +34,12 @@ RUN chmod +x /app/scripts/container_entrypoint.sh \
 
 USER appuser
 
+ENV HOST=0.0.0.0 \
+    PORT=3036
+
+EXPOSE 3036
+
 VOLUME ["/data/mail", "/data/output"]
 
 ENTRYPOINT ["/app/scripts/container_entrypoint.sh"]
-CMD ["smoke"]
+CMD ["serve"]

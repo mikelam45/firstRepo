@@ -14,7 +14,16 @@ podman compose up --build
 docker compose up --build
 ```
 
-Default process exits after **smoke** (mounts + keywords + `GET /v1/models`).
+Service listens on **http://127.0.0.1:3036** (`HOST=0.0.0.0`, `PORT=3036`). UI at `/`, health at `/health`, smoke JSON at `/api/smoke`.
+
+Bare-metal (no Podman/Docker):
+
+```bash
+pip install -r requirements.txt && pip install -e .
+THUNDERBIRD_MAIL_PATH=./fixtures/mbox OUTPUT_DIR=./output/candidate_reviews \
+  ROLE_CONFIG_PATH=./config/role_requirements.yaml \
+  python3 -m candidate_eval.cli serve --port 3036
+```
 
 ### Run a keyword-scoped review (scaffold)
 

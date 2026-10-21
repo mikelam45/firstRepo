@@ -227,14 +227,16 @@ OUTPUT_HOST_PATH=./output/candidate_reviews
 cp .env.example .env
 # Edit LLM_BASE_URL / MAIL_HOST_PATH (Thunderbird folder or ./fixtures/mbox)
 
-# Podman (preferred local)
+# Podman (preferred local) — HTTP UI on port 3036
 podman compose up --build
 # or: podman-compose up --build
 
 # Docker
 docker compose up --build
 
-# Keyword-scoped review run (scaffold CLI)
+# Open http://127.0.0.1:3036
+
+# Keyword-scoped review via CLI (optional)
 podman compose run --rm screener review --keywords "kubernetes,react,system design,remote"
 ```
 
