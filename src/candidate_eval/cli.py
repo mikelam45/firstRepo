@@ -9,12 +9,15 @@ import sys
 from candidate_eval.service import load_env, run_review, run_smoke, test_llm_connectivity
 
 
-def cmd_smoke(_: argparse.Namespace) -> int:
+def cmd_smoke(args: argparse.Namespace) -> int:
     load_env()
-    checks, code = run_smoke()
+    checks, code = run_smoke(probe_llm=not args.local_only)
     print(json.dumps(checks, indent=2))
     if code == 0:
-        print("OK: container smoke passed (mail mount + keywords + LLM)")
+        if args.local_only:
+            print("OK: local smoke passed (mail + config; LLM not probed)")
+        else:
+            print("OK: container smoke passed (mail mount + keywords + LLM)")
     elif code == 2:
         print(checks.get("warning", "model warning"), file=sys.stderr)
     else:
@@ -66,6 +69,11 @@ def main(argv: list[str] | None = None) -> None:
     sub = parser.add_subparsers(dest="command", required=True)
 
     p_smoke = sub.add_parser("smoke", help="Validate mounts, keywords, and LLM connectivity")
+    p_smoke.add_argument(
+        "--local-only",
+        action="store_true",
+        help="Skip LLM network probe (same checks as the portal Runtime panel)",
+    )
     p_smoke.set_defaults(func=cmd_smoke)
 
     p_review = sub.add_parser("review", help="Run screening (scaffold)")

@@ -169,8 +169,10 @@
       <p class="meta">
         <strong>API_URL</strong> <code>{{ llm_env.api_url or "(unset)" }}</code><br />
         <strong>MODEL_NAME</strong> <code>{{ llm_env.model_name or "(unset)" }}</code><br />
-        <strong>CERT_FILE</strong> <code>{{ llm_env.cert_file or "(unset)" }}</code><br />
+        <strong>CERT_FILE</strong> <code>{{ llm_env.cert_file or "(unset)" }}</code>
+        {% if llm_env.cert_exists %} · found{% else %} · <span style="color:var(--fail)">missing</span>{% endif %}<br />
         <strong>TOKEN_FILE</strong> <code>{{ llm_env.token_file or "(unset)" }}</code>
+        {% if llm_env.token_exists %} · found{% else %} · <span style="color:var(--fail)">missing</span>{% endif %}
       </p>
       <div class="actions">
         <form method="post" action="/llm-test" id="llm-test-form">
@@ -199,9 +201,12 @@
         <div class="status ok">Healthy · port {{ port }}</div>
       {% elif smoke.get('llm_reachable') %}
         <div class="status warn">Degraded · port {{ port }}</div>
-      {% else %}
+      {% elif smoke.get('error') %}
         <div class="status fail">Checks incomplete · port {{ port }}</div>
+      {% else %}
+        <div class="status warn">Partial · port {{ port }}</div>
       {% endif %}
+      <p class="hint" style="margin-top:0">Local config only — use <strong>Test LLM connectivity</strong> above to probe the model.</p>
       <pre>{{ smoke | tojson(indent=2) }}</pre>
     </section>
 

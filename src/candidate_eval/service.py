@@ -11,8 +11,34 @@ import yaml
 from dotenv import load_dotenv
 
 
+def project_root() -> Path:
+    """Repo root: .../src/candidate_eval/service.py -> parents[2]."""
+    return Path(__file__).resolve().parents[2]
+
+
 def load_env() -> None:
+    # Load .env from repo root first so Mac runs work even if cwd differs.
+    root_env = project_root() / ".env"
+    if root_env.is_file():
+        load_dotenv(root_env, override=False)
     load_dotenv(override=False)
+
+
+def resolve_secret_path(raw: str, *, default_rel: str | None = None) -> Path:
+    """Resolve CERT_FILE/TOKEN_FILE against cwd, then repo root (Mac-friendly)."""
+    value = (raw or "").strip() or (default_rel or "")
+    if not value:
+        return Path()
+    path = Path(value).expanduser()
+    if path.is_absolute():
+        return path
+    if path.is_file():
+        return path.resolve()
+    rooted = project_root() / path
+    if rooted.is_file():
+        return rooted.resolve()
+    # Prefer repo-root relative for error messages even if missing
+    return rooted.resolve()
 
 
 def resolve_keywords(cli_keywords: str | list[str] | None = None) -> list[str]:
@@ -21,7 +47,8 @@ def resolve_keywords(cli_keywords: str | list[str] | None = None) -> list[str]:
     elif isinstance(cli_keywords, str):
         keywords = [k.strip() for k in cli_keywords.split(",") if k.strip()]
     else:
-        config_path = Path(os.environ.get("ROLE_CONFIG_PATH", "./config/role_requirements.yaml"))
+        raw = os.environ.get("ROLE_CONFIG_PATH", "./config/role_requirements.yaml")
+        config_path = resolve_secret_path(raw, default_rel="./config/role_requirements.yaml")
         if not config_path.is_file():
             raise ValueError(f"ROLE_CONFIG_PATH not found: {config_path}")
         data = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
@@ -36,8 +63,14 @@ def resolve_keywords(cli_keywords: str | list[str] | None = None) -> list[str]:
 
 def _llm_config() -> dict:
     """Resolve CERT_FILE / TOKEN_FILE / API_URL / MODEL_NAME from env."""
-    cert_file = os.environ.get("CERT_FILE", "").strip()
-    token_file = os.environ.get("TOKEN_FILE", "").strip()
+    cert_path = resolve_secret_path(
+        os.environ.get("CERT_FILE", ""),
+        default_rel="./SSLcert/qwen-tls.crt",
+    )
+    token_path = resolve_secret_path(
+        os.environ.get("TOKEN_FILE", ""),
+        default_rel="./SSLcert/token_qwen3_8.txt",
+    )
     api_url = os.environ.get("API_URL", "").strip()
     model_name = (
         os.environ.get("MODEL_NAME", "").strip()
@@ -50,23 +83,20 @@ def _llm_config() -> dict:
             api_url = f"{base}/chat/completions"
 
     token = ""
-    if token_file:
-        path = Path(token_file)
-        if path.is_file():
-            token = path.read_text(encoding="utf-8").strip()
+    if token_path.is_file():
+        token = token_path.read_text(encoding="utf-8").strip()
     if not token:
         token = os.environ.get("LLM_API_KEY", "").strip()
 
     verify: str | bool = True
-    if cert_file:
-        cert_path = Path(cert_file)
-        verify = str(cert_path) if cert_path.is_file() else True
+    if cert_path.is_file():
+        verify = str(cert_path)
 
     return {
-        "cert_file": cert_file,
-        "cert_exists": bool(cert_file and Path(cert_file).is_file()),
-        "token_file": token_file,
-        "token_exists": bool(token_file and Path(token_file).is_file()),
+        "cert_file": str(cert_path) if str(cert_path) != "." else "",
+        "cert_exists": cert_path.is_file(),
+        "token_file": str(token_path) if str(token_path) != "." else "",
+        "token_exists": token_path.is_file(),
         "token_loaded": bool(token),
         "api_url": api_url,
         "model_name": model_name,
@@ -143,6 +173,15 @@ def test_llm_connectivity() -> tuple[dict, int]:
         result["error"] = "MODEL_NAME is not set"
         return result, 1
 
+    # Prefer a short probe timeout so the UI button fails fast offline.
+    probe_timeout = float(
+        os.environ.get(
+            "LLM_PROBE_TIMEOUT_SECONDS",
+            os.environ.get("LLM_SMOKE_TIMEOUT_SECONDS", "8"),
+        )
+    )
+    prev_timeout = os.environ.get("LLM_TIMEOUT_SECONDS")
+    os.environ["LLM_TIMEOUT_SECONDS"] = str(probe_timeout)
     try:
         payload = llm_chat(
             [{"role": "user", "content": "Reply with exactly: pong"}],
@@ -160,6 +199,11 @@ def test_llm_connectivity() -> tuple[dict, int]:
         result["llm_error"] = str(exc)
         result["error"] = f"cannot reach LLM at {cfg['api_url']}"
         return result, 1
+    finally:
+        if prev_timeout is None:
+            os.environ.pop("LLM_TIMEOUT_SECONDS", None)
+        else:
+            os.environ["LLM_TIMEOUT_SECONDS"] = prev_timeout
 
 
 def resolve_mail_paths(
@@ -212,8 +256,15 @@ def resolve_mail_paths(
 def run_smoke(
     mail_path: str | None = None,
     mail_folder: str | None = None,
+    *,
+    probe_llm: bool = False,
 ) -> tuple[dict, int]:
-    """Return (checks, exit_code). 0=ok, 1=fail, 2=warn."""
+    """Return (checks, exit_code). 0=ok, 1=fail, 2=warn.
+
+    By default skips the network LLM call so the HTTP UI can render even when
+    RHOAI is unreachable (Mac/cloud without VPN). Pass probe_llm=True for CLI
+    smoke or when an explicit connectivity check is wanted.
+    """
     load_env()
 
     mail = resolve_mail_paths(mail_path, mail_folder)
@@ -248,7 +299,8 @@ def run_smoke(
         "api_url": cfg["api_url"],
         "model_name": cfg["model_name"],
         "api_host": host,
-        "llm_reachable": False,
+        "llm_reachable": None,
+        "llm_probed": False,
         "deployment": "podman-or-docker-local",
         "port": port,
     }
@@ -269,6 +321,20 @@ def run_smoke(
 
     output_dir.mkdir(parents=True, exist_ok=True)
 
+    if not probe_llm:
+        checks["ok"] = True
+        checks["llm_reachable"] = None
+        checks["message"] = (
+            "local smoke passed (mail + cert/token files + API_URL config); "
+            "LLM not probed — use Test LLM connectivity"
+        )
+        return checks, 0
+
+    checks["llm_probed"] = True
+    # Short timeout so CLI/API probes fail fast when RHOAI is unreachable.
+    smoke_timeout = float(os.environ.get("LLM_SMOKE_TIMEOUT_SECONDS", "8"))
+    prev_timeout = os.environ.get("LLM_TIMEOUT_SECONDS")
+    os.environ["LLM_TIMEOUT_SECONDS"] = str(smoke_timeout)
     try:
         payload = llm_chat(
             [{"role": "user", "content": "Reply with exactly: pong"}],
@@ -283,9 +349,15 @@ def run_smoke(
         checks["message"] = "smoke passed (mail + CERT_FILE + TOKEN_FILE + API_URL)"
         return checks, 0
     except Exception as exc:  # noqa: BLE001
+        checks["llm_reachable"] = False
         checks["llm_error"] = str(exc)
         checks["error"] = f"cannot reach LLM at {cfg['api_url']}"
         return checks, 1
+    finally:
+        if prev_timeout is None:
+            os.environ.pop("LLM_TIMEOUT_SECONDS", None)
+        else:
+            os.environ["LLM_TIMEOUT_SECONDS"] = prev_timeout
 
 
 def run_review(

@@ -13,6 +13,8 @@ from fastapi.templating import Jinja2Templates
 
 from candidate_eval import __version__
 from candidate_eval.service import (
+    _llm_config,
+    load_env,
     resolve_keywords,
     run_review,
     run_smoke,
@@ -58,11 +60,17 @@ def _default_mail_folder() -> str:
 
 
 def _llm_env_summary() -> dict:
+    load_env()
+    cfg = _llm_config()
     return {
-        "cert_file": os.environ.get("CERT_FILE", ""),
-        "token_file": os.environ.get("TOKEN_FILE", ""),
-        "api_url": os.environ.get("API_URL", ""),
-        "model_name": os.environ.get("MODEL_NAME", "") or os.environ.get("LLM_MODEL_NAME", ""),
+        "cert_file": cfg["cert_file"] or os.environ.get("CERT_FILE", ""),
+        "cert_exists": cfg["cert_exists"],
+        "token_file": cfg["token_file"] or os.environ.get("TOKEN_FILE", ""),
+        "token_exists": cfg["token_exists"],
+        "api_url": cfg["api_url"] or os.environ.get("API_URL", ""),
+        "model_name": cfg["model_name"]
+        or os.environ.get("MODEL_NAME", "")
+        or os.environ.get("LLM_MODEL_NAME", ""),
     }
 
 

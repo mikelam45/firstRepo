@@ -66,9 +66,44 @@ PY
 
 mkdir -p SSLcert output/candidate_reviews
 
+# Auto-pick up common download names if exact files are missing
+if [[ ! -f SSLcert/qwen-tls.crt ]]; then
+  for cand in \
+    "$HOME/Downloads/qwen-tls.crt" \
+    "$HOME/Downloads/qwen-tls"*.crt \
+    ./qwen-tls.crt; do
+    # shellcheck disable=SC2086
+    if compgen -G "$cand" >/dev/null 2>&1; then
+      src="$(compgen -G "$cand" | head -1)"
+      cp "$src" SSLcert/qwen-tls.crt
+      echo "==> Copied cert from $src -> SSLcert/qwen-tls.crt"
+      break
+    fi
+  done
+fi
+if [[ ! -f SSLcert/token_qwen3_8.txt ]]; then
+  for cand in \
+    "$HOME/Downloads/token_qwen3_8.txt" \
+    "$HOME/Downloads/token_qwen"*.txt \
+    ./token_qwen3_8.txt; do
+    if compgen -G "$cand" >/dev/null 2>&1; then
+      src="$(compgen -G "$cand" | head -1)"
+      cp "$src" SSLcert/token_qwen3_8.txt
+      echo "==> Copied token from $src -> SSLcert/token_qwen3_8.txt"
+      break
+    fi
+  done
+fi
+
 if [[ ! -f SSLcert/qwen-tls.crt || ! -f SSLcert/token_qwen3_8.txt ]]; then
-  echo "!! Warning: missing SSLcert/qwen-tls.crt and/or token_qwen3_8.txt"
-  echo "   Portal UI will still start; LLM connectivity test will fail until they are present."
+  echo "!! Warning: place secrets here (exact names):"
+  echo "     $ROOT/SSLcert/qwen-tls.crt"
+  echo "     $ROOT/SSLcert/token_qwen3_8.txt"
+  echo "   Portal UI will still start; LLM test needs those files."
+else
+  echo "==> Secrets OK:"
+  echo "     $ROOT/SSLcert/qwen-tls.crt"
+  echo "     $ROOT/SSLcert/token_qwen3_8.txt"
 fi
 
 LLM_HOST="${RHOAI_LLM_HOST:-redhataiqwen38-27b-int4-rhoai-test.apps.demo.rhoai.demo}"
