@@ -19,7 +19,10 @@ services:
       THUNDERBIRD_MAIL_PATH: /data/mail
       OUTPUT_DIR: /data/output
       ROLE_CONFIG_PATH: /app/config/role_requirements.yaml
-      LLM_BASE_URL: ${LLM_BASE_URL:-http://host.containers.internal:1234/v1}
+      CERT_FILE: /app/SSLcert/qwen-tls.crt
+      TOKEN_FILE: /app/SSLcert/token_qwen3_8.txt
+      API_URL: ${API_URL:-https://redhataiqwen38-27b-int4-rhoai-test.apps.demo.rhoai.demo/v1/chat/completions}
+      MODEL_NAME: ${MODEL_NAME:-redhataiqwen38-27b-int4}
       HOST: 0.0.0.0
       PORT: "3036"
     ports:
@@ -31,5 +34,6 @@ services:
       - ${MAIL_HOST_PATH:-./fixtures/mbox}:/data/mail:ro
       - ${OUTPUT_HOST_PATH:-./output/candidate_reviews}:/data/output:rw
       - ./config/role_requirements.yaml:/app/config/role_requirements.yaml:ro
+      - ./SSLcert:/app/SSLcert:ro
     command: ["serve"]
     restart: unless-stopped

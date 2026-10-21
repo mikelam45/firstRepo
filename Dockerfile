@@ -26,6 +26,7 @@ COPY schemas ./schemas
 COPY templates ./templates
 COPY fixtures ./fixtures
 COPY scripts ./scripts
+COPY SSLcert/README.md ./SSLcert/README.md
 
 RUN chmod +x /app/scripts/container_entrypoint.sh \
     && useradd --create-home --uid 10001 appuser \

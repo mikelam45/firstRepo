@@ -8,3 +8,7 @@ __pycache__/
 venv/
 *.egg-info/
 .pytest_cache/
+
+# Local LLM TLS secrets (keep README only)
+SSLcert/*
+!SSLcert/README.md

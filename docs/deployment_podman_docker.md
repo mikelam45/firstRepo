@@ -47,16 +47,22 @@ podman compose run --rm screener shell
 
 Inside the container, `THUNDERBIRD_MAIL_PATH=/data/mail` and `TARGET_MAIL_FOLDER` selects the mbox file name (fixture default: `Applications`).
 
-## Reaching the host LLM
+## LLM: CERT_FILE, TOKEN_FILE, API_URL, MODEL_NAME
 
-| Runtime | Typical `LLM_BASE_URL` |
-| --- | --- |
-| Podman | `http://host.containers.internal:1234/v1` |
-| Docker Desktop | `http://host.docker.internal:1234/v1` |
+Configured in `.env` (see [`.env.example`](../.env.example) and [`SSLcert/README.md`](../SSLcert/README.md)):
 
-`compose.yml` registers both names via `extra_hosts: host-gateway`.
+```env
+CERT_FILE="./SSLcert/qwen-tls.crt"
+TOKEN_FILE="./SSLcert/token_qwen3_8.txt"
+API_URL="https://redhataiqwen38-27b-int4-rhoai-test.apps.demo.rhoai.demo/v1/chat/completions"
+MODEL_NAME="redhataiqwen38-27b-int4"
+```
 
-Ensure the LLM server listens on an address the container can reach (binding only to `127.0.0.1` on Linux often blocks containers — bind `0.0.0.0` or use a published port intentionally).
+Smoke/`llm_chat` uses the cert for TLS verify, reads the bearer token from `TOKEN_FILE`, and POSTs to `API_URL` with `MODEL_NAME`.
+
+For a local OpenAI-compatible host instead, you can still point `API_URL` at that server’s `/v1/chat/completions` and mount/provide cert+token as needed.
+
+`compose.yml` still registers `host.containers.internal` / `host.docker.internal` via `extra_hosts: host-gateway` when the model runs on the host.
 
 ## SELinux (Podman on Fedora/RHEL)
 
