@@ -183,14 +183,15 @@ knockouts:
 
 Template: [`.env.example`](../.env.example). Copy to `.env` and fill local values.
 
-```env
-# Thunderbird mbox (read-only). macOS default pattern shown; Linux often:
-# ~/.thunderbird/<profile>/Mail/Local Folders
-THUNDERBIRD_MAIL_PATH="/Users/your_username/Library/Thunderbird/Profiles/xxxxxx.default-release/Mail/Local Folders"
-TARGET_MAIL_FOLDER="INBOX"
+**Deployment model:** the screener runs **locally in a Podman or Docker container** (see [§4.1](#41-local-podman--docker-deployment)). Host paths for mail and output are bind-mounted; the LLM stays on the host/LAN and is reached via `host.containers.internal` / `host.docker.internal`.
 
-# OpenAI-compatible local LLM
-LLM_BASE_URL="http://192.168.1.100:1234/v1"
+```env
+# Inside the container (compose defaults):
+THUNDERBIRD_MAIL_PATH="/data/mail"
+TARGET_MAIL_FOLDER="Applications"
+
+# OpenAI-compatible LLM on the host (Podman alias shown)
+LLM_BASE_URL="http://host.containers.internal:1234/v1"
 LLM_MODEL_NAME="llama-3-8b-instruct"
 LLM_API_KEY="lm-studio"
 LLM_TEMPERATURE=0.2
@@ -198,17 +199,50 @@ LLM_MAX_TOKENS=2048
 LLM_TIMEOUT_SECONDS=60
 LLM_MAX_RETRIES=3
 
-# Pipeline
+# Pipeline paths inside the container
 BATCH_SIZE=10
-OUTPUT_DIR="./output/candidate_reviews"
-ROLE_CONFIG_PATH="./config/role_requirements.yaml"
+OUTPUT_DIR="/data/output"
+ROLE_CONFIG_PATH="/app/config/role_requirements.yaml"
 PROMPT_VERSION="scorecard-v1"
 DEBUG=true
+
+# Host-side compose bind mounts
+MAIL_HOST_PATH=./fixtures/mbox
+OUTPUT_HOST_PATH=./output/candidate_reviews
 ```
 
-**Connectivity check:** `GET {LLM_BASE_URL}/models` must return the configured model before a batch starts. On failure, exit non-zero; do not partially write tiers.
+**Connectivity check:** `GET {LLM_BASE_URL}/models` must return the configured model before a batch starts (`candidate-eval smoke` / compose default command). On failure, exit non-zero; do not partially write tiers.
 
-**Privacy:** Candidate PII/CV content is sent only to `LLM_BASE_URL` (operator-controlled LAN). Do not log full CV bodies at `INFO`; use `DEBUG` only on disposable fixtures.
+**Privacy:** Candidate PII/CV content is sent only to `LLM_BASE_URL` (operator-controlled host/LAN). Do not log full CV bodies at `INFO`; use `DEBUG` only on disposable fixtures. Prefer read-only mail mounts (`:ro`).
+
+### 4.1 Local Podman / Docker deployment
+
+| Artifact | Purpose |
+| :--- | :--- |
+| [`Dockerfile`](../Dockerfile) | Python 3.12 image, non-root user, entrypoint |
+| [`compose.yml`](../compose.yml) | Build/run service, volumes, `host-gateway` aliases |
+| [`scripts/container_entrypoint.sh`](../scripts/container_entrypoint.sh) | `smoke` \| `review` \| `shell` |
+
+```bash
+cp .env.example .env
+# Edit LLM_BASE_URL / MAIL_HOST_PATH (Thunderbird folder or ./fixtures/mbox)
+
+# Podman (preferred local)
+podman compose up --build
+# or: podman-compose up --build
+
+# Docker
+docker compose up --build
+
+# Keyword-scoped review run (scaffold CLI)
+podman compose run --rm screener review --keywords "kubernetes,react,system design,remote"
+```
+
+**Volume map:** host `MAIL_HOST_PATH` → `/data/mail` (ro); host `OUTPUT_HOST_PATH` → `/data/output` (rw); `./config/role_requirements.yaml` → `/app/config/role_requirements.yaml` (ro).
+
+**SELinux (Fedora/RHEL Podman):** use `:Z` on binds, e.g. `${MAIL_HOST_PATH}:/data/mail:ro,Z`.
+
+**Host LLM:** LM Studio / Ollama / vLLM must listen on an interface reachable from the container (not only `127.0.0.1` bind-all issues — use `0.0.0.0` or rootful port publish as appropriate). Compose adds `extra_hosts` for `host.containers.internal` and `host.docker.internal` via `host-gateway`.
 
 ---
 
@@ -387,7 +421,7 @@ Until then, stop after Phase 3 shortlist + human communication.
 
 ## 11. Implementation Next Steps
 
-1. Point `THUNDERBIRD_MAIL_PATH` at a real mbox **or** use `fixtures/mbox/`.
-2. Confirm `GET {LLM_BASE_URL}/models` lists `LLM_MODEL_NAME`.
+1. `cp .env.example .env` and set `MAIL_HOST_PATH` / `LLM_BASE_URL` for local Podman or Docker.
+2. `podman compose up --build` (or `docker compose up --build`) and confirm **smoke** passes against the host LLM.
 3. Edit `config/role_requirements.yaml` for the open role and keywords.
-4. Implement `review_candidates.py` against this contract (ingest → score → emit artifacts).
+4. Complete the `review` CLI path (ingest → score → emit artifacts) inside the existing container image/entrypoint.

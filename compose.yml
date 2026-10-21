@@ -1,0 +1,41 @@
+# Local deployment with Podman or Docker Compose.
+#
+# Podman:  podman compose up --build
+#          (or) podman-compose up --build
+# Docker:  docker compose up --build
+#
+# Host LLM: set LLM_BASE_URL to reach the model on the host machine, e.g.
+#   http://host.containers.internal:1234/v1   (Podman)
+#   http://host.docker.internal:1234/v1       (Docker Desktop)
+#   http://10.89.0.1:1234/v1                 (Podman rootless bridge; check `podman network inspect`)
+
+name: candidate-eval
+
+services:
+  screener:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: localhost/candidate-eval:local
+    container_name: candidate-eval
+    env_file:
+      - .env
+    environment:
+      THUNDERBIRD_MAIL_PATH: /data/mail
+      OUTPUT_DIR: /data/output
+      ROLE_CONFIG_PATH: /app/config/role_requirements.yaml
+      # Prefer Podman host alias; override in .env for Docker Desktop if needed
+      LLM_BASE_URL: ${LLM_BASE_URL:-http://host.containers.internal:1234/v1}
+    extra_hosts:
+      - "host.containers.internal:host-gateway"
+      - "host.docker.internal:host-gateway"
+    volumes:
+      # Mount local Thunderbird folder or fixtures/mbox onto /data/mail
+      # Podman + SELinux hosts: append :Z (e.g. ./fixtures/mbox:/data/mail:ro,Z)
+      - ${MAIL_HOST_PATH:-./fixtures/mbox}:/data/mail:ro
+      - ${OUTPUT_HOST_PATH:-./output/candidate_reviews}:/data/output:rw
+      - ./config/role_requirements.yaml:/app/config/role_requirements.yaml:ro
+    # Default command validates env + LLM; override to process mail:
+    #   podman compose run --rm screener review --keywords "kubernetes,react"
+    command: ["smoke"]
+    restart: "no"

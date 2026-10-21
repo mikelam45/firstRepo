@@ -1,40 +1,44 @@
 # Candidate Evaluation Framework
 
-Criteria-driven screening workflow for applicant emails/CVs: Thunderbird **mbox** ingest, keyword-scoped local LLM scoring, weighted tiers, and human-gated rejection.
+Criteria-driven screening for applicant emails/CVs. **Deploy locally with Podman or Docker**: bind-mount Thunderbird/fixtures mail, write scorecards to a host output folder, and call an OpenAI-compatible LLM on the host.
+
+## Local deployment (Podman / Docker)
+
+```bash
+cp .env.example .env
+# Point MAIL_HOST_PATH at Thunderbird Local Folders or keep ./fixtures/mbox
+# Set LLM_BASE_URL for your host LLM (Podman default: host.containers.internal)
+
+podman compose up --build          # or: docker compose up --build
+podman compose run --rm screener review --keywords "kubernetes,react,system design,remote"
+```
+
+| File | Purpose |
+| --- | --- |
+| [`Dockerfile`](Dockerfile) | Local screener image (non-root) |
+| [`compose.yml`](compose.yml) | Volumes + `host-gateway` aliases for host LLM |
+| [`.env.example`](.env.example) | Container paths, mount overrides, LLM URL |
+
+Default command runs **`smoke`**: checks mail mount, required `review_keywords`, and `GET /models` on the LLM.
 
 ## Spec & SOP
 
-- **[Framework spec](docs/candidate_evaluation_framework.md)** — goals, unified scoring, keywords, knockouts, I/O contracts, LLM schema, Phase 4 deferral
-- **[Screening SOP / decision tree](docs/sop_screening_decision_tree.md)** — operator steps and human review gate
+- **[Framework spec](docs/candidate_evaluation_framework.md)** — scoring, keywords, knockouts, I/O, **§4.1 container deployment**, Phase 4 deferral
+- **[Podman/Docker deploy guide](docs/deployment_podman_docker.md)** — mounts, host LLM aliases, SELinux notes
+- **[Screening SOP](docs/sop_screening_decision_tree.md)** — operator decision tree + human rejection gate
 
 ## Configuration
 
 | File | Purpose |
 | --- | --- |
-| [`.env.example`](.env.example) | Thunderbird path, LLM endpoint, pipeline settings |
 | [`config/role_requirements.yaml`](config/role_requirements.yaml) | Role must-haves, knockouts, **`review_keywords`** |
 | [`schemas/scorecard.schema.json`](schemas/scorecard.schema.json) | LLM scorecard JSON contract |
 
-Copy env template:
-
-```bash
-cp .env.example .env
-```
-
-Override keywords for one run (when the processor exists):
-
-```bash
-python review_candidates.py --keywords "kubernetes,react,system design,remote"
-```
-
-## Templates
+## Templates & fixtures
 
 - Scorecard: [`templates/scorecard/cv_review.md`](templates/scorecard/cv_review.md)
-- Emails: [`templates/email/`](templates/email/) (invite, status update, rejection)
-
-## Fixtures
-
-Sample mbox: [`fixtures/mbox/Applications`](fixtures/mbox/Applications) (strong + weak applicants for keyword knockout tests).
+- Emails: [`templates/email/`](templates/email/)
+- Sample mbox: [`fixtures/mbox/Applications`](fixtures/mbox/Applications)
 
 ## Scoring (summary)
 
@@ -50,4 +54,4 @@ Sample mbox: [`fixtures/mbox/Applications`](fixtures/mbox/Applications) (strong 
 
 ## Status
 
-Specification and templates are complete. Pipeline script `review_candidates.py` is the next implementation step (see spec §11).
+Spec, templates, and **local container runtime** (`smoke` + `review` scaffold) are in place. Full ingest→LLM→artifacts pipeline is the next step inside the same image/entrypoint.
