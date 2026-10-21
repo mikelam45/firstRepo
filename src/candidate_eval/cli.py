@@ -6,7 +6,7 @@ import argparse
 import json
 import sys
 
-from candidate_eval.service import load_env, run_review, run_smoke
+from candidate_eval.service import load_env, run_review, run_smoke, test_llm_connectivity
 
 
 def cmd_smoke(_: argparse.Namespace) -> int:
@@ -35,6 +35,17 @@ def cmd_review(args: argparse.Namespace) -> int:
         return 1
     print(json.dumps(result, indent=2))
     return 0
+
+
+def cmd_llm_test(_: argparse.Namespace) -> int:
+    load_env()
+    result, code = test_llm_connectivity()
+    print(json.dumps(result, indent=2))
+    if code == 0:
+        print("OK: LLM connectivity")
+    else:
+        print(f"FAIL: {result.get('error', 'LLM test failed')}", file=sys.stderr)
+    return code
 
 
 def cmd_serve(args: argparse.Namespace) -> int:
@@ -74,6 +85,9 @@ def main(argv: list[str] | None = None) -> None:
         help="mbox folder name inside mail path (overrides TARGET_MAIL_FOLDER)",
     )
     p_review.set_defaults(func=cmd_review)
+
+    p_llm = sub.add_parser("llm-test", help="Test LLM connectivity (CERT/TOKEN/API_URL)")
+    p_llm.set_defaults(func=cmd_llm_test)
 
     p_serve = sub.add_parser("serve", help="Run local HTTP UI/API (default port 3036)")
     p_serve.add_argument("--host", default=None, help="Bind host (default 0.0.0.0)")

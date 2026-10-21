@@ -87,7 +87,7 @@
       outline-offset: 1px;
     }
     .hint { font-size: 0.85rem; opacity: 0.7; margin: 0.4rem 0 1rem; }
-    button {
+    button, .btn {
       appearance: none;
       border: 0;
       background: var(--accent);
@@ -97,9 +97,33 @@
       padding: 0.7rem 1.2rem;
       cursor: pointer;
       transition: background 0.15s ease, transform 0.15s ease;
+      display: inline-block;
+      text-decoration: none;
     }
-    button:hover { background: var(--accent-deep); }
-    button:active { transform: scale(0.98); }
+    button:hover, .btn:hover { background: var(--accent-deep); }
+    button:active, .btn:active { transform: scale(0.98); }
+    button.secondary, .btn.secondary {
+      background: transparent;
+      color: var(--accent-deep);
+      border: 1px solid var(--accent);
+    }
+    button.secondary:hover, .btn.secondary:hover {
+      background: rgba(15, 107, 92, 0.08);
+    }
+    button:disabled {
+      opacity: 0.55;
+      cursor: wait;
+    }
+    .actions { display: flex; flex-wrap: wrap; gap: 0.6rem; align-items: center; margin-top: 0.25rem; }
+    .meta {
+      margin: 0 0 0.9rem;
+      font-size: 0.85rem;
+      line-height: 1.45;
+      opacity: 0.8;
+    }
+    .meta code { font-size: 0.8rem; }
+    #llm-test-status { margin-top: 0.85rem; }
+    #llm-test-status[hidden] { display: none; }
     .status {
       display: inline-block;
       font-size: 0.8rem;
@@ -141,13 +165,42 @@
     </p>
 
     <section class="panel">
+      <h2>LLM connectivity</h2>
+      <p class="meta">
+        <strong>API_URL</strong> <code>{{ llm_env.api_url or "(unset)" }}</code><br />
+        <strong>MODEL_NAME</strong> <code>{{ llm_env.model_name or "(unset)" }}</code><br />
+        <strong>CERT_FILE</strong> <code>{{ llm_env.cert_file or "(unset)" }}</code><br />
+        <strong>TOKEN_FILE</strong> <code>{{ llm_env.token_file or "(unset)" }}</code>
+      </p>
+      <div class="actions">
+        <form method="post" action="/llm-test" id="llm-test-form">
+          <button type="submit" id="llm-test-btn">Test LLM connectivity</button>
+        </form>
+        <button type="button" class="secondary" id="llm-test-ajax">Test (live)</button>
+      </div>
+      <div id="llm-test-status" {% if llm_test is none %}hidden{% endif %}>
+        {% if llm_test is not none %}
+          {% if llm_test_ok %}
+            <div class="status ok" style="margin-top:0.85rem">LLM reachable</div>
+          {% else %}
+            <div class="status fail" style="margin-top:0.85rem">LLM test failed</div>
+          {% endif %}
+          <pre id="llm-test-json">{{ llm_test | tojson(indent=2) }}</pre>
+        {% else %}
+          <div class="status warn" style="margin-top:0.85rem" id="llm-test-label"></div>
+          <pre id="llm-test-json"></pre>
+        {% endif %}
+      </div>
+    </section>
+
+    <section class="panel">
       <h2>Runtime</h2>
       {% if smoke_ok %}
         <div class="status ok">Healthy · port {{ port }}</div>
       {% elif smoke.get('llm_reachable') %}
         <div class="status warn">Degraded · port {{ port }}</div>
       {% else %}
-        <div class="status fail">LLM unreachable · port {{ port }}</div>
+        <div class="status fail">Checks incomplete · port {{ port }}</div>
       {% endif %}
       <pre>{{ smoke | tojson(indent=2) }}</pre>
     </section>
@@ -185,7 +238,47 @@
       {% endif %}
     </section>
 
-    <footer>v{{ version }} · <a href="/health">/health</a> · <a href="/api/smoke">/api/smoke</a></footer>
+    <footer>v{{ version }} · <a href="/health">/health</a> · <a href="/api/smoke">/api/smoke</a> · <a href="/api/llm-test">/api/llm-test</a></footer>
   </main>
+  <script>
+    (function () {
+      var btn = document.getElementById("llm-test-ajax");
+      var formBtn = document.getElementById("llm-test-btn");
+      var statusBox = document.getElementById("llm-test-status");
+      if (!btn || !statusBox) return;
+
+      btn.addEventListener("click", async function () {
+        btn.disabled = true;
+        if (formBtn) formBtn.disabled = true;
+        statusBox.hidden = false;
+        var label = statusBox.querySelector(".status") || document.createElement("div");
+        label.className = "status warn";
+        label.style.marginTop = "0.85rem";
+        label.textContent = "Testing…";
+        if (!statusBox.querySelector(".status")) statusBox.insertBefore(label, statusBox.firstChild);
+        var pre = document.getElementById("llm-test-json");
+        if (!pre) {
+          pre = document.createElement("pre");
+          pre.id = "llm-test-json";
+          statusBox.appendChild(pre);
+        }
+        pre.textContent = "Calling /api/llm-test …";
+        try {
+          var res = await fetch("/api/llm-test", { method: "POST" });
+          var data = await res.json();
+          label.className = data.ok ? "status ok" : "status fail";
+          label.textContent = data.ok ? "LLM reachable" : "LLM test failed";
+          pre.textContent = JSON.stringify(data, null, 2);
+        } catch (err) {
+          label.className = "status fail";
+          label.textContent = "LLM test failed";
+          pre.textContent = String(err);
+        } finally {
+          btn.disabled = false;
+          if (formBtn) formBtn.disabled = false;
+        }
+      });
+    })();
+  </script>
 </body>
 </html>

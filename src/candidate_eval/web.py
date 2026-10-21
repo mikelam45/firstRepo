@@ -12,7 +12,12 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 
 from candidate_eval import __version__
-from candidate_eval.service import resolve_keywords, run_review, run_smoke
+from candidate_eval.service import (
+    resolve_keywords,
+    run_review,
+    run_smoke,
+    test_llm_connectivity,
+)
 
 load_dotenv(override=False)
 
@@ -52,6 +57,15 @@ def _default_mail_folder() -> str:
     return os.environ.get("TARGET_MAIL_FOLDER", "Applications")
 
 
+def _llm_env_summary() -> dict:
+    return {
+        "cert_file": os.environ.get("CERT_FILE", ""),
+        "token_file": os.environ.get("TOKEN_FILE", ""),
+        "api_url": os.environ.get("API_URL", ""),
+        "model_name": os.environ.get("MODEL_NAME", "") or os.environ.get("LLM_MODEL_NAME", ""),
+    }
+
+
 def _page_context(
     *,
     keywords: str | None = None,
@@ -59,10 +73,18 @@ def _page_context(
     mail_folder: str | None = None,
     result: dict | None = None,
     error: str | None = None,
+    llm_test: dict | None = None,
+    llm_test_ok: bool | None = None,
+    run_llm_check: bool = False,
 ) -> dict:
     path = mail_path if mail_path is not None else _default_mail_path()
     folder = mail_folder if mail_folder is not None else _default_mail_folder()
     checks, code = run_smoke(mail_path=path, mail_folder=folder)
+
+    if run_llm_check and llm_test is None:
+        llm_test, llm_code = test_llm_connectivity()
+        llm_test_ok = llm_code == 0
+
     return {
         "role_title": _role_title(),
         "keywords": keywords if keywords is not None else _default_keywords_text(),
@@ -72,6 +94,9 @@ def _page_context(
         "smoke_ok": code == 0,
         "result": result,
         "error": error,
+        "llm_env": _llm_env_summary(),
+        "llm_test": llm_test,
+        "llm_test_ok": llm_test_ok,
         "port": PORT,
         "version": __version__,
     }
@@ -86,6 +111,13 @@ def health() -> dict:
 def api_smoke(mail_path: str | None = None, mail_folder: str | None = None) -> JSONResponse:
     checks, code = run_smoke(mail_path=mail_path, mail_folder=mail_folder)
     return JSONResponse(checks, status_code=200 if code == 0 else (503 if code == 1 else 200))
+
+
+@app.get("/api/llm-test")
+@app.post("/api/llm-test")
+def api_llm_test() -> JSONResponse:
+    result, code = test_llm_connectivity()
+    return JSONResponse(result, status_code=200 if code == 0 else 503)
 
 
 @app.post("/api/review")
@@ -107,6 +139,16 @@ async def api_review(request: Request) -> JSONResponse:
 @app.get("/", response_class=HTMLResponse)
 def index(request: Request) -> HTMLResponse:
     return templates.TemplateResponse(request, "index.html", _page_context())
+
+
+@app.post("/llm-test", response_class=HTMLResponse)
+def llm_test_form(request: Request) -> HTMLResponse:
+    llm_test, code = test_llm_connectivity()
+    return templates.TemplateResponse(
+        request,
+        "index.html",
+        _page_context(llm_test=llm_test, llm_test_ok=(code == 0)),
+    )
 
 
 @app.post("/review", response_class=HTMLResponse)

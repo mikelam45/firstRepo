@@ -104,6 +104,64 @@ def llm_chat(messages: list[dict], *, max_tokens: int | None = None) -> dict:
         return resp.json()
 
 
+def test_llm_connectivity() -> tuple[dict, int]:
+    """UI/API connectivity check for CERT_FILE + TOKEN_FILE + API_URL + MODEL_NAME."""
+    load_env()
+    cfg = _llm_config()
+    host = urlparse(cfg["api_url"]).netloc if cfg["api_url"] else ""
+    result: dict = {
+        "ok": False,
+        "test": "llm_connectivity",
+        "cert_file": cfg["cert_file"],
+        "cert_exists": cfg["cert_exists"],
+        "token_file": cfg["token_file"],
+        "token_exists": cfg["token_exists"],
+        "token_loaded": cfg["token_loaded"],
+        "api_url": cfg["api_url"],
+        "model_name": cfg["model_name"],
+        "api_host": host,
+        "tls_verify": cfg["verify"] if isinstance(cfg["verify"], bool) else str(cfg["verify"]),
+        "llm_reachable": False,
+    }
+
+    if not cfg["cert_file"]:
+        result["error"] = "CERT_FILE is not set in .env"
+        return result, 1
+    if not cfg["cert_exists"]:
+        result["error"] = f"CERT_FILE not found: {cfg['cert_file']}"
+        return result, 1
+    if not cfg["token_file"]:
+        result["error"] = "TOKEN_FILE is not set in .env"
+        return result, 1
+    if not cfg["token_loaded"]:
+        result["error"] = f"TOKEN_FILE missing/empty: {cfg['token_file']}"
+        return result, 1
+    if not cfg["api_url"]:
+        result["error"] = "API_URL is not set"
+        return result, 1
+    if not cfg["model_name"]:
+        result["error"] = "MODEL_NAME is not set"
+        return result, 1
+
+    try:
+        payload = llm_chat(
+            [{"role": "user", "content": "Reply with exactly: pong"}],
+            max_tokens=16,
+        )
+        result["llm_reachable"] = True
+        choices = payload.get("choices") or []
+        if choices:
+            msg = (choices[0].get("message") or {}).get("content")
+            result["llm_sample"] = (msg or "")[:200]
+        result["ok"] = True
+        result["message"] = "LLM connectivity OK"
+        return result, 0
+    except Exception as exc:  # noqa: BLE001
+        result["llm_error"] = str(exc)
+        result["error"] = f"cannot reach LLM at {cfg['api_url']}"
+        return result, 1
+
+
 def resolve_mail_paths(
     mail_path: str | None = None,
     mail_folder: str | None = None,
