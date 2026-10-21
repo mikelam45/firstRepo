@@ -58,16 +58,23 @@ API_URL="https://redhataiqwen38-27b-int4-rhoai-test.apps.demo.rhoai.demo/v1/chat
 MODEL_NAME="Qwen38-27b-int4"
 ```
 
-### Name resolution
+### Pod DNS / name resolution
 
-The demo hostname is private. Map it before testing:
+The demo hostname is private. [`compose.yml`](../compose.yml) injects it into the **pod `/etc/hosts`** via `extra_hosts` (Podman/Docker `--add-host`):
 
-```text
-192.168.147.135 redhataiqwen38-27b-int4-rhoai-test.apps.demo.rhoai.demo
+```env
+RHOAI_LLM_IP=192.168.147.135
+RHOAI_LLM_HOST=redhataiqwen38-27b-int4-rhoai-test.apps.demo.rhoai.demo
 ```
 
-- Podman/Docker: already in [`compose.yml`](../compose.yml) `extra_hosts`
-- Bare-metal: `sudo bash scripts/setup_hosts.sh`
+Recreate the container after changing these values:
+
+```bash
+podman compose up --build --force-recreate
+# or: docker compose up --build --force-recreate
+```
+
+Bare-metal (host OS, not the pod): `sudo bash scripts/setup_hosts.sh`
 
 Smoke/`llm_chat` uses the cert for TLS verify, reads the bearer token from `TOKEN_FILE`, and POSTs to `API_URL` with `MODEL_NAME`.
 
