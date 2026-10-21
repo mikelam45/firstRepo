@@ -35,10 +35,11 @@ services:
     ports:
       - "${PORT:-3036}:3036"
     # Pod / container DNS setup
+    # Pod DNS: baked into container /etc/hosts at create time (--add-host).
+    # For an already-running pod without recreate: bash scripts/add_pod_hosts.sh
     extra_hosts:
       - "host.containers.internal:host-gateway"
       - "host.docker.internal:host-gateway"
-      # Private RHOAI demo LLM — required so the pod can resolve API_URL
       - "${RHOAI_LLM_HOST:-redhataiqwen38-27b-int4-rhoai-test.apps.demo.rhoai.demo}:${RHOAI_LLM_IP:-192.168.147.135}"
     dns_search: []
     volumes:

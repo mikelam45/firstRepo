@@ -69,11 +69,18 @@ RHOAI_LLM_IP=192.168.147.135
 RHOAI_LLM_HOST=redhataiqwen38-27b-int4-rhoai-test.apps.demo.rhoai.demo
 ```
 
-Recreate the container after changing these values:
+Recreate the container after changing these values (persists across restarts):
 
 ```bash
 podman compose up --build --force-recreate
 # or: docker compose up --build --force-recreate
+```
+
+Already running and need the mapping **now** (no recreate):
+
+```bash
+bash scripts/add_pod_hosts.sh
+# injects: 192.168.147.135 redhataiqwen38-27b-int4-rhoai-test.apps.demo.rhoai.demo
 ```
 
 Bare-metal (host OS, not the pod): `sudo bash scripts/setup_hosts.sh`
