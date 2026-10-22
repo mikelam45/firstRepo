@@ -12,6 +12,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from candidate_eval import __version__
+from candidate_eval.browse_mail import browse_mail
 from candidate_eval.jd_match import (
     extract_keywords_from_jd,
     match_jd_to_candidates,
@@ -188,6 +189,20 @@ def health() -> dict:
 def api_smoke(mail_path: str | None = None, mail_folder: str | None = None) -> JSONResponse:
     checks, code = run_smoke(mail_path=mail_path, mail_folder=mail_folder)
     return JSONResponse(checks, status_code=200 if code == 0 else (503 if code == 1 else 200))
+
+
+@app.get("/api/browse-mail")
+def api_browse_mail(path: str | None = None) -> JSONResponse:
+    """List local folders / mbox-like files under an allowlisted path.
+
+    Allowed roots: the user home directory and the project root only.
+    """
+    try:
+        return JSONResponse(browse_mail(path))
+    except ValueError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
+    except PermissionError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=403)
 
 
 @app.get("/api/llm-test")

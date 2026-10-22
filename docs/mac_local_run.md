@@ -51,6 +51,26 @@ python -m candidate_eval.cli review --keywords "kubernetes, system design, remot
 
 The JD match results panel shows run id, local DB path, and per-candidate privacy flags.
 
+## Browse mailbox folder (Mac)
+
+On the JD match form, next to **Mailbox folder path**, click **Browse…** to open an in-page folder browser (no need to type a long Thunderbird path).
+
+Typical Thunderbird locations:
+
+- `~/Library/Thunderbird/Profiles/<profile>/Mail/<account>/`
+- `~/Library/Thunderbird/Profiles/<profile>/ImapMail/<server>/`
+
+Select a **directory** (Use this folder) to fill `mail_path`, or select an **mbox** file (extensionless folder file such as `Applications`) to fill `mail_path` + `mail_folder`. Typed paths still work; Browse is additive.
+
+API (loopback only):
+
+```bash
+curl -s 'http://127.0.0.1:3036/api/browse-mail'
+curl -s 'http://127.0.0.1:3036/api/browse-mail?path='"$HOME"'/Library/Thunderbird/Profiles'
+```
+
+Listing is limited to your home directory and the project root (path traversal outside those roots is rejected).
+
 ## Doctor
 
 ```bash
