@@ -57,9 +57,9 @@ Configured in `.env` (see [`.env.example`](../.env.example) and [`SSLcert/README
 
 ```env
 # Mac / bare-metal (.env) — resolved against repo root, not cwd
-CERT_FILE="./SSLcert/qwen-tls.crt"
-TOKEN_FILE="./SSLcert/token_qwen3_8.txt"
-# Compose overrides to /app/SSLcert/qwen-tls.crt and /app/SSLcert/token_qwen3_8.txt
+CERT_FILE="/Users/mikelam/SSLcert/qwen-tls.crt"
+TOKEN_FILE="/Users/mikelam/SSLcert/token_qwen3_8.txt"
+# Compose bind-mounts SSL_HOST_PATH (default /Users/mikelam/SSLcert) → /app/SSLcert
 API_URL="https://redhataiqwen38-27b-int4-rhoai-test.apps.demo.rhoai.demo/v1/chat/completions"
 MODEL_NAME="Qwen38-27b-int4"
 ```

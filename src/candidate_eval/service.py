@@ -120,8 +120,14 @@ def _llm_config() -> dict:
     """
     cert_raw = (os.environ.get("CERT_FILE") or "").strip()
     token_raw = (os.environ.get("TOKEN_FILE") or "").strip()
-    cert_path = resolve_repo_path(cert_raw, default_rel="./SSLcert/qwen-tls.crt")
-    token_path = resolve_repo_path(token_raw, default_rel="./SSLcert/token_qwen3_8.txt")
+    cert_path = resolve_repo_path(
+        cert_raw,
+        default_rel="/Users/mikelam/SSLcert/qwen-tls.crt",
+    )
+    token_path = resolve_repo_path(
+        token_raw,
+        default_rel="/Users/mikelam/SSLcert/token_qwen3_8.txt",
+    )
 
     api_url = os.environ.get("API_URL", "").strip()
     model_name = (
@@ -149,10 +155,10 @@ def _llm_config() -> dict:
 
     return {
         "cert_file": cert_display,
-        "cert_file_raw": cert_raw or "./SSLcert/qwen-tls.crt",
+        "cert_file_raw": cert_raw or "/Users/mikelam/SSLcert/qwen-tls.crt",
         "cert_exists": cert_path.is_file(),
         "token_file": token_display,
-        "token_file_raw": token_raw or "./SSLcert/token_qwen3_8.txt",
+        "token_file_raw": token_raw or "/Users/mikelam/SSLcert/token_qwen3_8.txt",
         "token_exists": token_path.is_file(),
         "token_loaded": bool(token),
         "project_root": str(project_root()),

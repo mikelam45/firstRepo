@@ -11,11 +11,10 @@ cd firstRepo
 git checkout cursor/candidate-eval-spec-65c3
 git pull
 
-# Secrets (exact names, not in git):
-mkdir -p SSLcert
-# copy into SSLcert/:
-#   qwen-tls.crt
-#   token_qwen3_8.txt
+# Secrets (absolute paths on the Mac — not in git):
+mkdir -p /Users/mikelam/SSLcert
+#   /Users/mikelam/SSLcert/qwen-tls.crt
+#   /Users/mikelam/SSLcert/token_qwen3_8.txt
 
 bash scripts/run_local_mac.sh
 ```
@@ -51,13 +50,13 @@ UI loads without the model. For **Test LLM connectivity** you need network reach
 | --- | --- |
 | [`.env.example`](.env.example) | Copy to `.env` — Mac paths, `PORT=3036`, LLM settings |
 | [`config/role_requirements.yaml`](config/role_requirements.yaml) | Role + `review_keywords` |
-| [`SSLcert/`](SSLcert/) | `qwen-tls.crt` + `token_qwen3_8.txt` (local secrets) |
+| `/Users/mikelam/SSLcert/` | `qwen-tls.crt` + `token_qwen3_8.txt` (local secrets) |
 
 ```env
 HOST=127.0.0.1
 PORT=3036
-CERT_FILE="./SSLcert/qwen-tls.crt"
-TOKEN_FILE="./SSLcert/token_qwen3_8.txt"
+CERT_FILE="/Users/mikelam/SSLcert/qwen-tls.crt"
+TOKEN_FILE="/Users/mikelam/SSLcert/token_qwen3_8.txt"
 THUNDERBIRD_MAIL_PATH="mailbox://mikelam@systex.com.hk/Inbox/SE_2026"
 ```
 

@@ -16,10 +16,12 @@ PORT="${PORT:-3036}"
 # Loopback only — not exposed as a public/VPS service.
 BIND_HOST="${BIND_HOST:-127.0.0.1}"
 
-CERT_ABS="$ROOT/SSLcert/qwen-tls.crt"
-TOKEN_ABS="$ROOT/SSLcert/token_qwen3_8.txt"
-CERT_ENV="./SSLcert/qwen-tls.crt"
-TOKEN_ENV="./SSLcert/token_qwen3_8.txt"
+# Absolute MacBook secret directory (not under the git repo)
+SSL_DIR="${SSL_DIR:-/Users/mikelam/SSLcert}"
+CERT_ABS="$SSL_DIR/qwen-tls.crt"
+TOKEN_ABS="$SSL_DIR/token_qwen3_8.txt"
+CERT_ENV="$CERT_ABS"
+TOKEN_ENV="$TOKEN_ABS"
 
 doctor() {
   echo "==> Repo: $ROOT"
@@ -39,12 +41,10 @@ doctor() {
     echo "FAIL: cannot curl health endpoint"
     echo "Start with: bash scripts/run_local_mac.sh"
   fi
-  echo "==> Secrets (Mac bare-metal — repo-relative, resolved absolute):"
+  echo "==> Secrets (absolute Mac paths):"
   echo "  CERT_FILE=$CERT_ENV"
-  echo "       -> $CERT_ABS"
   if [[ -f "$CERT_ABS" ]]; then echo "       present"; else echo "       MISSING"; fi
   echo "  TOKEN_FILE=$TOKEN_ENV"
-  echo "       -> $TOKEN_ABS"
   if [[ -f "$TOKEN_ABS" ]]; then echo "       present"; else echo "       MISSING"; fi
 }
 
@@ -62,8 +62,8 @@ if [[ ! -f .env ]]; then
   echo "==> Created .env from .env.example"
 fi
 
-# Force Mac bare-metal paths in .env (never leave /app/SSLcert from compose).
-python3 - <<'PY'
+# Force Mac absolute secret paths in .env
+python3 - <<PY
 from pathlib import Path
 import re
 
@@ -74,14 +74,12 @@ replacements = {
     "PORT": "3036",
     "ROLE_CONFIG_PATH": "./config/role_requirements.yaml",
     "OUTPUT_DIR": "./output/candidate_reviews",
-    "CERT_FILE": "./SSLcert/qwen-tls.crt",
-    "TOKEN_FILE": "./SSLcert/token_qwen3_8.txt",
+    "CERT_FILE": "${CERT_ENV}",
+    "TOKEN_FILE": "${TOKEN_ENV}",
 }
 for key, value in replacements.items():
     pattern = re.compile(rf"^{key}=.*$", re.MULTILINE)
     line = f'{key}="{value}"' if key != "PORT" else f"{key}={value}"
-    if key == "HOST":
-        line = f'HOST="127.0.0.1"'
     if pattern.search(text):
         text = pattern.sub(line, text)
     else:
@@ -92,39 +90,40 @@ for key, value in replacements.items():
     print(f"     {key}={value}")
 PY
 
-mkdir -p SSLcert output/candidate_reviews
+mkdir -p "$SSL_DIR" output/candidate_reviews
 
-# Auto-pick up common download names if exact files are missing
-if [[ ! -f SSLcert/qwen-tls.crt ]]; then
+# Auto-pick up common download names into /Users/mikelam/SSLcert
+if [[ ! -f "$CERT_ABS" ]]; then
   for cand in \
     "$HOME/Downloads/qwen-tls.crt" \
     "$HOME/Downloads/qwen-tls"*.crt \
+    "$ROOT/SSLcert/qwen-tls.crt" \
     ./qwen-tls.crt; do
-    # shellcheck disable=SC2086
     if compgen -G "$cand" >/dev/null 2>&1; then
       src="$(compgen -G "$cand" | head -1)"
-      cp "$src" SSLcert/qwen-tls.crt
-      echo "==> Copied cert from $src -> SSLcert/qwen-tls.crt"
+      cp "$src" "$CERT_ABS"
+      echo "==> Copied cert from $src -> $CERT_ABS"
       break
     fi
   done
 fi
-if [[ ! -f SSLcert/token_qwen3_8.txt ]]; then
+if [[ ! -f "$TOKEN_ABS" ]]; then
   for cand in \
     "$HOME/Downloads/token_qwen3_8.txt" \
     "$HOME/Downloads/token_qwen"*.txt \
+    "$ROOT/SSLcert/token_qwen3_8.txt" \
     ./token_qwen3_8.txt; do
     if compgen -G "$cand" >/dev/null 2>&1; then
       src="$(compgen -G "$cand" | head -1)"
-      cp "$src" SSLcert/token_qwen3_8.txt
-      echo "==> Copied token from $src -> SSLcert/token_qwen3_8.txt"
+      cp "$src" "$TOKEN_ABS"
+      echo "==> Copied token from $src -> $TOKEN_ABS"
       break
     fi
   done
 fi
 
 if [[ ! -f "$CERT_ABS" || ! -f "$TOKEN_ABS" ]]; then
-  echo "!! Warning: place secrets here (exact names):"
+  echo "!! Warning: place secrets here (exact absolute paths):"
   echo "     $CERT_ABS"
   echo "     $TOKEN_ABS"
   echo "   Portal UI will still start; LLM test needs those files."
@@ -174,7 +173,7 @@ export HOST="$BIND_HOST"
 export PORT
 export ROLE_CONFIG_PATH="${ROLE_CONFIG_PATH:-./config/role_requirements.yaml}"
 export OUTPUT_DIR="${OUTPUT_DIR:-./output/candidate_reviews}"
-# Always pin Mac repo-relative secrets (compose uses /app/SSLcert via compose.yml).
+# Always pin absolute Mac secret paths.
 export CERT_FILE="$CERT_ENV"
 export TOKEN_FILE="$TOKEN_ENV"
 

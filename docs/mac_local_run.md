@@ -13,21 +13,20 @@ This app is intended to run **only on your MacBook**.
 ```bash
 cd /path/to/firstRepo
 git checkout cursor/candidate-eval-spec-65c3 && git pull
-mkdir -p SSLcert
-# place qwen-tls.crt and token_qwen3_8.txt in SSLcert/
+mkdir -p /Users/mikelam/SSLcert
+# place:
+#   /Users/mikelam/SSLcert/qwen-tls.crt
+#   /Users/mikelam/SSLcert/token_qwen3_8.txt
 bash scripts/run_local_mac.sh
 ```
 
 Open **http://127.0.0.1:3036**. Keep the Terminal session running.
 
-## Secrets layout
+## Secrets layout (absolute)
 
 ```text
-firstRepo/
-  SSLcert/
-    qwen-tls.crt
-    token_qwen3_8.txt
-  .env          # from .env.example
+/Users/mikelam/SSLcert/qwen-tls.crt
+/Users/mikelam/SSLcert/token_qwen3_8.txt
 ```
 
 `.env` values:
@@ -35,11 +34,9 @@ firstRepo/
 ```env
 HOST=127.0.0.1
 PORT=3036
-CERT_FILE="./SSLcert/qwen-tls.crt"
-TOKEN_FILE="./SSLcert/token_qwen3_8.txt"
+CERT_FILE="/Users/mikelam/SSLcert/qwen-tls.crt"
+TOKEN_FILE="/Users/mikelam/SSLcert/token_qwen3_8.txt"
 ```
-
-Paths resolve against the **repo root**, not your shell’s current directory.
 
 ## LLM hosts (same Mac)
 

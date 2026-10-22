@@ -26,6 +26,7 @@ services:
       ROLE_CONFIG_PATH: /app/config/role_requirements.yaml
       CERT_FILE: /app/SSLcert/qwen-tls.crt
       TOKEN_FILE: /app/SSLcert/token_qwen3_8.txt
+      # Host Mac secrets dir bind-mounted below (default /Users/mikelam/SSLcert)
       API_URL: ${API_URL:-https://redhataiqwen38-27b-int4-rhoai-test.apps.demo.rhoai.demo/v1/chat/completions}
       MODEL_NAME: ${MODEL_NAME:-Qwen38-27b-int4}
       HOST: 0.0.0.0
@@ -46,6 +47,6 @@ services:
       - ${MAIL_HOST_PATH:-./fixtures/mbox}:/data/mail:ro
       - ${OUTPUT_HOST_PATH:-./output/candidate_reviews}:/data/output:rw
       - ./config/role_requirements.yaml:/app/config/role_requirements.yaml:ro
-      - ./SSLcert:/app/SSLcert:ro
+      - ${SSL_HOST_PATH:-/Users/mikelam/SSLcert}:/app/SSLcert:ro
     command: ["serve"]
     restart: unless-stopped
