@@ -320,6 +320,8 @@ def resolve_mail_paths(
         }
 
     path = Path(base).expanduser()
+    if not path.is_absolute():
+        path = resolve_repo_path(str(path))
     folder = folder_override or default_folder
     if path.is_file():
         mbox = path
@@ -372,6 +374,12 @@ def run_smoke(
         return {"ok": False, "error": str(exc), "deployment": "local", "port": port}, 1
 
     host = urlparse(cfg["api_url"]).netloc if cfg["api_url"] else ""
+    privacy = privacy_env_summary()
+    # mailbox:// is a logical URI — do not claim a filesystem mbox exists.
+    mbox_exists = mail["mbox_exists"]
+    if mail["scheme"] == "mailbox":
+        mbox_exists = Path(mail["mbox_path"]).is_file()
+
     checks: dict = {
         "ok": False,
         "project_root": cfg["project_root"],
@@ -381,10 +389,13 @@ def run_smoke(
         "mbox_path": mail["mbox_path"],
         "mail_scheme": mail["scheme"],
         "mail_path_exists": mail["mail_path_exists"],
-        "mbox_exists": mail["mbox_exists"],
+        "mbox_exists": mbox_exists,
         "output_dir": str(output_dir),
         "role_config_exists": role_config.is_file(),
         "review_keywords": keywords,
+        "privacy_mode": privacy["privacy_mode"],
+        "local_db_path": privacy["local_db_path"],
+        "review_use_llm": privacy["review_use_llm"],
         "cert_file": cfg["cert_file"],
         "cert_file_raw": cfg["cert_file_raw"],
         "cert_exists": cfg["cert_exists"],
@@ -465,6 +476,9 @@ def run_review(
     mail_path: str | None = None,
     mail_folder: str | None = None,
 ) -> dict:
+    """Ingest mbox → store sensitive PII locally → send redacted text to LLM."""
+    from candidate_eval.review_pipeline import run_privacy_review
+
     load_env()
     resolved = resolve_keywords(keywords)
     mail = resolve_mail_paths(mail_path, mail_folder)
@@ -478,25 +492,96 @@ def run_review(
     if not mail["mail_path"]:
         raise ValueError("Mailbox folder path is required")
 
-    return {
-        "status": "not_implemented",
-        "message": (
-            "Review pipeline scaffold only. Config and keyword confinement validated; "
-            "implement ingest→LLM→artifacts next."
-        ),
-        "review_keywords": resolved,
-        "mail_path": mail["mail_path"],
-        "mail_account": mail.get("mail_account"),
-        "mail_folder": mail["mail_folder"],
-        "mail_scheme": mail["scheme"],
-        "mbox_path": mail["mbox_path"],
-        "mbox_exists": mail["mbox_exists"],
-        "output_dir": str(output_dir),
-        "api_url": cfg["api_url"],
-        "model_name": cfg["model_name"],
-        "cert_file": cfg["cert_file"],
-        "token_file": cfg["token_file"],
-        "project_root": cfg["project_root"],
-        "deployment": "podman-or-docker-local",
-        "port": int(os.environ.get("PORT", "3036")),
+    mbox_path = _require_filesystem_mbox(mail)
+
+    use_llm = _review_use_llm()
+    local_db = resolve_repo_path(
+        (os.environ.get("LOCAL_DB_PATH") or "").strip() or None,
+        default_rel="./data/candidate_eval.sqlite",
+    )
+
+    result = run_privacy_review(
+        keywords=resolved,
+        mbox_path=mbox_path,
+        output_dir=output_dir,
+        use_llm=use_llm,
+    )
+    result.update(
+        {
+            "mail_path": mail["mail_path"],
+            "mail_account": mail.get("mail_account"),
+            "mail_folder": mail["mail_folder"],
+            "mail_scheme": mail["scheme"],
+            "mbox_path": mbox_path,
+            "mbox_exists": True,
+            "output_dir": str(output_dir),
+            "api_url": cfg["api_url"],
+            "model_name": cfg["model_name"],
+            "auth_source": cfg.get("auth_source"),
+            "provider": "openrouter" if cfg.get("is_openrouter") else "custom",
+            "project_root": cfg["project_root"],
+            "deployment": "macbook-local",
+            "port": int(os.environ.get("PORT", "3036")),
+            "privacy_mode": "local_db_plus_llm_redaction",
+            "local_db_path": result.get("local_db_path") or str(local_db),
+            "review_use_llm": use_llm,
+            "redaction_status": "applied",
+            "guardrail": "assert_safe_for_llm",
+        }
+    )
+    return result
+
+
+def _review_use_llm() -> bool:
+    return (os.environ.get("REVIEW_USE_LLM", "true") or "true").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
     }
+
+
+def privacy_env_summary() -> dict:
+    """UI/runtime summary of the local privacy guardrail."""
+    load_env()
+    db = resolve_repo_path(
+        (os.environ.get("LOCAL_DB_PATH") or "").strip() or None,
+        default_rel="./data/candidate_eval.sqlite",
+    )
+    return {
+        "privacy_mode": "local_db_plus_llm_redaction",
+        "local_db_path": str(db),
+        "local_db_exists": db.is_file(),
+        "review_use_llm": _review_use_llm(),
+        "redaction_status": "enabled",
+        "guardrail": "assert_safe_for_llm",
+        "note": (
+            "Sensitive contact fields stay in the local SQLite DB; "
+            "only redacted analysis text may leave the Mac for LLM scoring."
+        ),
+    }
+
+
+def _require_filesystem_mbox(mail: dict) -> str:
+    """Privacy review needs a real on-disk mbox (not a bare mailbox:// URI)."""
+    mbox_path = mail.get("mbox_path") or ""
+    if mbox_path and Path(mbox_path).is_file():
+        return str(Path(mbox_path).resolve())
+
+    candidate = Path(mail.get("mail_path") or "")
+    if candidate.is_file():
+        return str(candidate.resolve())
+
+    if mail.get("scheme") == "mailbox" or str(mbox_path).lower().startswith("mailbox:"):
+        raise ValueError(
+            "Privacy review needs a filesystem mbox file. "
+            "mailbox:// URIs are not readable without a local Thunderbird path — "
+            "set THUNDERBIRD_MAIL_PATH to a folder that contains the mbox "
+            "(e.g. ./fixtures/mbox with TARGET_MAIL_FOLDER=Applications), "
+            f"got {mbox_path!r}."
+        )
+    raise ValueError(
+        "Readable mbox file required for privacy review. "
+        "Set THUNDERBIRD_MAIL_PATH to a local folder containing the mbox, "
+        f"or a file path. Resolved mbox_path={mbox_path!r}"
+    )

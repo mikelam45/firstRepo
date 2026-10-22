@@ -22,10 +22,31 @@ OPENROUTER_API_KEY="sk-or-v1-..."
 LLM_API_KEY="sk-or-v1-..."
 API_URL="https://openrouter.ai/api/v1/chat/completions"
 MODEL_NAME="qwen/qwen3-32b"
-THUNDERBIRD_MAIL_PATH="mailbox://mikelam@systex.com.hk/Inbox/SE_2026"
+LOCAL_DB_PATH="./data/candidate_eval.sqlite"
+REVIEW_USE_LLM=true
+# Privacy review needs a filesystem mbox (not a bare mailbox:// URI):
+THUNDERBIRD_MAIL_PATH="./fixtures/mbox"
+TARGET_MAIL_FOLDER="Applications"
 ```
 
-`.env` is gitignored. Never commit the real key.
+`.env` is gitignored. Never commit the real key. SQLite under `data/` is also gitignored.
+
+## Privacy
+
+Sensitive fields (email, phone, LinkedIn, address, raw bodies) stay in `LOCAL_DB_PATH`.  
+Only redacted payloads pass the guardrail to the LLM. Details: [privacy_local_db.md](privacy_local_db.md).
+
+Heuristic dry-run (no OpenRouter call):
+
+```bash
+source .venv/bin/activate
+REVIEW_USE_LLM=false \
+THUNDERBIRD_MAIL_PATH=./fixtures/mbox \
+TARGET_MAIL_FOLDER=Applications \
+python -m candidate_eval.cli review --keywords "kubernetes, system design, remote"
+```
+
+The JD match results panel shows run id, local DB path, and per-candidate privacy flags.
 
 ## Doctor
 

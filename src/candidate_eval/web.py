@@ -6,11 +6,17 @@ import os
 from pathlib import Path
 
 import yaml
-from fastapi import FastAPI, Form, Request
+from fastapi import FastAPI, File, Form, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 
 from candidate_eval import __version__
+from candidate_eval.jd_match import (
+    extract_keywords_from_jd,
+    match_jd_to_candidates,
+    parse_jd_bytes,
+    resolve_mbox_for_match,
+)
 from candidate_eval.service import (
     _llm_config,
     load_env,
@@ -32,7 +38,7 @@ templates = Jinja2Templates(directory=str(_TEMPLATES_DIR))
 app = FastAPI(
     title="Candidate Evaluation",
     version=__version__,
-    description="Local screening UI — keyword-scoped candidate review",
+    description="Local screening UI — JD upload and candidate matching",
 )
 
 
@@ -89,7 +95,9 @@ def _page_context(
     keywords: str | None = None,
     mail_path: str | None = None,
     mail_folder: str | None = None,
+    jd_text: str | None = None,
     result: dict | None = None,
+    jd_match: dict | None = None,
     error: str | None = None,
     llm_test: dict | None = None,
     llm_test_ok: bool | None = None,
@@ -108,9 +116,11 @@ def _page_context(
         "keywords": keywords if keywords is not None else _default_keywords_text(),
         "mail_path": path,
         "mail_folder": folder,
+        "jd_text": jd_text or "",
         "smoke": checks,
         "smoke_ok": code == 0,
         "result": result,
+        "jd_match": jd_match,
         "error": error,
         "llm_env": _llm_env_summary(),
         "llm_test": llm_test,
@@ -118,6 +128,27 @@ def _page_context(
         "port": PORT,
         "version": __version__,
     }
+
+
+def _parse_keywords(raw: str | None) -> list[str] | None:
+    if raw is None:
+        return None
+    items = [k.strip() for k in raw.split(",") if k.strip()]
+    return items or None
+
+
+async def _read_jd(
+    jd_text: str,
+    jd_file: UploadFile | None,
+) -> tuple[str, str | None]:
+    filename: str | None = None
+    text = (jd_text or "").strip()
+    if jd_file is not None and jd_file.filename:
+        data = await jd_file.read()
+        if data:
+            filename = jd_file.filename
+            text = parse_jd_bytes(filename, data)
+    return text, filename
 
 
 @app.get("/health")
@@ -154,6 +185,61 @@ async def api_review(request: Request) -> JSONResponse:
         return JSONResponse({"error": str(exc)}, status_code=400)
 
 
+@app.post("/api/jd-match")
+async def api_jd_match(request: Request) -> JSONResponse:
+    content_type = request.headers.get("content-type", "")
+    jd_text = ""
+    jd_filename = None
+    keywords_raw = None
+    mail_path = None
+    mail_folder = None
+
+    if "multipart/form-data" in content_type:
+        form = await request.form()
+        jd_text = str(form.get("jd_text") or "")
+        keywords_raw = str(form.get("keywords") or "") or None
+        mail_path = str(form.get("mail_path") or "") or None
+        mail_folder = str(form.get("mail_folder") or "") or None
+        upload = form.get("jd_file")
+        if upload is not None and hasattr(upload, "read"):
+            data = await upload.read()  # type: ignore[union-attr]
+            name = getattr(upload, "filename", None) or "jd.txt"
+            if data:
+                jd_filename = name
+                jd_text = parse_jd_bytes(name, data)
+    else:
+        try:
+            body = await request.json()
+        except Exception:  # noqa: BLE001
+            body = {}
+        jd_text = str(body.get("jd_text") or "")
+        keywords_raw = body.get("keywords")
+        mail_path = body.get("mail_path")
+        mail_folder = body.get("mail_folder")
+
+    try:
+        mbox_path = resolve_mbox_for_match(mail_path, mail_folder)
+        keywords = _parse_keywords(keywords_raw) if isinstance(keywords_raw, str) else keywords_raw
+        if not keywords and jd_text:
+            keywords = extract_keywords_from_jd(jd_text)
+        output_dir = resolve_repo_path(
+            os.environ.get("OUTPUT_DIR", ""),
+            default_rel="./output/candidate_reviews",
+        )
+        result = match_jd_to_candidates(
+            jd_text=jd_text,
+            jd_filename=jd_filename,
+            mbox_path=mbox_path,
+            output_dir=output_dir,
+            keywords=keywords,
+        )
+        return JSONResponse(result)
+    except ValueError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
+    except Exception as exc:  # noqa: BLE001
+        return JSONResponse({"error": str(exc)}, status_code=500)
+
+
 @app.get("/", response_class=HTMLResponse)
 def index(request: Request) -> HTMLResponse:
     return templates.TemplateResponse(request, "index.html", _page_context())
@@ -166,6 +252,55 @@ def llm_test_form(request: Request) -> HTMLResponse:
         request,
         "index.html",
         _page_context(llm_test=llm_test, llm_test_ok=(code == 0)),
+    )
+
+
+@app.post("/jd-match", response_class=HTMLResponse)
+async def jd_match_form(
+    request: Request,
+    mail_path: str = Form(...),
+    mail_folder: str = Form(""),
+    keywords: str = Form(""),
+    jd_text: str = Form(""),
+    jd_file: UploadFile | None = File(None),
+) -> HTMLResponse:
+    error = None
+    jd_match = None
+    text = jd_text
+    try:
+        text, filename = await _read_jd(jd_text, jd_file)
+        if not mail_path.strip():
+            raise ValueError("Mailbox folder path is required")
+        mbox_path = resolve_mbox_for_match(mail_path.strip(), mail_folder.strip() or None)
+        kw = _parse_keywords(keywords)
+        if not kw:
+            kw = extract_keywords_from_jd(text) if text else None
+        output_dir = resolve_repo_path(
+            os.environ.get("OUTPUT_DIR", ""),
+            default_rel="./output/candidate_reviews",
+        )
+        jd_match = match_jd_to_candidates(
+            jd_text=text,
+            jd_filename=filename,
+            mbox_path=mbox_path,
+            output_dir=output_dir,
+            keywords=kw,
+        )
+    except ValueError as exc:
+        error = str(exc)
+    except Exception as exc:  # noqa: BLE001
+        error = str(exc)
+    return templates.TemplateResponse(
+        request,
+        "index.html",
+        _page_context(
+            keywords=keywords or _default_keywords_text(),
+            mail_path=mail_path,
+            mail_folder=mail_folder,
+            jd_text=text,
+            jd_match=jd_match,
+            error=error,
+        ),
     )
 
 

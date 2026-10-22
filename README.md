@@ -30,6 +30,15 @@ Diagnose: `bash scripts/run_local_mac.sh doctor`
 - Uses a local Python venv (no cloud)
 - Binds the portal to **127.0.0.1:3036** (this Mac only)
 - Loads `.env` from the repo root
+### JD match (primary UI)
+
+1. Open http://127.0.0.1:3036
+2. Upload or paste a job description
+3. Point mailbox at `./fixtures/mbox` / `Applications` (demo) or your local mbox
+4. Click **Match all candidates** — every candidate is listed with match / partial / not matched
+
+Sensitive contact fields stay in local SQLite (`LOCAL_DB_PATH`); only redacted text is eligible for LLM analysis.
+
 ### LLM (OpenRouter)
 
 UI loads without calling the model. **Test LLM connectivity** uses OpenRouter:
@@ -38,6 +47,8 @@ UI loads without calling the model. **Test LLM connectivity** uses OpenRouter:
 OPENROUTER_API_KEY="sk-or-v1-..."
 API_URL="https://openrouter.ai/api/v1/chat/completions"
 MODEL_NAME="qwen/qwen3-32b"
+LOCAL_DB_PATH="./data/candidate_eval.sqlite"
+REVIEW_USE_LLM=true
 ```
 
 Keep the real key only in `.env` (gitignored).
@@ -55,12 +66,28 @@ PORT=3036
 OPENROUTER_API_KEY="sk-or-v1-..."
 API_URL="https://openrouter.ai/api/v1/chat/completions"
 MODEL_NAME="qwen/qwen3-32b"
+LOCAL_DB_PATH="./data/candidate_eval.sqlite"
+REVIEW_USE_LLM=true
+```
+
+### Privacy (local DB)
+
+Contact PII is stored only in the Mac-local SQLite DB. The LLM receives redacted text and placeholders. See [docs/privacy_local_db.md](docs/privacy_local_db.md).
+
+Offline dry-run (no LLM call):
+
+```bash
+REVIEW_USE_LLM=false \
+THUNDERBIRD_MAIL_PATH=./fixtures/mbox \
+TARGET_MAIL_FOLDER=Applications \
+python -m candidate_eval.cli review --keywords "kubernetes, system design, remote"
 ```
 
 ## Spec & SOP
 
 - [Framework spec](docs/candidate_evaluation_framework.md)
 - [Mac local run notes](docs/mac_local_run.md)
+- [Privacy / local DB](docs/privacy_local_db.md)
 - [Screening SOP](docs/sop_screening_decision_tree.md)
 
 ## Scoring (summary)

@@ -10,7 +10,6 @@
   <style>
     :root {
       --ink: #1a2421;
-      --paper: #e8f0ea;
       --panel: rgba(255, 252, 247, 0.92);
       --accent: #0f6b5c;
       --accent-deep: #094a40;
@@ -18,6 +17,9 @@
       --fail: #8b1e1e;
       --ok: #0f6b5c;
       --line: rgba(26, 36, 33, 0.12);
+      --matched: #0f6b5c;
+      --partial: #8a4b12;
+      --unmatched: #6b7280;
     }
     * { box-sizing: border-box; }
     body {
@@ -31,9 +33,9 @@
         linear-gradient(165deg, #dfece4 0%, #f3efe6 45%, #e7ebe3 100%);
     }
     main {
-      max-width: 42rem;
+      max-width: 56rem;
       margin: 0 auto;
-      padding: 3.5rem 1.25rem 4rem;
+      padding: 3rem 1.25rem 4rem;
     }
     .brand {
       font-family: "Fraunces", serif;
@@ -47,7 +49,7 @@
       margin: 0 0 2rem;
       font-size: 1.05rem;
       line-height: 1.45;
-      max-width: 36rem;
+      max-width: 40rem;
       opacity: 0.85;
     }
     .panel {
@@ -74,7 +76,7 @@
       font-size: 0.9rem;
       margin-bottom: 0.4rem;
     }
-    input[type="text"] {
+    input[type="text"], input[type="file"], textarea {
       width: 100%;
       padding: 0.7rem 0.85rem;
       border: 1px solid var(--line);
@@ -82,7 +84,12 @@
       font: inherit;
       color: var(--ink);
     }
-    input[type="text"]:focus {
+    textarea {
+      min-height: 9rem;
+      resize: vertical;
+      line-height: 1.4;
+    }
+    input:focus, textarea:focus {
       outline: 2px solid var(--accent);
       outline-offset: 1px;
     }
@@ -102,18 +109,13 @@
     }
     button:hover, .btn:hover { background: var(--accent-deep); }
     button:active, .btn:active { transform: scale(0.98); }
-    button.secondary, .btn.secondary {
+    button.secondary {
       background: transparent;
       color: var(--accent-deep);
       border: 1px solid var(--accent);
     }
-    button.secondary:hover, .btn.secondary:hover {
-      background: rgba(15, 107, 92, 0.08);
-    }
-    button:disabled {
-      opacity: 0.55;
-      cursor: wait;
-    }
+    button.secondary:hover { background: rgba(15, 107, 92, 0.08); }
+    button:disabled { opacity: 0.55; cursor: wait; }
     .actions { display: flex; flex-wrap: wrap; gap: 0.6rem; align-items: center; margin-top: 0.25rem; }
     .meta {
       margin: 0 0 0.9rem;
@@ -122,8 +124,6 @@
       opacity: 0.8;
     }
     .meta code { font-size: 0.8rem; }
-    #llm-test-status { margin-top: 0.85rem; }
-    #llm-test-status[hidden] { display: none; }
     .status {
       display: inline-block;
       font-size: 0.8rem;
@@ -142,17 +142,81 @@
       overflow: auto;
       font-size: 0.78rem;
       line-height: 1.4;
-      max-height: 16rem;
+      max-height: 12rem;
     }
     .error {
       color: var(--fail);
       margin: 0 0 0.75rem;
       font-weight: 600;
     }
+    .counts {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+      margin: 0.75rem 0 1rem;
+    }
+    .count-chip {
+      font-size: 0.85rem;
+      font-weight: 600;
+      padding: 0.35rem 0.65rem;
+      border: 1px solid var(--line);
+      background: #fff;
+    }
+    .count-chip strong { font-family: "Fraunces", serif; font-size: 1.1rem; margin-right: 0.25rem; }
+    .table-wrap { overflow-x: auto; margin-top: 0.5rem; }
+    table.results {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.9rem;
+    }
+    table.results th, table.results td {
+      text-align: left;
+      padding: 0.65rem 0.55rem;
+      border-bottom: 1px solid var(--line);
+      vertical-align: top;
+    }
+    table.results th {
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      opacity: 0.7;
+      font-weight: 600;
+    }
+    table.results tr:hover td { background: rgba(15, 107, 92, 0.04); }
+    .badge {
+      display: inline-block;
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      padding: 0.2rem 0.45rem;
+      border: 1px solid currentColor;
+    }
+    .badge.matched { color: var(--matched); }
+    .badge.partial { color: var(--partial); }
+    .badge.not_matched, .badge.blocked { color: var(--unmatched); }
+    .score { font-family: "Fraunces", serif; font-weight: 700; }
+    .hits { font-size: 0.8rem; opacity: 0.8; }
+    .hits span {
+      display: inline-block;
+      margin: 0.1rem 0.25rem 0.1rem 0;
+      padding: 0.1rem 0.35rem;
+      background: rgba(15, 107, 92, 0.1);
+    }
+    details.raw { margin-top: 1rem; }
+    details.raw summary { cursor: pointer; font-weight: 600; font-size: 0.9rem; }
     footer {
       margin-top: 2rem;
       font-size: 0.8rem;
       opacity: 0.55;
+    }
+    #llm-test-status[hidden] { display: none; }
+    .grid-2 {
+      display: grid;
+      gap: 1rem;
+    }
+    @media (min-width: 720px) {
+      .grid-2 { grid-template-columns: 1fr 1fr; }
     }
   </style>
 </head>
@@ -160,10 +224,127 @@
   <main>
     <h1 class="brand">Candidate Evaluation</h1>
     <p class="lede">
-      MacBook-local screening for <strong>{{ role_title }}</strong>
-      (this machine only — http://127.0.0.1:{{ port }}).
-      Confine the review with topic keywords, then run against your mailbox.
+      Upload a job description, match it against every candidate in your mailbox,
+      and review all results on this Mac only
+      (<code>http://127.0.0.1:{{ port }}</code>).
     </p>
+
+    <section class="panel">
+      <h2>Match candidates to a JD</h2>
+      {% if error %}<p class="error">{{ error }}</p>{% endif %}
+      <form method="post" action="/jd-match" enctype="multipart/form-data">
+        <label for="jd_file">Upload JD file</label>
+        <input id="jd_file" name="jd_file" type="file"
+               accept=".txt,.md,.pdf,.docx,text/plain,application/pdf" />
+        <p class="hint">Accepted: <code>.txt</code>, <code>.md</code>, <code>.pdf</code>, <code>.docx</code>. Or paste below.</p>
+
+        <label for="jd_text">Job description text</label>
+        <textarea id="jd_text" name="jd_text"
+                  placeholder="Paste the full job description here…">{{ jd_text }}</textarea>
+        <p class="hint">Sensitive contact details in the JD are redacted before any LLM call. Candidate PII stays in the local SQLite DB.</p>
+
+        <div class="grid-2">
+          <div>
+            <label for="mail_path">Mailbox folder path</label>
+            <input id="mail_path" name="mail_path" type="text" required
+                   value="{{ mail_path }}"
+                   placeholder="./fixtures/mbox"
+                   autocomplete="off"
+                   spellcheck="false" />
+          </div>
+          <div>
+            <label for="mail_folder">Mailbox folder name</label>
+            <input id="mail_folder" name="mail_folder" type="text"
+                   value="{{ mail_folder }}"
+                   placeholder="Applications"
+                   autocomplete="off"
+                   spellcheck="false" />
+          </div>
+        </div>
+        <p class="hint">Demo fixture: <code>./fixtures/mbox</code> + folder <code>Applications</code>.</p>
+
+        <label for="keywords">Review keywords (optional)</label>
+        <input id="keywords" name="keywords" type="text"
+               value="{{ keywords }}"
+               placeholder="kubernetes, react, system design, remote" />
+        <p class="hint">Leave blank to auto-extract topics from the JD.</p>
+
+        <div class="actions">
+          <button type="submit">Match all candidates</button>
+        </div>
+      </form>
+    </section>
+
+    {% if jd_match %}
+    <section class="panel" id="match-results">
+      <h2>All candidate results</h2>
+      <p class="meta">
+        Run <code>{{ jd_match.run_id }}</code>
+        · keywords
+        {% for kw in jd_match.review_keywords %}<code>{{ kw }}</code>{% if not loop.last %}, {% endif %}{% endfor %}
+        · DB <code>{{ jd_match.local_db_path }}</code>
+      </p>
+      <div class="counts">
+        <div class="count-chip"><strong>{{ jd_match.counts.total }}</strong> total</div>
+        <div class="count-chip"><strong>{{ jd_match.counts.matched }}</strong> matched</div>
+        <div class="count-chip"><strong>{{ jd_match.counts.partial }}</strong> partial</div>
+        <div class="count-chip"><strong>{{ jd_match.counts.not_matched }}</strong> not matched</div>
+      </div>
+      {% if jd_match.jd_preview %}
+        <p class="hint" style="margin-top:0"><strong>JD preview:</strong> {{ jd_match.jd_preview }}</p>
+      {% endif %}
+
+      <div class="table-wrap">
+        <table class="results">
+          <thead>
+            <tr>
+              <th>Match</th>
+              <th>Candidate</th>
+              <th>Score</th>
+              <th>Tier</th>
+              <th>Keyword hits</th>
+              <th>Notes</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for c in jd_match.candidates %}
+            <tr>
+              <td><span class="badge {{ c.match_status }}">{{ c.match_status }}</span></td>
+              <td>
+                <strong>{{ c.name or "(unknown)" }}</strong><br />
+                <span class="hits">{{ c.email or "—" }}</span><br />
+                <span class="hits">{{ c.subject or "" }}</span>
+              </td>
+              <td class="score">{{ "%.2f"|format(c.weighted_score or 0) }}</td>
+              <td>{{ c.tier }}</td>
+              <td class="hits">
+                {% if c.keyword_hits %}
+                  {% for h in c.keyword_hits %}<span>{{ h }}</span>{% endfor %}
+                {% else %}
+                  —
+                {% endif %}
+              </td>
+              <td class="hits">
+                {% if c.knockout_reasons %}
+                  {{ c.knockout_reasons | join("; ") }}
+                {% elif c.rationales and c.rationales.role_alignment %}
+                  {{ c.rationales.role_alignment[:120] }}{% if c.rationales.role_alignment|length > 120 %}…{% endif %}
+                {% else %}
+                  —
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      <details class="raw">
+        <summary>Raw JSON</summary>
+        <pre>{{ jd_match | tojson(indent=2) }}</pre>
+      </details>
+    </section>
+    {% endif %}
 
     <section class="panel">
       <h2>LLM connectivity</h2>
@@ -172,11 +353,7 @@
         <strong>API_URL</strong> <code>{{ llm_env.api_url or "(unset)" }}</code><br />
         <strong>MODEL_NAME</strong> <code>{{ llm_env.model_name or "(unset)" }}</code><br />
         <strong>Auth</strong> <code>{{ llm_env.auth_source or "(unset)" }}</code>
-        {% if llm_env.token_loaded %} · key loaded{% else %} · <span style="color:var(--fail)">missing</span>{% endif %}<br />
-        {% if llm_env.cert_required %}
-        <strong>CERT_FILE</strong> <code>{{ llm_env.cert_file or "(unset)" }}</code>
-        {% if llm_env.cert_exists %} · found{% else %} · <span style="color:var(--fail)">missing</span>{% endif %}<br />
-        {% endif %}
+        {% if llm_env.token_loaded %} · key loaded{% else %} · <span style="color:var(--fail)">missing</span>{% endif %}
       </p>
       <div class="actions">
         <form method="post" action="/llm-test" id="llm-test-form">
@@ -199,55 +376,20 @@
       </div>
     </section>
 
+    {% if result %}
     <section class="panel">
-      <h2>Runtime</h2>
-      {% if smoke_ok %}
-        <div class="status ok">Healthy · port {{ port }}</div>
-      {% elif smoke.get('llm_reachable') %}
-        <div class="status warn">Degraded · port {{ port }}</div>
-      {% elif smoke.get('error') %}
-        <div class="status fail">Checks incomplete · port {{ port }}</div>
-      {% else %}
-        <div class="status warn">Partial · port {{ port }}</div>
-      {% endif %}
-      <p class="hint" style="margin-top:0">Local config only — use <strong>Test LLM connectivity</strong> above to probe the model.</p>
-      <pre>{{ smoke | tojson(indent=2) }}</pre>
+      <h2>Keyword review result</h2>
+      <pre>{{ result | tojson(indent=2) }}</pre>
     </section>
+    {% endif %}
 
-    <section class="panel">
-      <h2>Mailbox &amp; keywords</h2>
-      {% if error %}<p class="error">{{ error }}</p>{% endif %}
-      <form method="post" action="/review">
-        <label for="mail_path">Mailbox folder path</label>
-        <input id="mail_path" name="mail_path" type="text" required
-               value="{{ mail_path }}"
-               placeholder="mailbox://user@host/Inbox/Folder  or  ./fixtures/mbox"
-               autocomplete="off"
-               spellcheck="false" />
-        <p class="hint">Thunderbird mailbox URI (e.g. <code>mailbox://mikelam@systex.com.hk/Inbox/SE_2026</code>) or a local mail directory.</p>
-
-        <label for="mail_folder">Mailbox folder name</label>
-        <input id="mail_folder" name="mail_folder" type="text"
-               value="{{ mail_folder }}"
-               placeholder="Inbox/SE_2026"
-               autocomplete="off"
-               spellcheck="false" />
-        <p class="hint">Folder within the account (auto-filled from the URI path when using <code>mailbox://</code>).</p>
-
-        <label for="keywords">Review keywords</label>
-        <input id="keywords" name="keywords" type="text" required
-               value="{{ keywords }}"
-               placeholder="kubernetes, react, system design, remote" />
-        <p class="hint">Comma-separated topics that confine Role Alignment scoring for this run.</p>
-        <button type="submit">Run review</button>
-      </form>
-      {% if result %}
-        <h2 style="margin-top:1.25rem">Result</h2>
-        <pre>{{ result | tojson(indent=2) }}</pre>
-      {% endif %}
-    </section>
-
-    <footer>v{{ version }} · MacBook local · <a href="/health">/health</a> · <a href="/api/smoke">/api/smoke</a> · <a href="/api/llm-test">/api/llm-test</a></footer>
+    <footer>
+      v{{ version }} · MacBook local ·
+      <a href="/health">/health</a> ·
+      <a href="/api/smoke">/api/smoke</a> ·
+      <a href="/api/llm-test">/api/llm-test</a> ·
+      <a href="/api/jd-match">/api/jd-match</a>
+    </footer>
   </main>
   <script>
     (function () {
