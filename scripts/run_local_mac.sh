@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
-# Run the Candidate Evaluation portal on a Mac (port 3036).
+# MacBook-only local portal (no VPS / no Cursor Cloud).
 #
-#   bash scripts/run_local_mac.sh           # start portal
+#   bash scripts/run_local_mac.sh           # start portal on this Mac
 #   bash scripts/run_local_mac.sh doctor    # diagnose reachability
+#
+# Open on THIS Mac only: http://127.0.0.1:3036
 #
 set -euo pipefail
 
@@ -11,8 +13,8 @@ cd "$ROOT"
 export PROJECT_ROOT="$ROOT"
 
 PORT="${PORT:-3036}"
-# Bind all interfaces so localhost + LAN both work; open via 127.0.0.1 in browser.
-BIND_HOST="${BIND_HOST:-0.0.0.0}"
+# Loopback only — not exposed as a public/VPS service.
+BIND_HOST="${BIND_HOST:-127.0.0.1}"
 
 CERT_ABS="$ROOT/SSLcert/qwen-tls.crt"
 TOKEN_ABS="$ROOT/SSLcert/token_qwen3_8.txt"
@@ -68,22 +70,26 @@ import re
 p = Path(".env")
 text = p.read_text(encoding="utf-8")
 replacements = {
-    "ROLE_CONFIG_PATH": './config/role_requirements.yaml',
-    "OUTPUT_DIR": './output/candidate_reviews',
-    "CERT_FILE": './SSLcert/qwen-tls.crt',
-    "TOKEN_FILE": './SSLcert/token_qwen3_8.txt',
+    "HOST": "127.0.0.1",
+    "PORT": "3036",
+    "ROLE_CONFIG_PATH": "./config/role_requirements.yaml",
+    "OUTPUT_DIR": "./output/candidate_reviews",
+    "CERT_FILE": "./SSLcert/qwen-tls.crt",
+    "TOKEN_FILE": "./SSLcert/token_qwen3_8.txt",
 }
 for key, value in replacements.items():
     pattern = re.compile(rf"^{key}=.*$", re.MULTILINE)
-    line = f'{key}="{value}"'
+    line = f'{key}="{value}"' if key != "PORT" else f"{key}={value}"
+    if key == "HOST":
+        line = f'HOST="127.0.0.1"'
     if pattern.search(text):
         text = pattern.sub(line, text)
     else:
         text = text.rstrip() + "\n" + line + "\n"
 p.write_text(text, encoding="utf-8")
-print("==> .env Mac paths:")
-for key in ("CERT_FILE", "TOKEN_FILE", "ROLE_CONFIG_PATH", "OUTPUT_DIR"):
-    print(f"     {key}={replacements[key]}")
+print("==> .env MacBook-local paths:")
+for key, value in replacements.items():
+    print(f"     {key}={value}")
 PY
 
 mkdir -p SSLcert output/candidate_reviews
@@ -174,7 +180,8 @@ export TOKEN_FILE="$TOKEN_ENV"
 
 echo
 echo "============================================"
-echo "  OPEN IN BROWSER:  http://127.0.0.1:${PORT}"
+echo "  MacBook local only (not VPS / not Cursor Cloud)"
+echo "  OPEN ON THIS MAC: http://127.0.0.1:${PORT}"
 echo "  Health check:     http://127.0.0.1:${PORT}/health"
 echo "  CERT_FILE:        $CERT_FILE"
 echo "       resolved:    $CERT_ABS"

@@ -24,7 +24,7 @@ from candidate_eval.service import (
 load_env()
 
 PORT = int(os.environ.get("PORT", "3036"))
-HOST = os.environ.get("HOST", "0.0.0.0")
+HOST = os.environ.get("HOST", "127.0.0.1")
 
 _TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
 templates = Jinja2Templates(directory=str(_TEMPLATES_DIR))

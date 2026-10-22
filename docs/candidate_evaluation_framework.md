@@ -183,7 +183,7 @@ knockouts:
 
 Template: [`.env.example`](../.env.example). Copy to `.env` and fill local values.
 
-**Deployment model:** the screener runs **locally in a Podman or Docker container** (see [§4.1](#41-local-podman--docker-deployment)). Host paths for mail and output are bind-mounted; the LLM stays on the host/LAN and is reached via `host.containers.internal` / `host.docker.internal`.
+**Deployment model:** **MacBook local only** via `bash scripts/run_local_mac.sh` → http://127.0.0.1:3036 (see [mac_local_run.md](mac_local_run.md)). No VPS / Cursor Cloud. Optional Podman/Docker on the same Mac is documented in [§4.1](#41-local-podman--docker-deployment).
 
 ```env
 # Inside the container (compose defaults):

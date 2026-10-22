@@ -57,7 +57,7 @@ def cmd_serve(args: argparse.Namespace) -> int:
     import uvicorn
 
     load_env()
-    host = args.host or os.environ.get("HOST", "0.0.0.0")
+    host = args.host or os.environ.get("HOST", "127.0.0.1")
     port = args.port or int(os.environ.get("PORT", "3036"))
     print(f"Serving candidate-eval on http://{host}:{port}", flush=True)
     uvicorn.run("candidate_eval.web:app", host=host, port=port, reload=False)

@@ -1,57 +1,71 @@
 # Candidate Evaluation Framework
 
-Criteria-driven screening for applicant emails/CVs. **Deploy locally with Podman or Docker**: bind-mount Thunderbird/fixtures mail, write scorecards to a host output folder, and call an OpenAI-compatible LLM on the host.
+**MacBook-only local app** — runs on your machine at **http://127.0.0.1:3036**.  
+No VPS, no Cursor Cloud, no remote desktop. Open the URL in Safari/Chrome on the same Mac.
 
-## Run on your MacBook (port **3036**)
+## Run on your MacBook
 
 ```bash
 git clone https://github.com/mikelam45/firstRepo.git
 cd firstRepo
 git checkout cursor/candidate-eval-spec-65c3
+git pull
 
-# Place secrets (not in git):
-#   SSLcert/qwen-tls.crt
-#   SSLcert/token_qwen3_8.txt
+# Secrets (exact names, not in git):
+mkdir -p SSLcert
+# copy into SSLcert/:
+#   qwen-tls.crt
+#   token_qwen3_8.txt
 
 bash scripts/run_local_mac.sh
 ```
 
-Then open **http://127.0.0.1:3036** (health: `/health`, LLM test: UI button or `/api/llm-test`).
+Leave that Terminal window open, then open:
 
-The portal UI loads without waiting on the RHOAI LLM (Runtime checks are local config only). Use **Test LLM connectivity** when the model host is reachable (VPN / hosts entry).
+**http://127.0.0.1:3036**
 
-### Podman / Docker (optional)
+Health: http://127.0.0.1:3036/health  
 
-```bash
-cp .env.example .env
-# add SSLcert secrets, then:
-podman compose up --build --force-recreate
-# or: docker compose up --build --force-recreate
+Diagnose: `bash scripts/run_local_mac.sh doctor`
+
+### What the script does
+
+- Uses a local Python venv (no cloud)
+- Binds the portal to **127.0.0.1:3036** (this Mac only)
+- Loads `.env` from the repo root
+- Optionally adds the RHOAI LLM hosts line (sudo) for LLM tests on your LAN/VPN
+
+### LLM (optional for UI)
+
+UI loads without the model. For **Test LLM connectivity** you need network reachability to your RHOAI host and:
+
+```text
+192.168.147.135 redhataiqwen38-27b-int4-rhoai-test.apps.demo.rhoai.demo
 ```
+
+(`scripts/run_local_mac.sh` / `scripts/setup_hosts.sh` can add this to `/etc/hosts`.)
+
+## Configuration (local)
 
 | File | Purpose |
 | --- | --- |
-| [`Dockerfile`](Dockerfile) / [`compose.yml`](compose.yml) | Image + port `3036:3036`, volumes, host LLM |
-| [`.env.example`](.env.example) | `PORT=3036`, mounts, LLM URL |
+| [`.env.example`](.env.example) | Copy to `.env` — Mac paths, `PORT=3036`, LLM settings |
+| [`config/role_requirements.yaml`](config/role_requirements.yaml) | Role + `review_keywords` |
+| [`SSLcert/`](SSLcert/) | `qwen-tls.crt` + `token_qwen3_8.txt` (local secrets) |
+
+```env
+HOST=127.0.0.1
+PORT=3036
+CERT_FILE="./SSLcert/qwen-tls.crt"
+TOKEN_FILE="./SSLcert/token_qwen3_8.txt"
+THUNDERBIRD_MAIL_PATH="mailbox://mikelam@systex.com.hk/Inbox/SE_2026"
+```
 
 ## Spec & SOP
 
-- **[Framework spec](docs/candidate_evaluation_framework.md)** — scoring, keywords, knockouts, I/O, **§4.1 container deployment**, Phase 4 deferral
-- **[Podman/Docker deploy guide](docs/deployment_podman_docker.md)** — mounts, host LLM aliases, SELinux notes
-- **[Screening SOP](docs/sop_screening_decision_tree.md)** — operator decision tree + human rejection gate
-
-## Configuration
-
-| File | Purpose |
-| --- | --- |
-| [`config/role_requirements.yaml`](config/role_requirements.yaml) | Role must-haves, knockouts, **`review_keywords`** |
-| [`schemas/scorecard.schema.json`](schemas/scorecard.schema.json) | LLM scorecard JSON contract |
-
-## Templates & fixtures
-
-- Scorecard: [`templates/scorecard/cv_review.md`](templates/scorecard/cv_review.md)
-- Emails: [`templates/email/`](templates/email/)
-- Sample mbox: [`fixtures/mbox/Applications`](fixtures/mbox/Applications)
+- [Framework spec](docs/candidate_evaluation_framework.md)
+- [Mac local run notes](docs/mac_local_run.md)
+- [Screening SOP](docs/sop_screening_decision_tree.md)
 
 ## Scoring (summary)
 
@@ -63,8 +77,10 @@ podman compose up --build --force-recreate
 | Culture Fit | 10% |
 | Operational Logistics | 20% |
 
-**Tiers:** knockout fail or score &lt; 3.0 → Tier 3; 3.0–3.99 → Tier 2; ≥ 4.0 → Tier 1. Rejection send requires human confirmation.
+Tiers: &lt; 3.0 or knockout → Tier 3; 3.0–3.99 → Tier 2; ≥ 4.0 → Tier 1.
 
-## Status
+## Out of scope
 
-Spec, templates, and **local container runtime** (`smoke` + `review` scaffold) are in place. Full ingest→LLM→artifacts pipeline is the next step inside the same image/entrypoint.
+- Hosting on a VPS or public URL  
+- Cursor Cloud Agent / Forwarded Ports / Try Live  
+- Required Podman/Docker (optional on the same Mac only; see [docs/mac_local_run.md](docs/mac_local_run.md))

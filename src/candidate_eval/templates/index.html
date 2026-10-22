@@ -160,8 +160,9 @@
   <main>
     <h1 class="brand">Candidate Evaluation</h1>
     <p class="lede">
-      Local screening for <strong>{{ role_title }}</strong>.
-      Confine the review with topic keywords, then run against mounted mail.
+      MacBook-local screening for <strong>{{ role_title }}</strong>
+      (this machine only — http://127.0.0.1:{{ port }}).
+      Confine the review with topic keywords, then run against your mailbox.
     </p>
 
     <section class="panel">
@@ -245,7 +246,7 @@
       {% endif %}
     </section>
 
-    <footer>v{{ version }} · <a href="/health">/health</a> · <a href="/api/smoke">/api/smoke</a> · <a href="/api/llm-test">/api/llm-test</a></footer>
+    <footer>v{{ version }} · MacBook local · <a href="/health">/health</a> · <a href="/api/smoke">/api/smoke</a> · <a href="/api/llm-test">/api/llm-test</a></footer>
   </main>
   <script>
     (function () {

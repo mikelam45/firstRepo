@@ -1,6 +1,10 @@
-# Local deployment — Podman / Docker
+# Optional: Podman / Docker on the same MacBook
 
-The screener is intended to run **on your machine inside a container**, with mail and output bind-mounted from the host and the LLM kept outside the container (LM Studio, Ollama, vLLM, etc.).
+**Preferred run path:** [mac_local_run.md](mac_local_run.md) (`bash scripts/run_local_mac.sh`) — no container required.
+
+This page is only if you want containers **on the same Mac**. Not for VPS or Cursor Cloud.
+
+The screener can run inside a local container, with mail/output bind-mounted and the LLM on your LAN/VPN.
 
 ## Quick start
 
