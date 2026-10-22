@@ -77,6 +77,43 @@ def _weighted_score(scores: dict[str, Any]) -> float:
     return round(total, 4)
 
 
+def _normalize_keyword_evidence(raw: Any, keywords: list[str]) -> list[dict[str, Any]]:
+    """Accept LLM quirks (list of strings / missing keys) as structured evidence."""
+    if not isinstance(raw, list):
+        return []
+    out: list[dict[str, Any]] = []
+    for item in raw:
+        if isinstance(item, dict):
+            kw = str(item.get("keyword") or "").strip()
+            out.append(
+                {
+                    "keyword": kw,
+                    "present": bool(item.get("present")),
+                    "strength": item.get("strength"),
+                    "evidence": item.get("evidence"),
+                    "source": item.get("source") or "email",
+                }
+            )
+        elif isinstance(item, str) and item.strip():
+            # Bare keyword string from LLM — count as present when it matches the review list.
+            kw = item.strip()
+            matched = any(kw.lower() == k.lower() for k in keywords)
+            out.append(
+                {
+                    "keyword": kw,
+                    "present": matched,
+                    "strength": 3 if matched else 1,
+                    "evidence": "LLM returned keyword string",
+                    "source": "email",
+                }
+            )
+    return out
+
+
+def _count_present_keywords(evidence: list[dict[str, Any]]) -> int:
+    return sum(1 for item in evidence if isinstance(item, dict) and item.get("present"))
+
+
 def _tier(weighted: float, knockout_fail: bool) -> str:
     if knockout_fail:
         return "tier_3"
@@ -272,11 +309,11 @@ def run_privacy_review(
             scorecard["extracted"] = extracted
             scorecard["candidate_id"] = candidate_id
 
-            present = sum(
-                1
-                for item in (scorecard.get("keyword_evidence") or [])
-                if item.get("present")
+            evidence = _normalize_keyword_evidence(
+                scorecard.get("keyword_evidence"), keywords
             )
+            scorecard["keyword_evidence"] = evidence
+            present = _count_present_keywords(evidence)
             knockout_fail = present < min_must or not sensitive.get("email")
             knockout_reasons = []
             if present < min_must:

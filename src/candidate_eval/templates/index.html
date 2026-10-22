@@ -227,7 +227,27 @@
       Upload a job description, match it against every candidate in your mailbox,
       and review all results on this Mac only
       (<code>http://127.0.0.1:{{ port }}</code>).
+      Contact PII stays in local SQLite; the LLM only sees redacted text.
     </p>
+
+    <section class="panel">
+      <h2>Privacy</h2>
+      <div class="status ok">Local DB · redaction {{ privacy.redaction_status }}</div>
+      <p class="meta">
+        <strong>Mode</strong> <code>{{ privacy.privacy_mode }}</code><br />
+        <strong>LOCAL_DB_PATH</strong> <code>{{ privacy.local_db_path }}</code>
+        {% if privacy.local_db_exists %} · present{% else %} · not created yet{% endif %}<br />
+        <strong>REVIEW_USE_LLM</strong> <code>{{ "true" if privacy.review_use_llm else "false" }}</code>
+        {% if not privacy.review_use_llm %} · heuristic offline scoring{% endif %}<br />
+        <strong>Guardrail</strong> <code>{{ privacy.guardrail }}</code>
+        {% if privacy.redaction_count is not none %}
+        <br /><strong>Last run</strong> {{ privacy.redaction_count }} redactions
+        {% if privacy.candidate_count is not none %} · {{ privacy.candidate_count }} candidates{% endif %}
+        {% if privacy.guardrail_blocked %} · {{ privacy.guardrail_blocked }} blocked{% endif %}
+        {% endif %}
+      </p>
+      <p class="hint" style="margin-top:0">{{ privacy.note }}</p>
+    </section>
 
     <section class="panel">
       <h2>Match candidates to a JD</h2>
@@ -281,8 +301,12 @@
       <p class="meta">
         Run <code>{{ jd_match.run_id }}</code>
         · keywords
-        {% for kw in jd_match.review_keywords %}<code>{{ kw }}</code>{% if not loop.last %}, {% endif %}{% endfor %}
-        · DB <code>{{ jd_match.local_db_path }}</code>
+        {% for kw in jd_match.review_keywords %}<code>{{ kw }}</code>{% if not loop.last %}, {% endif %}{% endfor %}<br />
+        <strong>Privacy</strong> <code>{{ jd_match.privacy_mode or privacy.privacy_mode }}</code>
+        · redaction <code>{{ jd_match.redaction_status or privacy.redaction_status }}</code>
+        {% if jd_match.summary %}· {{ jd_match.summary.redaction_count or 0 }} tokens{% endif %}<br />
+        <strong>Local DB</strong> <code>{{ jd_match.local_db_path or privacy.local_db_path }}</code>
+        · LLM {{ "on" if (jd_match.review_use_llm if jd_match.review_use_llm is defined else privacy.review_use_llm) else "off (heuristic)" }}
       </p>
       <div class="counts">
         <div class="count-chip"><strong>{{ jd_match.counts.total }}</strong> total</div>
@@ -379,6 +403,13 @@
     {% if result %}
     <section class="panel">
       <h2>Keyword review result</h2>
+      <p class="meta">
+        <strong>Privacy</strong> <code>{{ result.privacy_mode or privacy.privacy_mode }}</code>
+        · redaction <code>{{ result.redaction_status or "applied" }}</code>
+        {% if result.summary %}· {{ result.summary.redaction_count or 0 }} tokens · {{ result.summary.candidate_count or 0 }} candidates{% endif %}<br />
+        <strong>Local DB</strong> <code>{{ result.local_db_path or privacy.local_db_path }}</code>
+        · LLM {{ "on" if result.review_use_llm else "off (heuristic)" }}
+      </p>
       <pre>{{ result | tojson(indent=2) }}</pre>
     </section>
     {% endif %}

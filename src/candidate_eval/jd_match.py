@@ -20,9 +20,11 @@ from candidate_eval.privacy.guardrail import (
 )
 from candidate_eval.privacy.store import LocalCandidateStore
 from candidate_eval.review_pipeline import (
+    _count_present_keywords,
     _db_path,
     _heuristic_score,
     _load_role_config,
+    _normalize_keyword_evidence,
     _score_with_llm,
     _tier,
     _weighted_score,
@@ -307,9 +309,14 @@ def match_jd_to_candidates(
             scorecard["extracted"] = extracted
             scorecard["candidate_id"] = candidate_id
 
-            evidence = scorecard.get("keyword_evidence") or []
-            present_kws = [e["keyword"] for e in evidence if e.get("present")]
-            present = len(present_kws)
+            evidence = _normalize_keyword_evidence(
+                scorecard.get("keyword_evidence"), resolved_keywords
+            )
+            scorecard["keyword_evidence"] = evidence
+            present_kws = [
+                e["keyword"] for e in evidence if isinstance(e, dict) and e.get("present")
+            ]
+            present = _count_present_keywords(evidence)
             knockout_fail = present < min_must or not sensitive.get("email")
             knockout_reasons = []
             if present < min_must:
@@ -387,6 +394,9 @@ def match_jd_to_candidates(
         "local_db_path": str(db_path),
         "privacy_mode": "local_db_plus_llm_redaction",
         "use_llm": use_llm,
+        "review_use_llm": use_llm,
+        "redaction_status": "applied",
+        "guardrail_blocked": blocked,
         "counts": {
             "total": len(candidates_out),
             "matched": matched_count,

@@ -20,6 +20,7 @@ from candidate_eval.jd_match import (
 from candidate_eval.service import (
     _llm_config,
     load_env,
+    privacy_env_summary,
     resolve_keywords,
     resolve_repo_path,
     run_review,
@@ -111,6 +112,28 @@ def _page_context(
         llm_test, llm_code = test_llm_connectivity()
         llm_test_ok = llm_code == 0
 
+    privacy = privacy_env_summary()
+    source = jd_match or result
+    if source:
+        summary = source.get("summary") or {}
+        privacy = {
+            **privacy,
+            "privacy_mode": source.get("privacy_mode") or privacy["privacy_mode"],
+            "local_db_path": source.get("local_db_path") or privacy["local_db_path"],
+            "local_db_exists": True,
+            "review_use_llm": source.get("review_use_llm", privacy["review_use_llm"]),
+            "redaction_status": source.get("redaction_status")
+            or (
+                "applied"
+                if summary.get("redaction_count")
+                else privacy["redaction_status"]
+            ),
+            "redaction_count": summary.get("redaction_count"),
+            "guardrail_blocked": source.get("guardrail_blocked", 0),
+            "candidate_count": summary.get("candidate_count")
+            or len(source.get("candidates") or []),
+        }
+
     return {
         "role_title": _role_title(),
         "keywords": keywords if keywords is not None else _default_keywords_text(),
@@ -123,6 +146,7 @@ def _page_context(
         "jd_match": jd_match,
         "error": error,
         "llm_env": _llm_env_summary(),
+        "privacy": privacy,
         "llm_test": llm_test,
         "llm_test_ok": llm_test_ok,
         "port": PORT,

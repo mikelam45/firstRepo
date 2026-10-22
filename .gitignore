@@ -2,9 +2,6 @@
 output/candidate_reviews/**
 !output/candidate_reviews/.gitkeep
 !output/candidate_reviews/example_shortlist_matrix.csv
-data/**
-!data/.gitkeep
-*.sqlite
 __pycache__/
 *.pyc
 .venv/
@@ -13,13 +10,13 @@ venv/
 .pytest_cache/
 
 # Local PII / privacy store (never commit)
-data/*.sqlite
-data/*.sqlite-*
-data/*.db
+data/**
+!data/.gitkeep
 *.sqlite
 *.sqlite-journal
 *.sqlite-wal
 *.sqlite-shm
+*.db
 
 # Local LLM TLS secrets (keep README only)
 SSLcert/*
