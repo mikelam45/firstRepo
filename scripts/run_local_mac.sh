@@ -62,6 +62,7 @@ if [[ ! -f .env ]]; then
 fi
 
 # Keep Mac loopback + OpenRouter defaults without overwriting a real API key.
+# Comment out CERT_FILE / TOKEN_FILE so load_env() cannot re-apply RHOAI TLS.
 python3 - <<'PY'
 from pathlib import Path
 import re
@@ -76,9 +77,15 @@ replacements = {
     "API_URL": "https://openrouter.ai/api/v1/chat/completions",
     "LLM_BASE_URL": "https://openrouter.ai/api/v1",
 }
-# Only set MODEL_NAME if missing
-if not re.search(r"^MODEL_NAME=", text, re.MULTILINE):
+# Only set MODEL_NAME if missing or still a legacy RHOAI-style name (no slash).
+model_m = re.search(r"^MODEL_NAME=(.*)$", text, re.MULTILINE)
+if not model_m:
     replacements["MODEL_NAME"] = "qwen/qwen3-32b"
+else:
+    raw = model_m.group(1).strip().strip("\"'")
+    if not raw or "/" not in raw:
+        # e.g. Qwen38-27b-int4 — not an OpenRouter model id
+        replacements["MODEL_NAME"] = "qwen/qwen3-32b"
 
 for key, value in replacements.items():
     pattern = re.compile(rf"^{key}=.*$", re.MULTILINE)
@@ -87,8 +94,18 @@ for key, value in replacements.items():
         text = pattern.sub(line, text)
     else:
         text = text.rstrip() + "\n" + line + "\n"
+
+# Neutralize active RHOAI cert/token lines so OpenRouter uses system CAs + API key.
+for key in ("CERT_FILE", "TOKEN_FILE", "RHOAI_LLM_HOST", "RHOAI_LLM_IP"):
+    text = re.sub(
+        rf"^({key}=.*)$",
+        r"# \1  # disabled for OpenRouter (Mac local)",
+        text,
+        flags=re.MULTILINE,
+    )
+
 p.write_text(text, encoding="utf-8")
-print("==> .env MacBook-local OpenRouter settings refreshed (key left as-is)")
+print("==> .env MacBook-local OpenRouter settings refreshed (key left as-is; CERT/TOKEN commented)")
 PY
 
 mkdir -p output/candidate_reviews

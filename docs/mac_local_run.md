@@ -27,7 +27,10 @@ REVIEW_USE_LLM=true
 # Privacy review needs a filesystem mbox (not a bare mailbox:// URI):
 THUNDERBIRD_MAIL_PATH="./fixtures/mbox"
 TARGET_MAIL_FOLDER="Applications"
+# Do not set CERT_FILE or TOKEN_FILE for OpenRouter.
 ```
+
+OpenRouter uses system CAs (`verify=True`) and `OPENROUTER_API_KEY`. Leave `CERT_FILE` / `TOKEN_FILE` unset (those are only for private RHOAI-style hosts).
 
 `.env` is gitignored. Never commit the real key. SQLite under `data/` is also gitignored.
 

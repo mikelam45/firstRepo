@@ -119,8 +119,10 @@ def resolve_keywords(cli_keywords: str | list[str] | None = None) -> list[str]:
 def _llm_config() -> dict:
     """Resolve OpenRouter / LLM settings from env.
 
-    Auth preference: OPENROUTER_API_KEY or LLM_API_KEY in .env, else TOKEN_FILE.
-    CERT_FILE is optional (used only for private TLS endpoints).
+    Auth preference: OPENROUTER_API_KEY or LLM_API_KEY in .env, else TOKEN_FILE
+    (TOKEN_FILE is legacy RHOAI only — ignored for OpenRouter when an API key is set).
+    CERT_FILE is used only for private non-OpenRouter TLS endpoints; OpenRouter
+    always uses system CA verification (verify=True).
     """
     cert_raw = (os.environ.get("CERT_FILE") or "").strip()
     token_raw = (os.environ.get("TOKEN_FILE") or "").strip()
@@ -142,22 +144,27 @@ def _llm_config() -> dict:
         or "qwen/qwen3-32b"
     )
 
-    # Prefer API key in .env for OpenRouter; fall back to TOKEN_FILE for legacy RHOAI.
-    token = (
-        (os.environ.get("OPENROUTER_API_KEY") or "").strip()
-        or (os.environ.get("LLM_API_KEY") or "").strip()
-    )
-    auth_source = "OPENROUTER_API_KEY" if (os.environ.get("OPENROUTER_API_KEY") or "").strip() else (
-        "LLM_API_KEY" if (os.environ.get("LLM_API_KEY") or "").strip() else ""
-    )
+    is_openrouter = "openrouter.ai" in api_url.lower()
+
+    # Prefer API key in .env; fall back to TOKEN_FILE only for non-OpenRouter / legacy.
+    openrouter_key = (os.environ.get("OPENROUTER_API_KEY") or "").strip()
+    llm_api_key = (os.environ.get("LLM_API_KEY") or "").strip()
+    token = openrouter_key or llm_api_key
+    if openrouter_key:
+        auth_source = "OPENROUTER_API_KEY"
+    elif llm_api_key:
+        auth_source = "LLM_API_KEY"
+    else:
+        auth_source = ""
     if not token and token_path.is_file():
+        # OpenRouter should use OPENROUTER_API_KEY; TOKEN_FILE is RHOAI-era fallback.
         token = token_path.read_text(encoding="utf-8").strip()
         auth_source = "TOKEN_FILE"
 
-    is_openrouter = "openrouter.ai" in api_url.lower()
-
+    # OpenRouter needs public system CAs — never pin a private/demo CERT_FILE.
+    # Custom/private hosts may use CERT_FILE when the cert file exists.
     verify: str | bool = True
-    if cert_raw and cert_path.is_file():
+    if not is_openrouter and cert_raw and cert_path.is_file():
         verify = str(cert_path)
 
     cert_display = str(cert_path) if cert_raw and str(cert_path) != "." else (cert_raw or "")
@@ -456,7 +463,7 @@ def run_smoke(
             msg = (choices[0].get("message") or {}).get("content")
             checks["llm_sample"] = (msg or "")[:120]
         checks["ok"] = True
-        checks["message"] = "smoke passed (mail + CERT_FILE + TOKEN_FILE + API_URL)"
+        checks["message"] = "smoke passed (mail + API key + API_URL)"
         return checks, 0
     except Exception as exc:  # noqa: BLE001
         checks["llm_reachable"] = False
