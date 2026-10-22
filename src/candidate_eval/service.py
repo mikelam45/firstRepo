@@ -85,11 +85,15 @@ resolve_secret_path = resolve_repo_path
 
 
 def load_env() -> None:
-    """Load .env from project root first so Mac runs work even if cwd differs."""
+    """Load .env from project root first so Mac runs work even if cwd differs.
+
+    Project-root .env overrides any stale shell exports (e.g. old RHOAI vars).
+    """
     root_env = project_root() / ".env"
     if root_env.is_file():
-        load_dotenv(root_env, override=False)
-    load_dotenv(override=False)
+        load_dotenv(root_env, override=True)
+    else:
+        load_dotenv(override=False)
 
 
 def resolve_keywords(cli_keywords: str | list[str] | None = None) -> list[str]:
@@ -113,54 +117,63 @@ def resolve_keywords(cli_keywords: str | list[str] | None = None) -> list[str]:
 
 
 def _llm_config() -> dict:
-    """Resolve CERT_FILE / TOKEN_FILE / API_URL / MODEL_NAME from env.
+    """Resolve OpenRouter / LLM settings from env.
 
-    Relative values resolve against project_root(). Absolute /app/SSLcert/...
-    from compose work in-container; on Mac they remap to <repo>/SSLcert/...
+    Auth preference: OPENROUTER_API_KEY or LLM_API_KEY in .env, else TOKEN_FILE.
+    CERT_FILE is optional (used only for private TLS endpoints).
     """
     cert_raw = (os.environ.get("CERT_FILE") or "").strip()
     token_raw = (os.environ.get("TOKEN_FILE") or "").strip()
-    cert_path = resolve_repo_path(
-        cert_raw,
-        default_rel="/Users/mikelam/SSLcert/qwen-tls.crt",
+    cert_path = (
+        resolve_repo_path(cert_raw) if cert_raw else Path()
     )
-    token_path = resolve_repo_path(
-        token_raw,
-        default_rel="/Users/mikelam/SSLcert/token_qwen3_8.txt",
+    token_path = (
+        resolve_repo_path(token_raw) if token_raw else Path()
     )
 
-    api_url = os.environ.get("API_URL", "").strip()
+    api_url = (os.environ.get("API_URL") or "").strip()
+    if not api_url:
+        base = (os.environ.get("LLM_BASE_URL") or "https://openrouter.ai/api/v1").rstrip("/")
+        api_url = f"{base}/chat/completions"
+
     model_name = (
         os.environ.get("MODEL_NAME", "").strip()
         or os.environ.get("LLM_MODEL_NAME", "").strip()
+        or "qwen/qwen3-32b"
     )
 
-    if not api_url:
-        base = os.environ.get("LLM_BASE_URL", "").rstrip("/")
-        if base:
-            api_url = f"{base}/chat/completions"
-
-    token = ""
-    if token_path.is_file():
+    # Prefer API key in .env for OpenRouter; fall back to TOKEN_FILE for legacy RHOAI.
+    token = (
+        (os.environ.get("OPENROUTER_API_KEY") or "").strip()
+        or (os.environ.get("LLM_API_KEY") or "").strip()
+    )
+    auth_source = "OPENROUTER_API_KEY" if (os.environ.get("OPENROUTER_API_KEY") or "").strip() else (
+        "LLM_API_KEY" if (os.environ.get("LLM_API_KEY") or "").strip() else ""
+    )
+    if not token and token_path.is_file():
         token = token_path.read_text(encoding="utf-8").strip()
-    if not token:
-        token = os.environ.get("LLM_API_KEY", "").strip()
+        auth_source = "TOKEN_FILE"
+
+    is_openrouter = "openrouter.ai" in api_url.lower()
 
     verify: str | bool = True
-    if cert_path.is_file():
+    if cert_raw and cert_path.is_file():
         verify = str(cert_path)
 
-    cert_display = str(cert_path) if str(cert_path) != "." else ""
-    token_display = str(token_path) if str(token_path) != "." else ""
+    cert_display = str(cert_path) if cert_raw and str(cert_path) != "." else (cert_raw or "")
+    token_display = str(token_path) if token_raw and str(token_path) != "." else (token_raw or "")
 
     return {
         "cert_file": cert_display,
-        "cert_file_raw": cert_raw or "/Users/mikelam/SSLcert/qwen-tls.crt",
-        "cert_exists": cert_path.is_file(),
+        "cert_file_raw": cert_raw,
+        "cert_exists": bool(cert_raw) and cert_path.is_file(),
+        "cert_required": bool(cert_raw) and not is_openrouter,
         "token_file": token_display,
-        "token_file_raw": token_raw or "/Users/mikelam/SSLcert/token_qwen3_8.txt",
-        "token_exists": token_path.is_file(),
+        "token_file_raw": token_raw,
+        "token_exists": bool(token_raw) and token_path.is_file(),
         "token_loaded": bool(token),
+        "auth_source": auth_source or ("none" if not token else "unknown"),
+        "is_openrouter": is_openrouter,
         "project_root": str(project_root()),
         "api_url": api_url,
         "model_name": model_name,
@@ -169,16 +182,18 @@ def _llm_config() -> dict:
         "timeout": float(os.environ.get("LLM_TIMEOUT_SECONDS", "60")),
         "temperature": float(os.environ.get("LLM_TEMPERATURE", "0.2")),
         "max_tokens": int(os.environ.get("LLM_MAX_TOKENS", "2048")),
+        "http_referer": (os.environ.get("OPENROUTER_HTTP_REFERER") or "http://127.0.0.1:3036").strip(),
+        "app_title": (os.environ.get("OPENROUTER_APP_TITLE") or "Candidate Evaluation").strip(),
     }
 
 
 def llm_chat(messages: list[dict], *, max_tokens: int | None = None) -> dict:
-    """POST to API_URL with Bearer token and optional CERT_FILE verify."""
+    """POST to API_URL with Bearer auth (OpenRouter or local OpenAI-compatible)."""
     cfg = _llm_config()
     if not cfg["api_url"]:
         raise ValueError("API_URL is not set")
     if not cfg["token_loaded"]:
-        raise ValueError("TOKEN_FILE missing/empty (or LLM_API_KEY unset)")
+        raise ValueError("OPENROUTER_API_KEY / LLM_API_KEY unset (and no TOKEN_FILE)")
     if not cfg["model_name"]:
         raise ValueError("MODEL_NAME is not set")
 
@@ -192,6 +207,10 @@ def llm_chat(messages: list[dict], *, max_tokens: int | None = None) -> dict:
         "Authorization": f"Bearer {cfg['token']}",
         "Content-Type": "application/json",
     }
+    if cfg["is_openrouter"]:
+        headers["HTTP-Referer"] = cfg["http_referer"]
+        headers["X-Title"] = cfg["app_title"]
+
     with httpx.Client(timeout=cfg["timeout"], verify=cfg["verify"]) as client:
         resp = client.post(cfg["api_url"], headers=headers, json=payload)
         resp.raise_for_status()
@@ -199,17 +218,20 @@ def llm_chat(messages: list[dict], *, max_tokens: int | None = None) -> dict:
 
 
 def test_llm_connectivity() -> tuple[dict, int]:
-    """UI/API connectivity check for CERT_FILE + TOKEN_FILE + API_URL + MODEL_NAME."""
+    """UI/API connectivity check for OpenRouter / LLM endpoint."""
     load_env()
     cfg = _llm_config()
     host = urlparse(cfg["api_url"]).netloc if cfg["api_url"] else ""
     result: dict = {
         "ok": False,
         "test": "llm_connectivity",
+        "provider": "openrouter" if cfg["is_openrouter"] else "custom",
         "project_root": cfg["project_root"],
         "cert_file": cfg["cert_file"],
         "cert_file_raw": cfg["cert_file_raw"],
         "cert_exists": cfg["cert_exists"],
+        "cert_required": cfg["cert_required"],
+        "auth_source": cfg["auth_source"],
         "token_file": cfg["token_file"],
         "token_file_raw": cfg["token_file_raw"],
         "token_exists": cfg["token_exists"],
@@ -221,17 +243,15 @@ def test_llm_connectivity() -> tuple[dict, int]:
         "llm_reachable": False,
     }
 
-    if not cfg["cert_file"]:
-        result["error"] = "CERT_FILE is not set in .env"
-        return result, 1
-    if not cfg["cert_exists"]:
-        result["error"] = f"CERT_FILE not found: {cfg['cert_file']}"
-        return result, 1
-    if not cfg["token_file"]:
-        result["error"] = "TOKEN_FILE is not set in .env"
-        return result, 1
+    if cfg["cert_required"]:
+        if not cfg["cert_file"]:
+            result["error"] = "CERT_FILE is not set in .env"
+            return result, 1
+        if not cfg["cert_exists"]:
+            result["error"] = f"CERT_FILE not found: {cfg['cert_file']}"
+            return result, 1
     if not cfg["token_loaded"]:
-        result["error"] = f"TOKEN_FILE missing/empty: {cfg['token_file']}"
+        result["error"] = "OPENROUTER_API_KEY or LLM_API_KEY missing in .env"
         return result, 1
     if not cfg["api_url"]:
         result["error"] = "API_URL is not set"
@@ -368,6 +388,9 @@ def run_smoke(
         "cert_file": cfg["cert_file"],
         "cert_file_raw": cfg["cert_file_raw"],
         "cert_exists": cfg["cert_exists"],
+        "cert_required": cfg["cert_required"],
+        "auth_source": cfg["auth_source"],
+        "provider": "openrouter" if cfg["is_openrouter"] else "custom",
         "token_file": cfg["token_file"],
         "token_file_raw": cfg["token_file_raw"],
         "token_exists": cfg["token_exists"],
@@ -377,7 +400,7 @@ def run_smoke(
         "api_host": host,
         "llm_reachable": None,
         "llm_probed": False,
-        "deployment": "podman-or-docker-local",
+        "deployment": "macbook-local",
         "port": port,
     }
 
@@ -385,11 +408,11 @@ def run_smoke(
         checks["error"] = f"Mailbox folder path not found: {mail['mail_path']}"
         return checks, 1
 
-    if not cfg["cert_exists"]:
+    if cfg["cert_required"] and not cfg["cert_exists"]:
         checks["error"] = f"CERT_FILE not found: {cfg['cert_file']}"
         return checks, 1
     if not cfg["token_loaded"]:
-        checks["error"] = f"TOKEN_FILE missing/empty: {cfg['token_file']}"
+        checks["error"] = "OPENROUTER_API_KEY or LLM_API_KEY missing in .env"
         return checks, 1
     if not cfg["api_url"] or not cfg["model_name"]:
         checks["error"] = "API_URL and MODEL_NAME are required"
@@ -401,7 +424,7 @@ def run_smoke(
         checks["ok"] = True
         checks["llm_reachable"] = None
         checks["message"] = (
-            "local smoke passed (mail + cert/token files + API_URL config); "
+            "local smoke passed (mail + API key + API_URL config); "
             "LLM not probed — use Test LLM connectivity"
         )
         return checks, 0

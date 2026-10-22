@@ -11,10 +11,8 @@ cd firstRepo
 git checkout cursor/candidate-eval-spec-65c3
 git pull
 
-# Secrets (absolute paths on the Mac — not in git):
-mkdir -p /Users/mikelam/SSLcert
-#   /Users/mikelam/SSLcert/qwen-tls.crt
-#   /Users/mikelam/SSLcert/token_qwen3_8.txt
+# Put OpenRouter key in .env (see .env.example):
+#   OPENROUTER_API_KEY=sk-or-v1-...
 
 bash scripts/run_local_mac.sh
 ```
@@ -32,32 +30,31 @@ Diagnose: `bash scripts/run_local_mac.sh doctor`
 - Uses a local Python venv (no cloud)
 - Binds the portal to **127.0.0.1:3036** (this Mac only)
 - Loads `.env` from the repo root
-- Optionally adds the RHOAI LLM hosts line (sudo) for LLM tests on your LAN/VPN
+### LLM (OpenRouter)
 
-### LLM (optional for UI)
+UI loads without calling the model. **Test LLM connectivity** uses OpenRouter:
 
-UI loads without the model. For **Test LLM connectivity** you need network reachability to your RHOAI host and:
-
-```text
-192.168.147.135 redhataiqwen38-27b-int4-rhoai-test.apps.demo.rhoai.demo
+```env
+OPENROUTER_API_KEY="sk-or-v1-..."
+API_URL="https://openrouter.ai/api/v1/chat/completions"
+MODEL_NAME="qwen/qwen3-32b"
 ```
 
-(`scripts/run_local_mac.sh` / `scripts/setup_hosts.sh` can add this to `/etc/hosts`.)
+Keep the real key only in `.env` (gitignored).
 
 ## Configuration (local)
 
 | File | Purpose |
 | --- | --- |
-| [`.env.example`](.env.example) | Copy to `.env` — Mac paths, `PORT=3036`, LLM settings |
+| [`.env.example`](.env.example) | Copy to `.env` — Mac paths, OpenRouter key placeholder |
 | [`config/role_requirements.yaml`](config/role_requirements.yaml) | Role + `review_keywords` |
-| `/Users/mikelam/SSLcert/` | `qwen-tls.crt` + `token_qwen3_8.txt` (local secrets) |
 
 ```env
 HOST=127.0.0.1
 PORT=3036
-CERT_FILE="/Users/mikelam/SSLcert/qwen-tls.crt"
-TOKEN_FILE="/Users/mikelam/SSLcert/token_qwen3_8.txt"
-THUNDERBIRD_MAIL_PATH="mailbox://mikelam@systex.com.hk/Inbox/SE_2026"
+OPENROUTER_API_KEY="sk-or-v1-..."
+API_URL="https://openrouter.ai/api/v1/chat/completions"
+MODEL_NAME="qwen/qwen3-32b"
 ```
 
 ## Spec & SOP

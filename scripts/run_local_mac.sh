@@ -16,13 +16,6 @@ PORT="${PORT:-3036}"
 # Loopback only — not exposed as a public/VPS service.
 BIND_HOST="${BIND_HOST:-127.0.0.1}"
 
-# Absolute MacBook secret directory (not under the git repo)
-SSL_DIR="${SSL_DIR:-/Users/mikelam/SSLcert}"
-CERT_ABS="$SSL_DIR/qwen-tls.crt"
-TOKEN_ABS="$SSL_DIR/token_qwen3_8.txt"
-CERT_ENV="$CERT_ABS"
-TOKEN_ENV="$TOKEN_ABS"
-
 doctor() {
   echo "==> Repo: $ROOT"
   echo "==> PROJECT_ROOT=$PROJECT_ROOT"
@@ -41,11 +34,17 @@ doctor() {
     echo "FAIL: cannot curl health endpoint"
     echo "Start with: bash scripts/run_local_mac.sh"
   fi
-  echo "==> Secrets (absolute Mac paths):"
-  echo "  CERT_FILE=$CERT_ENV"
-  if [[ -f "$CERT_ABS" ]]; then echo "       present"; else echo "       MISSING"; fi
-  echo "  TOKEN_FILE=$TOKEN_ENV"
-  if [[ -f "$TOKEN_ABS" ]]; then echo "       present"; else echo "       MISSING"; fi
+  echo "==> OpenRouter key in .env:"
+  if grep -qE '^OPENROUTER_API_KEY=["'\'']?sk-or-v1-' .env 2>/dev/null; then
+    echo "  OPENROUTER_API_KEY: set"
+  else
+    echo "  OPENROUTER_API_KEY: MISSING (set in .env)"
+  fi
+  if grep -q 'openrouter.ai' .env 2>/dev/null; then
+    echo "  API_URL: openrouter.ai"
+  else
+    echo "  API_URL: check .env (expected openrouter.ai)"
+  fi
 }
 
 if [[ "${1:-}" == "doctor" ]]; then
@@ -59,11 +58,11 @@ echo "==> Will serve http://127.0.0.1:${PORT}  (bind ${BIND_HOST}:${PORT})"
 
 if [[ ! -f .env ]]; then
   cp .env.example .env
-  echo "==> Created .env from .env.example"
+  echo "==> Created .env from .env.example — add your OPENROUTER_API_KEY"
 fi
 
-# Force Mac absolute secret paths in .env
-python3 - <<PY
+# Keep Mac loopback + OpenRouter defaults without overwriting a real API key.
+python3 - <<'PY'
 from pathlib import Path
 import re
 
@@ -74,9 +73,13 @@ replacements = {
     "PORT": "3036",
     "ROLE_CONFIG_PATH": "./config/role_requirements.yaml",
     "OUTPUT_DIR": "./output/candidate_reviews",
-    "CERT_FILE": "${CERT_ENV}",
-    "TOKEN_FILE": "${TOKEN_ENV}",
+    "API_URL": "https://openrouter.ai/api/v1/chat/completions",
+    "LLM_BASE_URL": "https://openrouter.ai/api/v1",
 }
+# Only set MODEL_NAME if missing
+if not re.search(r"^MODEL_NAME=", text, re.MULTILINE):
+    replacements["MODEL_NAME"] = "qwen/qwen3-32b"
+
 for key, value in replacements.items():
     pattern = re.compile(rf"^{key}=.*$", re.MULTILINE)
     line = f'{key}="{value}"' if key != "PORT" else f"{key}={value}"
@@ -85,66 +88,16 @@ for key, value in replacements.items():
     else:
         text = text.rstrip() + "\n" + line + "\n"
 p.write_text(text, encoding="utf-8")
-print("==> .env MacBook-local paths:")
-for key, value in replacements.items():
-    print(f"     {key}={value}")
+print("==> .env MacBook-local OpenRouter settings refreshed (key left as-is)")
 PY
 
-mkdir -p "$SSL_DIR" output/candidate_reviews
+mkdir -p output/candidate_reviews
 
-# Auto-pick up common download names into /Users/mikelam/SSLcert
-if [[ ! -f "$CERT_ABS" ]]; then
-  for cand in \
-    "$HOME/Downloads/qwen-tls.crt" \
-    "$HOME/Downloads/qwen-tls"*.crt \
-    "$ROOT/SSLcert/qwen-tls.crt" \
-    ./qwen-tls.crt; do
-    if compgen -G "$cand" >/dev/null 2>&1; then
-      src="$(compgen -G "$cand" | head -1)"
-      cp "$src" "$CERT_ABS"
-      echo "==> Copied cert from $src -> $CERT_ABS"
-      break
-    fi
-  done
-fi
-if [[ ! -f "$TOKEN_ABS" ]]; then
-  for cand in \
-    "$HOME/Downloads/token_qwen3_8.txt" \
-    "$HOME/Downloads/token_qwen"*.txt \
-    "$ROOT/SSLcert/token_qwen3_8.txt" \
-    ./token_qwen3_8.txt; do
-    if compgen -G "$cand" >/dev/null 2>&1; then
-      src="$(compgen -G "$cand" | head -1)"
-      cp "$src" "$TOKEN_ABS"
-      echo "==> Copied token from $src -> $TOKEN_ABS"
-      break
-    fi
-  done
-fi
-
-if [[ ! -f "$CERT_ABS" || ! -f "$TOKEN_ABS" ]]; then
-  echo "!! Warning: place secrets here (exact absolute paths):"
-  echo "     $CERT_ABS"
-  echo "     $TOKEN_ABS"
-  echo "   Portal UI will still start; LLM test needs those files."
+if ! grep -qE '^OPENROUTER_API_KEY=["'\'']?sk-or-v1-' .env 2>/dev/null \
+  && ! grep -qE '^LLM_API_KEY=["'\'']?sk-or-v1-' .env 2>/dev/null; then
+  echo "!! Warning: set OPENROUTER_API_KEY in .env (UI will start; LLM test needs the key)."
 else
-  echo "==> Secrets OK (absolute):"
-  echo "     $CERT_ABS"
-  echo "     $TOKEN_ABS"
-fi
-
-LLM_HOST="${RHOAI_LLM_HOST:-redhataiqwen38-27b-int4-rhoai-test.apps.demo.rhoai.demo}"
-LLM_IP="${RHOAI_LLM_IP:-192.168.147.135}"
-if ! grep -q "$LLM_HOST" /etc/hosts 2>/dev/null; then
-  echo "==> Trying to add /etc/hosts entry (optional; only needed for LLM, not the UI):"
-  echo "    $LLM_IP $LLM_HOST"
-  if echo "$LLM_IP $LLM_HOST" | sudo tee -a /etc/hosts >/dev/null; then
-    echo "==> /etc/hosts updated"
-  else
-    echo "!! Could not update /etc/hosts (continuing anyway — UI will still work)"
-  fi
-else
-  echo "==> /etc/hosts already has $LLM_HOST"
+  echo "==> OpenRouter API key present in .env"
 fi
 
 # Free a stale listener on this port (common after a previous portal run)
@@ -194,19 +147,15 @@ export HOST="$BIND_HOST"
 export PORT
 export ROLE_CONFIG_PATH="${ROLE_CONFIG_PATH:-./config/role_requirements.yaml}"
 export OUTPUT_DIR="${OUTPUT_DIR:-./output/candidate_reviews}"
-# Always pin absolute Mac secret paths.
-export CERT_FILE="$CERT_ENV"
-export TOKEN_FILE="$TOKEN_ENV"
+# Drop stale RHOAI overrides if any were exported earlier in the shell.
+unset CERT_FILE TOKEN_FILE RHOAI_LLM_HOST RHOAI_LLM_IP 2>/dev/null || true
 
 echo
 echo "============================================"
 echo "  MacBook local only (not VPS / not Cursor Cloud)"
 echo "  OPEN ON THIS MAC: http://127.0.0.1:${PORT}"
 echo "  Health check:     http://127.0.0.1:${PORT}/health"
-echo "  CERT_FILE:        $CERT_FILE"
-echo "       resolved:    $CERT_ABS"
-echo "  TOKEN_FILE:       $TOKEN_FILE"
-echo "       resolved:    $TOKEN_ABS"
+echo "  LLM:              OpenRouter (${MODEL_NAME:-qwen/qwen3-32b})"
 echo "  Leave this terminal open (Ctrl+C to stop)"
 echo "============================================"
 echo

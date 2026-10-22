@@ -67,9 +67,13 @@ def _llm_env_summary() -> dict:
     cfg = _llm_config()
     return {
         "project_root": cfg["project_root"],
+        "provider": "openrouter" if cfg["is_openrouter"] else "custom",
+        "auth_source": cfg["auth_source"],
+        "token_loaded": cfg["token_loaded"],
         "cert_file": cfg["cert_file"],
         "cert_file_raw": cfg["cert_file_raw"],
         "cert_exists": cfg["cert_exists"],
+        "cert_required": cfg["cert_required"],
         "token_file": cfg["token_file"],
         "token_file_raw": cfg["token_file_raw"],
         "token_exists": cfg["token_exists"],

@@ -51,49 +51,20 @@ podman compose run --rm screener shell
 
 Inside the container, `THUNDERBIRD_MAIL_PATH=/data/mail` and `TARGET_MAIL_FOLDER` selects the mbox file name (fixture default: `Applications`).
 
-## LLM: CERT_FILE, TOKEN_FILE, API_URL, MODEL_NAME
+## LLM: OpenRouter
 
-Configured in `.env` (see [`.env.example`](../.env.example) and [`SSLcert/README.md`](../SSLcert/README.md)):
-
-```env
-# Mac / bare-metal (.env) — resolved against repo root, not cwd
-CERT_FILE="/Users/mikelam/SSLcert/qwen-tls.crt"
-TOKEN_FILE="/Users/mikelam/SSLcert/token_qwen3_8.txt"
-# Compose bind-mounts SSL_HOST_PATH (default /Users/mikelam/SSLcert) → /app/SSLcert
-API_URL="https://redhataiqwen38-27b-int4-rhoai-test.apps.demo.rhoai.demo/v1/chat/completions"
-MODEL_NAME="Qwen38-27b-int4"
-```
-
-### Pod DNS / name resolution
-
-The demo hostname is private. [`compose.yml`](../compose.yml) injects it into the **pod `/etc/hosts`** via `extra_hosts` (Podman/Docker `--add-host`):
+Configured in `.env` (see [`.env.example`](../.env.example)):
 
 ```env
-RHOAI_LLM_IP=192.168.147.135
-RHOAI_LLM_HOST=redhataiqwen38-27b-int4-rhoai-test.apps.demo.rhoai.demo
+OPENROUTER_API_KEY="sk-or-v1-..."
+LLM_API_KEY="sk-or-v1-..."
+API_URL="https://openrouter.ai/api/v1/chat/completions"
+MODEL_NAME="qwen/qwen3-32b"
 ```
 
-Recreate the container after changing these values (persists across restarts):
+Smoke/`llm_chat` uses Bearer auth against OpenRouter. No private TLS cert or `/etc/hosts` mapping is required. Keep the real key only in `.env` (gitignored).
 
-```bash
-podman compose up --build --force-recreate
-# or: docker compose up --build --force-recreate
-```
-
-Already running and need the mapping **now** (no recreate):
-
-```bash
-bash scripts/add_pod_hosts.sh
-# injects: 192.168.147.135 redhataiqwen38-27b-int4-rhoai-test.apps.demo.rhoai.demo
-```
-
-Bare-metal (host OS, not the pod): `sudo bash scripts/setup_hosts.sh`
-
-Smoke/`llm_chat` uses the cert for TLS verify, reads the bearer token from `TOKEN_FILE`, and POSTs to `API_URL` with `MODEL_NAME`.
-
-For a local OpenAI-compatible host instead, you can still point `API_URL` at that server’s `/v1/chat/completions` and mount/provide cert+token as needed.
-
-`compose.yml` still registers `host.containers.internal` / `host.docker.internal` via `extra_hosts: host-gateway` when the model runs on the host.
+For a private OpenAI-compatible host instead, you can still set `API_URL` plus optional `CERT_FILE` / `TOKEN_FILE`.
 
 ## SELinux (Podman on Fedora/RHEL)
 

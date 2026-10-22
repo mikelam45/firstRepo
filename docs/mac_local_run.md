@@ -1,67 +1,43 @@
-# MacBook local run (supported deployment)
+# MacBook local run
 
-This app is intended to run **only on your MacBook**.
-
-| Supported | Not supported |
-| --- | --- |
-| `bash scripts/run_local_mac.sh` on macOS | VPS / public cloud VM |
-| Browser on the same Mac → `http://127.0.0.1:3036` | Cursor Cloud Agent / Forwarded Ports |
-| Optional Podman/Docker **on the same Mac** | Remote “Try Live” / desktop control |
+This app is intended to run **only on your MacBook** at `http://127.0.0.1:3036`.
 
 ## Quick start
 
 ```bash
-cd /path/to/firstRepo
-git checkout cursor/candidate-eval-spec-65c3 && git pull
-mkdir -p /Users/mikelam/SSLcert
-# place:
-#   /Users/mikelam/SSLcert/qwen-tls.crt
-#   /Users/mikelam/SSLcert/token_qwen3_8.txt
+cd /Users/mikelam/firstRepo
+cp -n .env.example .env   # if needed
+# Edit .env and set OPENROUTER_API_KEY
 bash scripts/run_local_mac.sh
 ```
 
-Open **http://127.0.0.1:3036**. Keep the Terminal session running.
+Open: [http://127.0.0.1:3036](http://127.0.0.1:3036)
 
-## Secrets layout (absolute)
-
-```text
-/Users/mikelam/SSLcert/qwen-tls.crt
-/Users/mikelam/SSLcert/token_qwen3_8.txt
-```
-
-`.env` values:
+## Required `.env` (OpenRouter)
 
 ```env
 HOST=127.0.0.1
 PORT=3036
-CERT_FILE="/Users/mikelam/SSLcert/qwen-tls.crt"
-TOKEN_FILE="/Users/mikelam/SSLcert/token_qwen3_8.txt"
+OPENROUTER_API_KEY="sk-or-v1-..."
+LLM_API_KEY="sk-or-v1-..."
+API_URL="https://openrouter.ai/api/v1/chat/completions"
+MODEL_NAME="qwen/qwen3-32b"
+THUNDERBIRD_MAIL_PATH="mailbox://mikelam@systex.com.hk/Inbox/SE_2026"
 ```
 
-## LLM hosts (same Mac)
-
-```bash
-sudo bash scripts/setup_hosts.sh
-# 192.168.147.135 redhataiqwen38-27b-int4-rhoai-test.apps.demo.rhoai.demo
-```
-
-Your Mac must reach `192.168.147.135` (LAN/VPN). The portal UI works even if the LLM is down; use **Test LLM connectivity** when ready.
-
-## Optional: Podman/Docker on the same Mac
-
-Containers are optional and still **local to the Mac** (not a VPS):
-
-```bash
-podman compose up --build --force-recreate
-# inject hosts into a running local container:
-bash scripts/add_pod_hosts.sh
-```
-
-Prefer `run_local_mac.sh` unless you specifically want containers.
+`.env` is gitignored. Never commit the real key.
 
 ## Doctor
 
 ```bash
 bash scripts/run_local_mac.sh doctor
-curl http://127.0.0.1:3036/health
+```
+
+## LLM test
+
+Use **Test LLM connectivity** in the UI, or:
+
+```bash
+source .venv/bin/activate
+python -m candidate_eval.cli llm-test
 ```
