@@ -187,13 +187,16 @@ def api_smoke(mail_path: str | None = None, mail_folder: str | None = None) -> J
 
 
 @app.get("/api/browse-mail")
-def api_browse_mail(path: str | None = None) -> JSONResponse:
-    """List local folders / mbox-like files under an allowlisted path.
+def api_browse_mail(
+    path: str | None = None,
+    show_all_files: bool = False,
+) -> JSONResponse:
+    """List Mac home / project folders for mailbox selection (loopback only).
 
     Allowed roots: the user home directory and the project root only.
     """
     try:
-        return JSONResponse(browse_mail(path))
+        return JSONResponse(browse_mail(path, show_all_files=show_all_files))
     except ValueError as exc:
         return JSONResponse({"error": str(exc)}, status_code=400)
     except PermissionError as exc:

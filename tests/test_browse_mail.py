@@ -78,6 +78,17 @@ def test_looks_like_mbox_sniffs_from_header(tmp_path: Path) -> None:
     assert bm.looks_like_mbox(other) is False
 
 
+def test_mailbox_uri_falls_back_to_default(client: TestClient) -> None:
+    res = client.get(
+        "/api/browse-mail",
+        params={"path": "mailbox://user@host/Inbox/SE_2026"},
+    )
+    assert res.status_code == 200
+    data = res.json()
+    assert data["cwd"]
+    assert "shortcuts" in data
+
+
 def test_parent_stops_at_allow_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     root = tmp_path / "home"
     nested = root / "Library" / "Thunderbird"

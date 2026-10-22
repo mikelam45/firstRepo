@@ -389,23 +389,30 @@
                      spellcheck="false" />
               <button type="button" class="secondary" id="browse-mail-btn"
                       aria-haspopup="dialog" aria-controls="browse-mail-modal">
-                Browse…
+                Browse Mac folder…
               </button>
             </div>
           </div>
           <div>
             <label for="mail_folder">Mailbox folder name</label>
-            <input id="mail_folder" name="mail_folder" type="text"
-                   value="{{ mail_folder }}"
-                   placeholder="Applications"
-                   autocomplete="off"
-                   spellcheck="false" />
+            <div class="path-row">
+              <input id="mail_folder" name="mail_folder" type="text"
+                     value="{{ mail_folder }}"
+                     placeholder="Inbox or Applications"
+                     autocomplete="off"
+                     spellcheck="false" />
+              <button type="button" class="secondary" id="browse-mbox-btn"
+                      aria-haspopup="dialog" aria-controls="browse-mail-modal">
+                Pick mbox…
+              </button>
+            </div>
           </div>
         </div>
         <p class="hint">
-          Demo fixture: <code>./fixtures/mbox</code> + folder <code>Applications</code>.
-          Or use <strong>Browse…</strong> to pick a Thunderbird mail folder / mbox on this Mac
-          (<code>~/Library/Thunderbird/Profiles/…/Mail/…</code>).
+          Use <strong>Browse Mac folder…</strong> to navigate your Mac
+          (<code>Home</code>, <code>Documents</code>, Thunderbird
+          <code>~/Library/Thunderbird/Profiles/…/Mail/…</code>).
+          Select a folder or an mbox file. Demo: <code>./fixtures/mbox</code> + <code>Applications</code>.
         </p>
 
         <label for="keywords">Review keywords (optional)</label>
@@ -555,8 +562,9 @@
        aria-modal="true" aria-labelledby="browse-mail-title">
     <div class="browse-modal">
       <header>
-        <h3 id="browse-mail-title">Browse mailbox folder</h3>
+        <h3 id="browse-mail-title">Browse Mac mailbox folders</h3>
         <p class="browse-cwd" id="browse-cwd">Loading…</p>
+        <p class="hint" id="browse-hint" style="margin:0.35rem 0 0"></p>
       </header>
       <div class="browse-shortcuts" id="browse-shortcuts"></div>
       <p class="browse-error" id="browse-error" hidden></p>
@@ -612,8 +620,10 @@
 
     (function () {
       var openBtn = document.getElementById("browse-mail-btn");
+      var openMboxBtn = document.getElementById("browse-mbox-btn");
       var modal = document.getElementById("browse-mail-modal");
       var cwdEl = document.getElementById("browse-cwd");
+      var hintEl = document.getElementById("browse-hint");
       var listEl = document.getElementById("browse-list");
       var errEl = document.getElementById("browse-error");
       var shortcutsEl = document.getElementById("browse-shortcuts");
@@ -625,7 +635,7 @@
       var mailFolder = document.getElementById("mail_folder");
       if (!openBtn || !modal) return;
 
-      var state = { cwd: null, parent: null, selected: null, entries: [] };
+      var state = { cwd: null, parent: null, selected: null, entries: [], preferMbox: false };
 
       function showError(msg) {
         if (!msg) {
@@ -650,6 +660,7 @@
         state.parent = data.parent || null;
         state.entries = data.entries || [];
         cwdEl.textContent = data.cwd || "";
+        if (hintEl) hintEl.textContent = data.hint || "Navigate your Mac folders, then select a folder or mbox.";
         upBtn.disabled = !state.parent;
         selectDirBtn.disabled = !data.cwd;
         showError(null);
@@ -744,11 +755,16 @@
         close();
       }
 
-      function open() {
+      function open(preferMbox) {
+        state.preferMbox = !!preferMbox;
         modal.hidden = false;
         var start = (mailPath && mailPath.value) ? mailPath.value.trim() : "";
+        // mailbox:// is not a filesystem path — let the API pick Thunderbird/Home.
+        if (!start || start.toLowerCase().indexOf("mailbox:") === 0) {
+          start = "";
+        }
         load(start || null);
-        selectDirBtn.focus();
+        (preferMbox ? selectFileBtn : selectDirBtn).focus();
       }
 
       function close() {
@@ -756,7 +772,10 @@
         openBtn.focus();
       }
 
-      openBtn.addEventListener("click", open);
+      openBtn.addEventListener("click", function () { open(false); });
+      if (openMboxBtn) {
+        openMboxBtn.addEventListener("click", function () { open(true); });
+      }
       cancelBtn.addEventListener("click", close);
       upBtn.addEventListener("click", function () {
         if (state.parent) load(state.parent);

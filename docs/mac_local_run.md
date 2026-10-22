@@ -27,6 +27,15 @@ No `CERT_FILE`, `TOKEN_FILE`, or other LLM host settings. Portal defaults (host/
 
 `.env` is gitignored. Never commit the real key.
 
+## Browse Mac mailbox folders
+
+On the JD match form, click **Browse Mac folder…** (or **Pick mbox…**).
+Shortcuts include Home, Desktop, Documents, Downloads, Thunderbird Profiles,
+and discovered `Mail` / `ImapMail` account folders under
+`~/Library/Thunderbird/Profiles/…`.
+
+Only paths under your Mac home and this project are listable (loopback safety).
+
 ## Privacy
 
 Sensitive fields (email, phone, LinkedIn, address, raw bodies) stay in `LOCAL_DB_PATH`.  
