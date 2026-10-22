@@ -147,11 +147,32 @@ else
   echo "==> /etc/hosts already has $LLM_HOST"
 fi
 
-# Free a stale listener on this port if it is our previous serve
+# Free a stale listener on this port (common after a previous portal run)
 if lsof -nP -iTCP:"${PORT}" -sTCP:LISTEN >/dev/null 2>&1; then
-  echo "==> Port ${PORT} already in use:"
+  echo "==> Port ${PORT} already in use — stopping old listener(s):"
   lsof -nP -iTCP:"${PORT}" -sTCP:LISTEN || true
-  echo "    If this is an old portal, stop it (Ctrl+C in that terminal) or: kill \$(lsof -t -iTCP:${PORT} -sTCP:LISTEN)"
+  # Prefer killing our previous serve; fall back to anything on the port.
+  pkill -f "candidate_eval.cli serve" 2>/dev/null || true
+  pkill -f "uvicorn.*candidate_eval" 2>/dev/null || true
+  PIDS="$(lsof -t -iTCP:"${PORT}" -sTCP:LISTEN 2>/dev/null || true)"
+  if [[ -n "${PIDS}" ]]; then
+    # shellcheck disable=SC2086
+    kill ${PIDS} 2>/dev/null || true
+    sleep 1
+    PIDS="$(lsof -t -iTCP:"${PORT}" -sTCP:LISTEN 2>/dev/null || true)"
+    if [[ -n "${PIDS}" ]]; then
+      # shellcheck disable=SC2086
+      kill -9 ${PIDS} 2>/dev/null || true
+      sleep 0.5
+    fi
+  fi
+  if lsof -nP -iTCP:"${PORT}" -sTCP:LISTEN >/dev/null 2>&1; then
+    echo "FAIL: port ${PORT} still busy. Free it manually:"
+    echo "  lsof -nP -iTCP:${PORT} -sTCP:LISTEN"
+    echo "  kill -9 \$(lsof -t -iTCP:${PORT} -sTCP:LISTEN)"
+    exit 1
+  fi
+  echo "==> Port ${PORT} is free"
 fi
 
 if [[ ! -d .venv ]]; then
