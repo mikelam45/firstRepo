@@ -119,10 +119,10 @@ def resolve_keywords(cli_keywords: str | list[str] | None = None) -> list[str]:
 def _llm_config() -> dict:
     """Resolve OpenRouter / LLM settings from env.
 
-    Auth preference: OPENROUTER_API_KEY or LLM_API_KEY in .env, else TOKEN_FILE
-    (TOKEN_FILE is legacy RHOAI only — ignored for OpenRouter when an API key is set).
-    CERT_FILE is used only for private non-OpenRouter TLS endpoints; OpenRouter
-    always uses system CA verification (verify=True).
+    Auth preference: OPENROUTER_API_KEY or LLM_API_KEY in .env; TOKEN_FILE is
+    legacy RHOAI only (ignored for OpenRouter). CERT_FILE is used only for
+    private non-OpenRouter TLS endpoints; OpenRouter always uses system CA
+    verification (verify=True).
     """
     cert_raw = (os.environ.get("CERT_FILE") or "").strip()
     token_raw = (os.environ.get("TOKEN_FILE") or "").strip()
@@ -156,8 +156,8 @@ def _llm_config() -> dict:
         auth_source = "LLM_API_KEY"
     else:
         auth_source = ""
-    if not token and token_path.is_file():
-        # OpenRouter should use OPENROUTER_API_KEY; TOKEN_FILE is RHOAI-era fallback.
+    if not token and not is_openrouter and token_path.is_file():
+        # TOKEN_FILE is RHOAI-era only; OpenRouter requires OPENROUTER_API_KEY / LLM_API_KEY.
         token = token_path.read_text(encoding="utf-8").strip()
         auth_source = "TOKEN_FILE"
 

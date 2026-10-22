@@ -62,6 +62,24 @@ def test_openrouter_api_key_beats_token_file(tmp_path: Path, monkeypatch) -> Non
     assert cfg["verify"] is True
 
 
+def test_openrouter_ignores_token_file_without_api_key(tmp_path: Path, monkeypatch) -> None:
+    token_file = tmp_path / "token.txt"
+    token_file.write_text("rhoai-only-token", encoding="utf-8")
+
+    monkeypatch.setenv("API_URL", "https://openrouter.ai/api/v1/chat/completions")
+    monkeypatch.setenv("TOKEN_FILE", str(token_file))
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    monkeypatch.delenv("LLM_API_KEY", raising=False)
+    monkeypatch.delenv("CERT_FILE", raising=False)
+
+    cfg = _llm_config()
+
+    assert cfg["is_openrouter"] is True
+    assert cfg["token_loaded"] is False
+    assert cfg["auth_source"] == "none"
+    assert cfg["verify"] is True
+
+
 if __name__ == "__main__":
     # Minimal runner without pytest dependency.
     class _MP:
@@ -104,6 +122,10 @@ if __name__ == "__main__":
             mp = _MP()
             test_openrouter_api_key_beats_token_file(tmp, mp)
             print("PASS: OPENROUTER_API_KEY beats TOKEN_FILE")
+            mp.restore()
+            mp = _MP()
+            test_openrouter_ignores_token_file_without_api_key(tmp, mp)
+            print("PASS: OpenRouter ignores TOKEN_FILE without API key")
         finally:
             mp.restore()
     print("All OpenRouter TLS checks passed.")
