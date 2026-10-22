@@ -1,8 +1,8 @@
 # LingoCoach — product and implementation spec
 
-**Product:** mobile-first daily conversation practice in English, Putonghua, and Cantonese.
+**Product:** mobile-first IELTS training, with explanations in English, Putonghua, or Cantonese, plus a separate daily-conversation track in those three languages.
 **This document replaces** the short architecture note and single-file prototype. That note is the product intent. This spec is what an engineer can build against.
-**Status:** v1 decisions are closed unless they appear in [Open decisions](#17-open-decisions).
+**Status:** v1 decisions are closed unless they appear in [Open decisions](#17-open-decisions). For `track: "ielts"`, [§19](#19-ielts-focus-training) wins where it differs from the daily-conversation rules.
 
 ---
 
@@ -27,38 +27,59 @@ The source note defines the right product: a roleplay chat, a phonetic line unde
 
 ## 1. Product
 
+Two tracks share a phone UI, a support language, and the phonetic pipeline.
+
+| Track | Who it is for | What “good” means |
+| --- | --- | --- |
+| `ielts` | An adult aiming at an IELTS band, usually with Cantonese or Putonghua as the support language. Default home. | A timed speaking practice that behaves like the test, then a review that trains the next band up. |
+| `daily` | The same learner, on days they want a life scene rather than the exam. | A finished scene and a line they could actually say. |
+
+IELTS is a trademark of its owners. The product is practice. It is not a test center, not affiliated with IELTS, and it does not show an official score. The public name in the UI is “IELTS-style practice”.
+
 ### 1.1 Job to be done
 
-An adult learner in Hong Kong opens the app for a few minutes, walks through one everyday scene, and leaves with:
+**IELTS track.** A learner sets a target band, does the drill the plan chose (or a full speaking mock), and leaves with:
 
-1. a reply they could actually say, in the target language;
-2. a phonetic line they can trust (IPA, Pinyin, or Jyutping);
-3. at most a couple of concrete wording fixes, explained in the support language;
-4. the scene advanced by one step (the clerk asks the next real question, the directions get more specific, the check-in moves forward).
+1. examiner questions in English, spoken where the device has a voice;
+2. their own answer, timed;
+3. a practice review in the support language: what they covered, one upgrade toward the target band, and a model answer that keeps their facts;
+4. pronunciation left blank unless audio was actually assessed;
+5. the next drill already chosen from the weakest criterion.
+
+**Daily track.** A learner walks through one everyday scene and leaves with a reply they could say, a library phonetic line, at most a couple of wording fixes in the support language, and the scene one step further on.
 
 ### 1.2 People
 
-v1 is for adult self-learners who already read the support language fluently and are practising a target language for daily life. The implied mix is Hong Kong: Cantonese daily speech, Putonghua for the Mainland, English for work and travel. The product does not diagnose a level, teach children, or prepare an exam paper.
+Adult self-learners who already read the support language. The implied learner is in Hong Kong: they need English for IELTS, and they understand an explanation faster in Cantonese or Putonghua than in examiner English. Speaking is the same test for Academic and General Training; the module setting exists so Writing later uses the right Task 1. The product does not teach children and does not guess a university’s cutoff.
 
 ### 1.3 v1 includes
 
-- One chat screen, three target languages, three support languages, three levels.
-- Three scenarios, fully specified in [§6](#6-scenario-content). Three more are named and stay off the chip row until they have the same content record.
-- Text send, press-to-talk where the browser can recognize the target language, tap-to-hear where the device has a matching voice.
-- Coaching card on the learner’s bubble, phonetic line and translation on the character’s bubble.
+- Home that opens today’s IELTS speaking drill once a target band is set.
+- IELTS speaking: Part 1, Part 2, and Part 3 drills, one diagnostic, one scripted full mock, and a review that withholds coaching until the mock ends. Details in [§19](#19-ielts-focus-training).
+- Support-language glosses of examiner questions in drills. Glosses are hidden during a mock.
+- Daily track: one chat screen, three target languages, three support languages, three levels, and the three scenarios in [§6](#6-scenario-content). Three further daily scenarios stay off the chip row until they have the same content record.
+- Text send, press-to-talk where the browser can recognize the language, tap-to-hear where a matching voice exists.
 - Local transcript history on this device.
 
 ### 1.4 v1 excludes
 
-- Accounts, sync, classrooms, assignments, streaks, and payments.
-- Phoneme scores, waveforms, and “you said /θ/ wrong” judgments.
-- Free chat with no scenario. Every session has a scene and a goal.
-- Writing essays, character-handwriting practice, and tone-drill games.
-- Offline recognition. The page can show old transcripts offline. A new coach turn needs the network.
+- Accounts, sync, classrooms, streaks, and payments.
+- An official IELTS band, a predicted “this Saturday’s questions”, or past papers and cue cards taken from real tests.
+- A speaking band for pronunciation, and any overall speaking band while pronunciation is unscored.
+- Listening and Reading implementations. Their content rules are in §19 so a later build does not start from scraped papers.
+- Phoneme scores, waveforms, and “you said /θ/ wrong”.
+- Free chat with no scenario and no IELTS prompt. Every session has a task.
+- Character-handwriting practice and tone-drill games.
+- Offline recognition. Old transcripts can be read offline. A new review needs the network.
+
+Writing is specified in §19 and is the build step after speaking. It is not part of the speaking done-line.
 
 ### 1.5 Done for v1
 
-A learner can finish the cha-chaan-teng scene in Cantonese, on a phone, with Jyutping that matches `to-jyutping`, a support-language explanation, and a goal state of “bill requested”, without the UI claiming it heard their tones.
+Both of these work on a phone:
+
+- **IELTS.** With Cantonese (or Putonghua, or English) as the support language and a target of 6.5, a learner can finish a Part 2 drill: 60 seconds to prepare, a hard stop at 2 minutes, a review that names missed cue bullets, grammar and vocabulary notes in the support language, pronunciation marked “not assessed”, and a 6.5 practice answer that keeps their example. They can also finish a scripted speaking mock with no coaching until the end, and still see no overall band.
+- **Daily.** A learner can finish the cha-chaan-teng scene in Cantonese, with Jyutping that matches `to-jyutping`, a support-language explanation, and a goal state of “bill requested”, without the UI claiming it heard their tones.
 
 ---
 
@@ -82,6 +103,7 @@ When support language equals target language, hide the translation line. Phoneti
 - IPA is broad, in slashes, word-spaced, with primary stress: `/aɪd laɪk ə ˈkɒfi plaɪz/`.
 - One accent per line. `phonemize` is called with `en-GB` or `en-US` for the whole English span. The UI labels the line `IPA · RP` or `IPA · GA`.
 - Reading hints that v1 is allowed to give from text alone: `th` as `/θ/` or `/ð/`, final consonants, the difference between the selected accent’s vowels. These are hints about the spelling, worded as “this word is read…”, never as “you said…”.
+- IELTS does not require a British or American accent. On the IELTS track the accent setting still chooses the IPA and the voice for model answers, and a review must not treat the other accent as an error. Spelling may be British or American inside one answer; mixing them in a single Writing task is the thing the writing review may mention.
 
 ### 2.2 Putonghua
 
@@ -117,6 +139,7 @@ This is the option most likely to be built wrong, so it is specified tightly.
 | Wording coach | The learner’s transcript | Always | `Try saying` / the support-language name |
 | Reading hint | Spelling of a word in the learner’s transcript | Only for known hard spots (tones on the suggested line, `th`, final consonants) | `How it is read` |
 | Pronunciation score | The audio | Not in v1 | Do not show a score, a colour, or “good pronunciation” |
+| IELTS practice band | Transcript, timers, and the prompt | Speaking criteria except pronunciation. See [§19](#19-ielts-focus-training). | `Practice estimate`, with the disclaimer. Never `Your IELTS score`. |
 
 Later, phoneme scoring can be added only after a vendor is verified for that language. English and Mandarin assessment APIs are common. Cantonese phoneme assessment often is not. The button that would send audio off-device needs its own consent line. Until then the app stores no audio.
 
@@ -150,7 +173,9 @@ pick_scenario
   → failed_turn              error bubble, learner can retry the same send
 ```
 
-Changing target language, support language, Han script, accent, level, or scenario discards the current thread. If the thread already has a learner turn, confirm first: “Start a new practice? This chat stays in History.”
+Changing target language, support language, Han script, accent, level, scenario, IELTS part, or mock-versus-drill discards the current thread. If the thread already has a learner turn, confirm first: “Start a new practice? This chat stays in History.”
+
+IELTS timers and the rule that a mock shows no coaching until the end are in [§19.4](#194-speaking-session-rules). The daily state diagram does not run a mock.
 
 ### 4.3 Opening the scene
 
@@ -180,12 +205,14 @@ A beginner session also ends after 8 learner turns if the goal is still open, wi
 One column, `100dvh`, safe-area padding, no pinch-zoom lock. The source prototype’s `maximum-scale=1, user-scalable=no` is dropped.
 
 ```text
-header:  mark, scenario name, settings button
+home:    Today's IELTS drill, Full speaking mock, Daily talk
+header:  mark, task name, timer (IELTS only), settings
 goal:    one line, muted
-chips:   scenarios, horizontal scroll, 44px row height
-thread:  flex 1, own scroll
+body:    cue card or question, then the thread
 composer: mic, field, send — sitting above the home indicator
 ```
+
+Daily talk keeps the horizontal scenario chips under the header. IELTS does not use those chips; the prompt comes from the plan in §19.
 
 ### 5.1 Bubbles
 
@@ -219,13 +246,14 @@ composer: mic, field, send — sitting above the home indicator
 
 ### 5.3 Settings sheet
 
-- Target language, support language, level, Han script, English accent, auto-play, Pinyin tone marks vs numbers.
-- Stored in `localStorage` under `lingocoach.settings.v1`.
-- Han script is hidden when the target is English and the support language is English.
+- Track (`ielts` or `daily`), target language, support language, level (daily), Han script, English accent, auto-play, Pinyin tone marks vs numbers.
+- IELTS module (`academic` or `general`), target band (5.0–8.0 in half steps, default 6.5), optional exam date.
+- Stored in `localStorage` under `lingocoach.settings.v2`. A v1 blob migrates by setting `track` to `ielts` and `target_band` to 6.5.
+- Han script is hidden when the target is English and the support language is English. On the IELTS track the target is always English, so the script control only affects support-language Chinese.
 
 ### 5.4 History
 
-A list of past sessions: scenario, target language, date, goal met or not. Opening one is read-only. “Practice again” starts a new session with the same settings. Cap 50 sessions; the oldest transcript is dropped.
+A list of past sessions: track, task name, date, and either goal-met (daily) or which speaking criteria were assessed (IELTS). Opening one is read-only. “Practice again” starts a new session with the same settings. Cap 50 sessions; the oldest transcript is dropped. IELTS history does not chart bands in tenths. Criterion bands are whole numbers.
 
 ### 5.5 Copy rules
 
@@ -626,13 +654,15 @@ Errors:
 | 429 | `slow_down` | “Too many turns. Wait a moment.” Retry-After honoured |
 | 502 | `coach_unavailable` | Keep the learner bubble. Offer Retry, which resends the same body |
 
-Rate limit: 30 turns per rolling 10 minutes per `client_id`. The phonetic libraries are local and do not count.
+Rate limit: 30 daily-track turns per rolling 10 minutes per `client_id`. IELTS reviews are a separate budget: 40 review calls per rolling 30 minutes, which covers a diagnostic, a mock’s three part-reviews, and retries. Examiner questions are local content and do not call the model. The phonetic libraries are local and do not count.
 
 The provider key lives in the server environment. The client bundle has no key. Logs store `session_id`, latency, and validation failures. Logs do not store the transcript.
 
 ### Client storage
 
-`IndexedDB` database `lingocoach`, store `sessions`, key `session_id`. Value: settings, scenario id, bubbles (text, phonetic, coaching, timestamps), goal status. This is the history screen. Losing the browser data loses history; v1 says that in the settings sheet.
+`IndexedDB` database `lingocoach`, store `sessions`, key `session_id`. Value: settings, scenario id or IELTS prompt ids, bubbles (text, phonetic, coaching or IELTS review, timestamps, `speech_ms`), goal status. This is the history screen. Losing the browser data loses history; v1 says that in the settings sheet.
+
+IELTS reviews use `POST /api/ielts/review`, specified in [§19.6](#196-review-contract). `POST /api/turn` stays the daily-track call. A mock does not call `/api/turn` to invent the next examiner question.
 
 ---
 
@@ -642,15 +672,23 @@ The source prototype is one HTML file on CDNs, with a mock timeout in place of t
 
 ```text
 src/
-  content/scenarios.ts          records from §6
-  session/machine.ts            states in §4.2, pure functions
-  components/                   header, chips, thread, composer, coaching card, settings
+  content/scenarios.ts          daily records from §6
+  content/ielts/speaking.ts     scripted parts from §19
+  content/ielts/writing.ts      task prompts from §19.7
+  session/machine.ts            daily states in §4.2, pure functions
+  session/ieltsTimers.ts        prep and hard stops, pure functions
+  session/ieltsPlan.ts          next-drill rule, pure functions
+  components/                   header, chips, thread, composer, coaching card, cue card, review, settings
   speech/recognize.ts           §9.1, no UI
   speech/speak.ts               §9.2, no UI
-  api/turn.ts                   fetch wrapper
+  api/turn.ts                   daily fetch wrapper
+  api/ieltsReview.ts
   storage/history.ts            IndexedDB
 server/
-  turn.ts                       prompt assembly, provider call, schema, phonetics
+  turn.ts                       daily prompt assembly, provider call, schema, phonetics
+  ielts/review.ts               §19.6
+  ielts/lengthRules.ts          word-count gates, no model
+  ielts/round.ts                overall rounding, used only when all four criteria exist
   phonetics/
     segment.ts
     english.ts                  phonemize
@@ -684,6 +722,7 @@ The mock in the prototype always returns an English hot-or-iced line. There is n
 - Audio: browser recognition may send audio to the browser vendor. v1 does not upload audio to LingoCoach’s server.
 - Adults. No child account, no age gate beyond a settings line “LingoCoach is for adult learners”.
 - The model does not produce sexual roleplay. A flirtatious learner line is answered with a neutral in-scene redirect and no coaching expansion of that content.
+- IELTS practice refuses requests for questions from a real test date or test center, “what came up in Hong Kong this week”, memorized examiner scripts, or a guarantee of a band. The reply points back to the original prompt bank. The app never asks for a passport or an ID number. The name it uses is a display name the learner types.
 
 ---
 
@@ -746,6 +785,14 @@ The mock in the prototype always returns an English hot-or-iced line. There is n
 - Refresh restores the open session and the settings.
 - The 51st saved session drops the oldest.
 
+**IELTS**
+
+- The fixtures in §19.10. Part 2’s client timer stops capture at 120 seconds. A send before 60 seconds of speech returns one continue prompt and only one.
+- A review with `pronunciation.status` of `unscored` renders no overall band.
+- A covered-bullet quote that is not a substring is stored as not covered.
+- The mock thread does not render a coaching card.
+- “What questions came up in Hong Kong yesterday?” is refused and does not reveal or invent a test-day list.
+
 ---
 
 ## 16. Build order
@@ -757,9 +804,12 @@ Each step is shippable to a developer device and has tests before the next start
 3. **`/api/turn` with a recorded fixture provider**, schema validation, repair branch, phonetic overwrite. Contract tests in §10.4 run against the fixture provider in CI, and against a live provider only in a manual or nightly check so CI does not depend on a key.
 4. **Chat UI, text only.** Thread, coaching card, settings, history. The pending and error states are part of this step, not a follow-up.
 5. **Recognition and synthesis**, behind the failure matrix in §9. Device pass: one recent iPhone (Safari), one Android Chrome, one desktop Chromium, one Firefox (expect text-only recognition).
-6. **Copy pass** for the three UI languages, by a person, for the strings introduced above.
+6. **Copy pass** for the three UI languages, by a person, for the strings introduced above, including the IELTS disclaimer.
+7. **IELTS speaking drills.** Scripted prompts, Part 2 timers, review endpoint, diagnostic, and next-drill rule from §19. Daily chat already works before this starts.
+8. **IELTS speaking mock.** Same prompts and the same review, with coaching suppressed until the mock ends and with the client timers hard-stopping each part.
+9. **IELTS writing.** Task 1 and Task 2 from §19.7, after the speaking done-line is met.
 
-Server TTS and phoneme scoring are not steps in this list.
+Server TTS, phoneme scoring, Listening, and Reading are not steps in this list.
 
 ---
 
@@ -771,6 +821,8 @@ These are deliberately not decided here:
 2. **Cantonese TTS in v1.** Decide after the device pass in step 5. If `zh-HK` voices are rare on the phones we care about, add `POST /api/speak` before calling v1 done. The rest of the contract does not change.
 3. **Han script default for Cantonese support text** is `Hant`. Putonghua target lines default to `Hans`. Whether a single script toggle should split “script for target lines” from “script for UI” is worth a second look once real Traditional-speaking Mandarin learners use it. v1 uses one toggle for all Han text.
 4. **Accounts.** Not in v1. When they exist, history moves off the device and the privacy line is rewritten first.
+5. **Keeping the microphone audio on device** so a learner can replay a Part 2 take, and so a future pronunciation criterion has something to score. v1 stores timers and transcripts only. Dual-running `MediaRecorder` and `SpeechRecognition` is unreliable on phones, so replay is not a v1 promise.
+6. **An in-house raw-score scale** for Listening and Reading. Until that scale is written down and labeled as ours, those skills show “correct out of 40” and no band.
 
 ---
 
@@ -782,3 +834,382 @@ The source note’s four product points stay in force, with the meanings this sp
 2. **Trilingual** means an independent target language and support language, plus an explicit Cantonese orthography and an English accent.
 3. **Dual feedback** means a library phonetic line and a structured wording card. It does not mean an audio grade.
 4. **Mobile-first** means the composer, the 44px controls, the failure states for mic and voice, and a layout that still works when the type is enlarged.
+5. **IELTS-style training** means scripted speaking parts, exam timers, a practice review in the support language, and a next drill. It does not mean an official score. The rules are [§19](#19-ielts-focus-training).
+
+---
+
+## 19. IELTS focus training
+
+IELTS speaking is a face-to-face interview of about 11–14 minutes: Part 1 (familiar questions, about 4–5 minutes), Part 2 (one minute to prepare, then a long turn of one to two minutes, plus a short rounding-off question), and Part 3 (a harder discussion of the same theme, about 4–5 minutes). Academic and General Training candidates take the same Speaking test. Writing differs by module. Listening and Reading differ by module and are not built in v1.
+
+The training idea is: **rehearse under test rules, then teach one step toward the target band, in the support language.** A mock that coaches in the middle is not a mock. A drill that only produces a “more native” paragraph, with no timer and no next task, is not training.
+
+### 19.1 What the learner can trust
+
+| Shown on screen | Source | Label |
+| --- | --- | --- |
+| Examiner question | Authored prompt bank | The question itself |
+| Cue-card bullet missed or covered | Model judgment, accepted only with a verbatim quote from the learner | `Covered` / `Not yet` |
+| Too short, too long, under 250 words | Word count and `speech_ms` on the server | A fact, not a band |
+| Fluency and coherence, lexical resource, grammatical range | Model band, clamped, plus a quote or a count | `Practice estimate` |
+| Pronunciation | Nothing in v1 | `Not assessed` |
+| Overall speaking band | Arithmetic on four assessed criteria | Hidden for the whole of v1 speaking, because pronunciation is missing |
+| Writing overall | Four text criteria, all assessable from the script | `Practice estimate`, disclaimer still required |
+| Listening or Reading band | Not shown. A later build may show correct/40. | No band until §17 item 6 exists |
+
+Every review screen shows this disclaimer, in the support language (English source; Cantonese and Putonghua go through the human copy pass):
+
+> Practice estimate only. This is not an IELTS result, and this app is not an IELTS test center.
+
+When pronunciation is unscored, a second sentence is required: “Pronunciation was not assessed, so there is no speaking band.”
+
+The official test averages four whole-number criteria and rounds the mean with the published convention: a mean ending in .25 rounds up to the next half band, and a mean ending in .75 rounds up to the next whole band. Four whole numbers only produce .00, .25, .50, and .75, so the function is:
+
+```ts
+export function roundIeltsMean(bands: [number, number, number, number]): number {
+  const mean = (bands[0] + bands[1] + bands[2] + bands[3]) / 4;
+  const whole = Math.floor(mean);
+  const frac = mean - whole;
+  if (frac < 0.25) return whole;
+  if (frac < 0.75) return whole + 0.5;
+  return whole + 1;
+}
+```
+
+`roundIeltsMean([6, 6, 6, 7])` is 6.5. `roundIeltsMean([6, 7, 7, 7])` is 7. v1 speaking never calls it. The function ships now so Writing can use it and so nobody “averages the three scores we happen to have” and labels that an IELTS speaking band.
+
+Criterion bands the model returns must be integers from 4 to 8 inclusive. A 9, a 3, a 6.5, or a non-number becomes `unscored` for that criterion. The app does not invent a replacement. Half bands are only for an overall mean, and only when all four criteria were assessed.
+
+### 19.2 Band target and the size of the rewrite
+
+The learner picks `target_band` from 5.0 to 8.0 in half-band steps. Default 6.5. That number is a goal, not a measurement of their current level and not a claim about any university.
+
+The practice answer is aimed at `min(target_band, lowest_assessed_band + 1)`. If every criterion is `unscored`, the aim is `min(target_band, 6)`.
+
+| Lowest assessed band | Target | Aim |
+| --- | --- | --- |
+| 5 | 6.5 | 6.0 |
+| 6 | 7.0 | 7.0 |
+| 6 | 6.5 | 6.5 |
+| 7 or above | 7.0 | 7.0, and the review says this criterion already meets the target |
+| none | 8.0 | 6.0 |
+
+The `+ 1` is what stops a band-5 answer being replaced by a band-8 performance full of idioms the learner will not say. When the aim already equals the target, the review says so instead of inventing a harder rewrite.
+
+The practice answer keeps the learner’s facts. If they taught their sister to make tomato soup, the practice answer is still the sister and the soup. It does not substitute a prettier story.
+
+Length of that practice answer:
+
+| Part | Aim around 6.0 | Aim around 6.5–7.0 | Aim around 7.5–8.0 |
+| --- | --- | --- | --- |
+| 1 | Two sentences: a direct answer and one reason | Three or four sentences: reason and a short example | A small contrast as well, still not a speech |
+| 2 | All four bullets, simple narrative | The same story, with time order and a reason | The same facts, a short reflective close, still a two-minute turn |
+| 3 | A position and one reason | Position, reason, and an example | Those, plus a concession or a consequence |
+
+### 19.3 Prompt bank
+
+Examiner questions are **authored strings**. The model does not invent the next question, does not “predict this week’s topics”, and does not paraphrase the cue card during a mock. Stability matters more than variety from a model.
+
+v1 speaking content before the home screen can offer a task:
+
+| Kind | Count | Notes |
+| --- | --- | --- |
+| Part 1 frames | 8 | Four short questions each |
+| Part 2 cue cards | 12 | Four bullets each, plus two rounding-off questions, plus four linked Part 3 questions |
+| Diagnostic set | 1 | Fixed, so two diagnostics can be compared: frame `food-at-home`, card `skill-you-taught`, and the first two Part 3 questions of that card |
+
+One frame and one card are written below. The other items use the same schema and stay disabled until the strings exist. Questions are original. Real test questions, Cambridge papers, and “cue cards from Saturday in Wan Chai” are not imported.
+
+```ts
+type SpeakingFrame = {
+  id: string;
+  part: 1 | 2 | 3;
+  topic_tag: string;
+  linked_cue_id?: string;
+  questions?: string[];          // part 1 and part 3
+  cue?: { title: string; say: string[] };
+  rounding_off?: string[];       // part 2, ask the first only
+  gloss: Record<"en" | "cmn" | "yue", string>;
+};
+```
+
+**`food-at-home` (Part 1), topic `food`**
+
+1. Do you usually cook, or does someone else cook in your home?
+2. What did you eat yesterday?
+3. Are there any foods you disliked as a child but like now?
+4. Do you prefer eating at home or eating out?
+
+Gloss, shown only in a drill, via the “What is this asking?” control:
+
+- en: Questions about who cooks, a recent meal, a change in taste, and home versus restaurants.
+- cmn: 这几题问：谁做饭、昨天吃了什么、小时候不喜欢但现在喜欢的食物，以及更想在家吃还是出去吃。
+- yue: 呢幾題問：邊個煮、尋日食咗咩、細個唔鍾意而家鍾意嘅嘢食，同埋想喺屋企食定出面食。
+
+**`skill-you-taught` (Part 2), topic `people`**
+
+Title: Describe a practical skill you taught someone you know.
+
+You should say:
+
+- who you taught
+- what skill you taught them
+- how you taught it
+- and explain how you felt about teaching that person
+
+Rounding-off, ask the first: “Do you still see that person often?”
+
+Part 3, linked:
+
+1. Why do some people prefer to learn a skill from a friend rather than in a class?
+2. What practical skills are most useful before someone lives alone?
+3. How has the way people learn practical skills changed in recent years?
+4. Should schools spend more time teaching practical skills?
+
+Drill gloss (yue): 「講一個你教過俾一個你識嘅人嘅實用技能：教邊個、教咗咩、點教，同埋你教完有咩感覺。」 Mock mode shows the English card only, which is also what a candidate sees in the real long turn.
+
+### 19.4 Speaking session rules
+
+**Drill.** After each Part 1 or Part 3 answer, the review card appears, then the learner chooses Next. Part 2 uses the timers below. A drill may show the support gloss and, on Part 2, checkmarks for bullets already covered. Pace is the learner’s.
+
+**Diagnostic.** The fixed set in §19.3, drill rules, about ten minutes if answers are a normal length. The result is a plan, not a certificate.
+
+**Mock.** Part 1, then Part 2, then Part 3, using scripted questions. No gloss, no bullet checkmarks, no review card, no “try saying” until the review screen after Part 3. Auto-play of examiner questions is on. The examiner line never contains praise, a recast, or a grammar tip.
+
+Client timers override the model and the learner:
+
+| Part | Clock | What the client does |
+| --- | --- | --- |
+| Mock Part 1 | 5:00 hard stop | Asks the next unused question from the chosen frames. At 4:15 it may start the question already on screen and then moves on at 5:00. Three frames or the clock, whichever ends first. |
+| Part 2 prep | 60 seconds | Notes field is editable. Microphone and Send are disabled. At 0:00 the card stays visible and capture starts. |
+| Part 2 speak | 2:00 hard stop | If the learner sends with `speech_ms` under 60 seconds, the examiner asks once, “Can you tell me anything else?”, and the clock keeps running. A second early send is accepted as the end. At 2:00, capture stops and the transcript in the field is submitted. |
+| Part 2 rounding-off | one question | Then Part 3 in a mock, or the review in a drill. |
+| Mock Part 3 | 5:00 hard stop | Next linked question until the clock ends. At least the first question is always asked. |
+
+`speech_ms` is the time from the start of capture to Submit for that take, minus prep. Typed answers send `speech_ms: null`. Fluency is then `unscored`, and the review says length was not timed. Words per minute, when `speech_ms` is at least 20 seconds, is shown as a number (“about 110 words in 70 seconds”) and is **not** an input to the band. The real test does not publish a words-per-minute cutoff.
+
+Word gates, applied before the model’s band is shown:
+
+| Part | Words | Result |
+| --- | --- | --- |
+| 1 | under 8 | All criteria `unscored`, finding `too_short` |
+| 1 | over 120 | Criteria still allowed, finding `too_long` (this is a long-turn answer to a short question) |
+| 2 | under 40 | All criteria `unscored`, finding `too_short` |
+| 3 | under 15 | All criteria `unscored`, finding `too_short` |
+
+A follow-up of “Why?” or “Can you tell me anything else?” is a fixed string. It is used at most once per question, and only in a drill when a Part 3 answer is under 40 words, or in Part 2 under the 60-second rule. A mock Part 3 does not add teaching follow-ups beyond the next scripted question; cutting a short answer off is what the real discussion’s next question already does.
+
+If the learner answers in Cantonese or Putonghua:
+
+- Mock: the examiner repeats the same English question once, then moves on. That take is `not_english` and receives no band.
+- Drill: no band for that take. The review explains the question in the support language and gives an English skeleton at the next step toward the target, still using any facts they managed to state.
+
+### 19.5 Examiner, scaffolds, and memorised openings
+
+The examiner is a script plus the two fixed follow-up strings. Display name only. No passport, no test-center small talk, no comment on the answer.
+
+Scaffolds exist only in drills, and only when that criterion is the plan’s focus:
+
+| Focus | Scaffold on screen | Hidden in a mock |
+| --- | --- | --- |
+| Fluency on Part 2 | The four bullets with empty checkmarks while they speak | Yes |
+| Part 3 development | Three quiet labels: position, reason, example | Yes |
+| Lexis | Nothing during the answer. Two collocations appear afterward | — |
+| Grammar | Nothing during the answer. One combined sentence appears afterward | — |
+| Template | Nothing during the answer. The review quotes the stock line and shows the stem again | — |
+
+Stock openings are a finding of type `template` only when they do not answer the stem. Examples the review should catch: “This is a very thought-provoking question”, “Nowadays, with the development of technology”, and a whole answer that is only “every coin has two sides”. A natural “Well” or “I think” is not a template. The repair is to answer the actual question in the first sentence.
+
+Part 3 has a second structural finding, `shape`:
+
+- only a personal story and no general point, or
+- only “people in society” and no example, or
+- a two-clause question where the answer addresses only the first clause.
+
+The quote for that finding is the question clause they did not take up.
+
+### 19.6 Review contract
+
+`POST /api/ielts/review`
+
+```json
+{
+  "session_id": "uuid",
+  "kind": "drill",
+  "part": 2,
+  "prompt_id": "skill-you-taught",
+  "target_band": 6.5,
+  "support": "yue",
+  "script": "Hant",
+  "accent": "en-GB",
+  "speech_ms": 75000,
+  "notes": "sister, soup, Saturday",
+  "learner_text": "I taught my younger sister how to cook tomato soup...",
+  "findings_already": []
+}
+```
+
+`kind` is `drill`, `diagnostic`, or `mock_part`. A full mock sends three calls, one per part, after the mock, not during. `learner_text` max 4,000 characters. `notes` max 500, Part 2 only, and notes are context for the reviewer, not speech to be banded.
+
+The server runs the word gates first. If all criteria are forced `unscored`, it still calls the model for the practice answer and the support-language explanation, and it throws away any bands the model returns.
+
+Response, `contract: "1"`:
+
+```json
+{
+  "contract": "1",
+  "criteria": [
+    {
+      "id": "fluency_coherence",
+      "status": "partial",
+      "band": 6,
+      "evidence": "You moved from who, to the soup, to how Saturday went."
+    },
+    {
+      "id": "lexical_resource",
+      "status": "assessed",
+      "band": 6,
+      "evidence": "You used 'good' for the skill, for her, and for the result.",
+      "swaps": [
+        { "instead_of": "good at cooking", "try": "already comfortable in the kitchen" }
+      ]
+    },
+    {
+      "id": "grammar_range",
+      "status": "assessed",
+      "band": 5,
+      "evidence": "Most sentences are 'I taught her' plus a noun.",
+      "upgrade_sentence": "I taught her how to season the soup because she always made it too bland."
+    },
+    {
+      "id": "pronunciation",
+      "status": "unscored",
+      "band": null,
+      "evidence": null
+    }
+  ],
+  "overall_band": null,
+  "overall_hidden_reason": "pronunciation_not_assessed",
+  "bullets": [
+    { "id": "who", "covered": true, "quote": "my younger sister" },
+    { "id": "what", "covered": true, "quote": "tomato soup" },
+    { "id": "how", "covered": false, "quote": null },
+    { "id": "why", "covered": true, "quote": "she was going to live alone" }
+  ],
+  "findings": [{ "type": "bullet_missing", "bullet_id": "how" }],
+  "practice_answer": {
+    "aim_band": 6.0,
+    "text": "I taught my younger sister to make tomato soup...",
+    "why": "你已經講咗邊個同煮咩。呢句加咗點教同點解，仍然用你個例子。"
+  },
+  "next_drill": {
+    "part": 2,
+    "prompt_id": "skill-you-taught",
+    "focus": "grammar_range"
+  },
+  "safety": { "refused": false }
+}
+```
+
+Server checks:
+
+| Field | Rule |
+| --- | --- |
+| `criteria` | Exactly the four ids, pronunciation always `unscored` and `band: null` in v1. |
+| `status` | `assessed`, `partial`, or `unscored`. Fluency is `partial` when `speech_ms` is present and the word gate did not fire, because pauses and intonation were not measured. Fluency is `unscored` when `speech_ms` is null or the word gate zeroed the review. |
+| `evidence` | Required when status is not `unscored`. Max 240 characters, support language. |
+| `swaps` | At most two. `instead_of` must be a substring of `learner_text` after lowercasing. |
+| `upgrade_sentence` | One English sentence, or null. It must reuse at least one content word of six or more letters from the learner text when the learner text has such a word (`sister`, `tomato`). |
+| `bullets` | Present for Part 2 only. `covered: true` requires a `quote` that is a substring of `learner_text`. Otherwise the server sets `covered` to false. |
+| `practice_answer.text` | English. Max 2,200 characters. The server attaches `phonetic` with `phonemize` in the selected accent. |
+| `practice_answer.why` | Support language, colloquial Cantonese when support is `yue`. Max 300 characters. |
+| `practice_answer.aim_band` | Follows §19.2. The server overwrites the model’s aim if it is above the target or more than one step above the lowest assessed band. |
+| `overall_band` | Always `null` on speaking in v1. |
+| `next_drill` | Server overwrites this with the rule in §19.8. The model’s suggestion is not used. |
+
+`why`, `evidence`, and `gap` text are scanned for a denylist: `official band`, `you will score`, `guaranteed`, `examiner will give you`, `你實攞`, `官方分数`. A hit fails the review the same way a bad daily payload fails: one repair call, then 502.
+
+During a mock, the client ignores `practice_answer` until the final review screen. Defense in depth: the mock client does not send a review request at all until Part 3 has ended.
+
+### 19.7 Writing, after speaking
+
+Same disclaimer, same “one step toward the target” rule, same support language for explanations. The script is typed. All four criteria are text, so a writing practice overall may be shown via `roundIeltsMean`. It is still not an official score.
+
+Module matters here:
+
+| Task | Module | Time in a mock | Length gate | Criteria |
+| --- | --- | --- | --- | --- |
+| Task 2 essay | Both | 40:00 | Under 250 words sets `under_length` and the training action becomes “finish the essay” before any lexical polish. The band may still be returned, with the warning above it. | Task response, coherence and cohesion, lexical resource, grammatical range |
+| Task 1 letter | General only | 20:00 | Under 150 words sets `under_length`. The prompt names the tone: informal, semi-formal, or formal. | Task achievement, plus the same three language criteria |
+| Task 1 chart | Academic only | 20:00 | Under 150 words sets `under_length`. Describing the numbers is the task. | Task achievement, plus the same three language criteria |
+
+Deterministic checks, before the model’s task score is trusted:
+
+- Academic Task 1: if the script contains `I think` or `in my opinion`, add finding `opinion_in_task_1`.
+- Either task: a live word counter. Mock timers are client-side and submit whatever is written at 0:00.
+- Drill only: an optional outline (position, two reasons, one example, a close) that is hidden in the mock.
+
+Original prompts for the first build, not taken from a published paper:
+
+- **Task 2.** “Some people think adults should spend their free time learning practical skills instead of taking academic courses. To what extent do you agree or disagree?” At least 250 words.
+- **General Task 1.** “You recently stayed at a friend’s home. Write a letter to thank them. Say what you enjoyed, describe one thing you did together, and invite them to stay with you.” Informal. At least 150 words.
+- **Academic Task 1.** A table the UI draws, not an image: visitors in millions — City A 2.1, 2.8, 1.2, 3.6 and City B 3.4, 3.1, 1.5, 2.9 for the years 2015, 2018, 2021, and 2024. Instruction under the table: summarise the main features and make comparisons. No opinion. At least 150 words.
+
+The endpoint is `POST /api/ielts/writing-review` with the same clamping rules as §19.6, criterion ids `task`, `coherence_cohesion`, `lexical_resource`, `grammar_range`, and `overall_band` allowed. Pronunciation is absent. Build this as step 9, after speaking.
+
+### 19.8 The plan
+
+This is the training loop. It is deterministic TypeScript in `ieltsPlan.ts`, so a test can pin it without a model.
+
+1. If there is no review yet, `next_drill` is the diagnostic.
+2. Otherwise take the latest review. Among criteria that are `assessed` or `partial`, pick the lowest band. Ties break in this order: `grammar_range`, `lexical_resource`, `fluency_coherence`. Pronunciation is never the focus in v1.
+3. Map that focus, together with findings, to a drill:
+
+| Condition | Next drill |
+| --- | --- |
+| Any Part 2 bullet missing, or Part 2 `too_short` | Same cue card, Part 2, focus `fluency_coherence`, checklist on |
+| `template` or Part 3 `shape` | Same Part 3 question, focus the winning criterion, position/reason/example labels on |
+| Focus `lexical_resource` | Same prompt, and the review’s swaps are the thing they shadow |
+| Focus `grammar_range` | Same prompt; they say the upgrade sentence, then answer once more |
+| `not_english` | Same prompt, gloss open, English skeleton shown before they record |
+| Else | The next unused prompt in the same part |
+
+4. After three completed drills since the last diagnostic or mock, the home screen offers a full speaking mock and still leaves the drill one tap away. It does not lock the drill.
+5. An exam date inside the next 14 days changes the home subtitle to recommend the mock first. No streak, no “you missed a day”.
+
+Shadowing, after a drill review:
+
+1. Read `practice_answer.text`.
+2. Play it (phonetics from `phonemize`; voice from §9.2).
+3. Hide the text and record again.
+4. The client lists content words from the practice answer that the new transcript does not contain. Content words are tokens of six or more letters minus a small function-word list kept in the repo. This list is a memory aid, not a band.
+
+The second recording is a new review and a new history row.
+
+Across parts, the history screen shows each criterion’s band **per part**. The summary number for a criterion is the **lowest** part band, labeled “weakest part”, because the plan needs a drill target. That is harsher than a real examiner, who judges the whole interview. The screen says so in one line: “This is your weakest part, not an examiner’s overall mark.”
+
+### 19.9 Listening and Reading, not in this build
+
+Both are real IELTS skills and a poor fit for the conversation screen. When they are built:
+
+- Passages, audio scripts, and questions are written for this app. Official papers stay out.
+- A listening mock plays each recording once. A listening drill may replay. The screen states which mode is running, because those are not the same difficulty.
+- Reading is three passages and 40 questions in 60 minutes. Academic and General Training get different passage styles.
+- Marking is automatic against an answer key.
+- The result is “32 out of 40”, not a band, until an in-house conversion is deliberately published as ours. Official raw-to-band tables change by version and are not copied in as if they were a formula.
+
+### 19.10 Fixtures the implementation must pin
+
+1. **Rounding.** `roundIeltsMean([6, 6, 6, 7]) === 6.5` and `roundIeltsMean([6, 7, 7, 7]) === 7`. A speaking review fixture with pronunciation `unscored` has `overall_band === null` even if the other three bands are 7.
+2. **Timers.** Prep disables the mic for 60 seconds. Speech capture at 120 seconds submits without waiting for the model. One early Part 2 send produces exactly one “Can you tell me anything else?”.
+3. **Quotes.** Bullet `who` with quote `my cousin` is stored uncovered when the transcript says `my younger sister`.
+4. **Facts stay.** Learner text contains `sister` and `soup`. `practice_answer.text` contains both. `aim_band` is 6.0 when the lowest assessed band is 5 and the target is 6.5.
+5. **Clamp.** A model criterion band of 9 is returned to the client as `unscored`, not as 8 and not as 9.
+6. **Short answer.** Seven words on Part 1 produces no criterion bands and finding `too_short`.
+7. **Typed Part 2.** `speech_ms: null` forces fluency `unscored` and does not display words per minute.
+8. **Mock silence.** The mock reducer drops review UI until phase `review`. A buggy payload that includes `practice_answer` mid-mock is not rendered.
+9. **Refusal.** A review request whose learner text is “Just tell me yesterday’s Hong Kong cue cards” returns `safety.refused: true` and the original-prompt explanation, with no list of topics presented as leaked questions.
+10. **Plan.** Lowest criterion grammar, band 5, no missing bullet → `next_drill.focus === "grammar_range"` on the same prompt. A missing Part 2 bullet overrides that and focuses fluency on that card.
+11. **Academic Task 1.** A script containing “I think the drop in 2021 is huge” gains `opinion_in_task_1`. A 140-word Task 2 gains `under_length`.
+12. **Accent neutrality.** A review of an answer that uses “apartment” and “elevator” does not produce a correction telling the learner to say “flat” and “lift”.
+13. **Gloss.** Diagnostic and drill render the Cantonese gloss for `food-at-home`. The mock render of the same frame does not contain `邊個煮`.
