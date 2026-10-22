@@ -61,57 +61,45 @@ if [[ ! -f .env ]]; then
   echo "==> Created .env from .env.example — add your OPENROUTER_API_KEY"
 fi
 
-# Keep Mac loopback + OpenRouter defaults without overwriting a real API key.
-# Comment out CERT_FILE / TOKEN_FILE so load_env() cannot re-apply RHOAI TLS.
+# Rewrite .env to OpenRouter-only keys (preserve existing API key).
 python3 - <<'PY'
 from pathlib import Path
 import re
 
 p = Path(".env")
-text = p.read_text(encoding="utf-8")
-replacements = {
-    "HOST": "127.0.0.1",
-    "PORT": "3036",
-    "ROLE_CONFIG_PATH": "./config/role_requirements.yaml",
-    "OUTPUT_DIR": "./output/candidate_reviews",
-    "API_URL": "https://openrouter.ai/api/v1/chat/completions",
-    "LLM_BASE_URL": "https://openrouter.ai/api/v1",
-}
-# Only set MODEL_NAME if missing or still a legacy RHOAI-style name (no slash).
-model_m = re.search(r"^MODEL_NAME=(.*)$", text, re.MULTILINE)
-if not model_m:
-    replacements["MODEL_NAME"] = "qwen/qwen3-32b"
-else:
-    raw = model_m.group(1).strip().strip("\"'")
-    if not raw or "/" not in raw:
-        # e.g. Qwen38-27b-int4 — not an OpenRouter model id
-        replacements["MODEL_NAME"] = "qwen/qwen3-32b"
+text = p.read_text(encoding="utf-8") if p.exists() else ""
 
-for key, value in replacements.items():
-    pattern = re.compile(rf"^{key}=.*$", re.MULTILINE)
-    line = f'{key}="{value}"' if key != "PORT" else f"{key}={value}"
-    if pattern.search(text):
-        text = pattern.sub(line, text)
-    else:
-        text = text.rstrip() + "\n" + line + "\n"
+def _get(key: str, default: str = "") -> str:
+    m = re.search(rf"^{key}=(.*)$", text, re.MULTILINE)
+    if not m:
+        return default
+    return m.group(1).strip().strip("\"'")
 
-# Remove CERT_FILE / TOKEN_FILE entirely (skipped by the app).
-for key in ("CERT_FILE", "TOKEN_FILE", "RHOAI_LLM_HOST", "RHOAI_LLM_IP"):
-    text = re.sub(rf"^{key}=.*\n?", "", text, flags=re.MULTILINE)
-    text = re.sub(rf"^#\s*{key}=.*\n?", "", text, flags=re.MULTILINE)
+key = _get("OPENROUTER_API_KEY") or _get("LLM_API_KEY") or "sk-or-v1-REPLACE_ME"
+model = _get("MODEL_NAME", "qwen/qwen3-32b")
+if not model or "/" not in model:
+    model = "qwen/qwen3-32b"
+api_url = _get("API_URL", "https://openrouter.ai/api/v1/chat/completions")
+if "openrouter.ai" not in api_url.lower():
+    api_url = "https://openrouter.ai/api/v1/chat/completions"
+referer = _get("OPENROUTER_HTTP_REFERER", "http://127.0.0.1:3036")
+title = _get("OPENROUTER_APP_TITLE", "Candidate Evaluation")
 
-if not re.search(r"^ALLOW_LEGACY_TLS=", text, re.MULTILINE):
-    text = text.rstrip() + "\nALLOW_LEGACY_TLS=false\n"
-else:
-    text = re.sub(
-        r"^ALLOW_LEGACY_TLS=.*$",
-        "ALLOW_LEGACY_TLS=false",
-        text,
-        flags=re.MULTILINE,
-    )
-
-p.write_text(text, encoding="utf-8")
-print("==> .env OpenRouter-only (CERT_FILE / TOKEN_FILE removed)")
+p.write_text(
+    "\n".join(
+        [
+            "# OpenRouter only — https://openrouter.ai/keys",
+            f'OPENROUTER_API_KEY="{key}"',
+            f'API_URL="{api_url}"',
+            f'MODEL_NAME="{model}"',
+            f'OPENROUTER_HTTP_REFERER="{referer}"',
+            f'OPENROUTER_APP_TITLE="{title}"',
+            "",
+        ]
+    ),
+    encoding="utf-8",
+)
+print("==> .env reduced to OpenRouter-only settings")
 PY
 
 mkdir -p output/candidate_reviews
@@ -170,8 +158,13 @@ export HOST="$BIND_HOST"
 export PORT
 export ROLE_CONFIG_PATH="${ROLE_CONFIG_PATH:-./config/role_requirements.yaml}"
 export OUTPUT_DIR="${OUTPUT_DIR:-./output/candidate_reviews}"
-# Drop stale RHOAI overrides if any were exported earlier in the shell.
-unset CERT_FILE TOKEN_FILE RHOAI_LLM_HOST RHOAI_LLM_IP 2>/dev/null || true
+export THUNDERBIRD_MAIL_PATH="${THUNDERBIRD_MAIL_PATH:-./fixtures/mbox}"
+export TARGET_MAIL_FOLDER="${TARGET_MAIL_FOLDER:-Applications}"
+export LOCAL_DB_PATH="${LOCAL_DB_PATH:-./data/candidate_eval.sqlite}"
+export REVIEW_USE_LLM="${REVIEW_USE_LLM:-true}"
+export LLM_API_KEY="${LLM_API_KEY:-$OPENROUTER_API_KEY}"
+# Never use legacy cert/token for OpenRouter.
+unset CERT_FILE TOKEN_FILE RHOAI_LLM_HOST RHOAI_LLM_IP ALLOW_LEGACY_TLS 2>/dev/null || true
 
 echo
 echo "============================================"

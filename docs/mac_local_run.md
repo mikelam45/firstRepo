@@ -13,26 +13,19 @@ bash scripts/run_local_mac.sh
 
 Open: [http://127.0.0.1:3036](http://127.0.0.1:3036)
 
-## Required `.env` (OpenRouter)
+## `.env` (OpenRouter only)
 
 ```env
-HOST=127.0.0.1
-PORT=3036
 OPENROUTER_API_KEY="sk-or-v1-..."
-LLM_API_KEY="sk-or-v1-..."
 API_URL="https://openrouter.ai/api/v1/chat/completions"
 MODEL_NAME="qwen/qwen3-32b"
-LOCAL_DB_PATH="./data/candidate_eval.sqlite"
-REVIEW_USE_LLM=true
-# Privacy review needs a filesystem mbox (not a bare mailbox:// URI):
-THUNDERBIRD_MAIL_PATH="./fixtures/mbox"
-TARGET_MAIL_FOLDER="Applications"
-# Do not set CERT_FILE or TOKEN_FILE for OpenRouter.
+OPENROUTER_HTTP_REFERER="http://127.0.0.1:3036"
+OPENROUTER_APP_TITLE="Candidate Evaluation"
 ```
 
-OpenRouter uses system CAs (`verify=True`) and `OPENROUTER_API_KEY`. Leave `CERT_FILE` / `TOKEN_FILE` unset (those are only for private RHOAI-style hosts).
+No `CERT_FILE`, `TOKEN_FILE`, or other LLM host settings. Portal defaults (host/port/mailbox/DB) come from the app and `scripts/run_local_mac.sh`.
 
-`.env` is gitignored. Never commit the real key. SQLite under `data/` is also gitignored.
+`.env` is gitignored. Never commit the real key.
 
 ## Privacy
 

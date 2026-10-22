@@ -43,32 +43,22 @@ Sensitive contact fields stay in local SQLite (`LOCAL_DB_PATH`); only redacted t
 
 UI loads without calling the model. **Test LLM connectivity** uses OpenRouter:
 
+`.env` is OpenRouter-only:
+
 ```env
 OPENROUTER_API_KEY="sk-or-v1-..."
 API_URL="https://openrouter.ai/api/v1/chat/completions"
 MODEL_NAME="qwen/qwen3-32b"
-LOCAL_DB_PATH="./data/candidate_eval.sqlite"
-REVIEW_USE_LLM=true
 ```
 
-Keep the real key only in `.env` (gitignored).
+Keep the real key only in `.env` (gitignored). Host/port/mailbox defaults come from the app / Mac runner.
 
 ## Configuration (local)
 
 | File | Purpose |
 | --- | --- |
-| [`.env.example`](.env.example) | Copy to `.env` — Mac paths, OpenRouter key placeholder |
+| [`.env.example`](.env.example) | Copy to `.env` — OpenRouter key + model only |
 | [`config/role_requirements.yaml`](config/role_requirements.yaml) | Role + `review_keywords` |
-
-```env
-HOST=127.0.0.1
-PORT=3036
-OPENROUTER_API_KEY="sk-or-v1-..."
-API_URL="https://openrouter.ai/api/v1/chat/completions"
-MODEL_NAME="qwen/qwen3-32b"
-LOCAL_DB_PATH="./data/candidate_eval.sqlite"
-REVIEW_USE_LLM=true
-```
 
 ### Privacy (local DB)
 
