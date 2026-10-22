@@ -1,5 +1,7 @@
 # LingoCoach — product and implementation spec
 
+**Superseded by** [language-learning-webapp-prd-revOct23.md](language-learning-webapp-prd-revOct23.md) (revOct23, 23 October 2026). Use that file.
+
 **Product:** mobile-first IELTS training, with explanations in English, Putonghua, or Cantonese, plus a separate daily-conversation track in those three languages.
 **This document replaces** the short architecture note and single-file prototype. That note is the product intent. This spec is what an engineer can build against.
 **Status:** v1 decisions are closed unless they appear in [Open decisions](#17-open-decisions). For `track: "ielts"`, [§19](#19-ielts-focus-training) wins where it differs from the daily-conversation rules.

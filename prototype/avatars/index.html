@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>LingoCoach — Amelia and Mei</title>
+  <style>
+    :root { color-scheme: dark; }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100dvh;
+      background: #0f172a;
+      color: #e2e8f0;
+      font: 16px/1.45 "Segoe UI", "PingFang HK", "Noto Sans SC", sans-serif;
+    }
+    header, main, footer { width: min(1040px, calc(100% - 32px)); margin-inline: auto; }
+    header { padding: 20px 0 8px; }
+    h1 { margin: 0; font-size: 1.35rem; }
+    header p { margin: 6px 0 0; color: #94a3b8; }
+    .stage {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      margin-top: 16px;
+    }
+    .coach {
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 20px;
+      padding: 12px 12px 16px;
+    }
+    canvas {
+      width: 100%;
+      aspect-ratio: 3 / 4;
+      border-radius: 14px;
+      background: #cbd5e1;
+      display: block;
+    }
+    .who { display: flex; justify-content: space-between; align-items: baseline; margin-top: 10px; }
+    .who strong { font-size: 1.05rem; }
+    .who span, .role { color: #94a3b8; font-size: 0.92rem; }
+    #subtitle {
+      min-height: 4.4em;
+      margin: 16px 0;
+      padding: 14px 16px;
+      background: #1e293b;
+      border-radius: 14px;
+      font-size: 1.15rem;
+    }
+    .actions { display: flex; flex-wrap: wrap; gap: 8px; padding-bottom: 28px; }
+    button {
+      min-height: 44px;
+      padding: 0 16px;
+      border: 0;
+      border-radius: 999px;
+      background: #4f46e5;
+      color: white;
+      font: inherit;
+      cursor: pointer;
+    }
+    button.secondary { background: #334155; }
+    button:disabled { opacity: 0.55; cursor: wait; }
+    @media (max-width: 720px) {
+      .stage { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>LingoCoach</h1>
+    <p>Amelia is the examiner from the UK. Mei is the coach from China. The speaker’s mouth, brows, and smile follow the line. The other one listens.</p>
+  </header>
+  <main>
+    <div class="stage">
+      <article class="coach">
+        <canvas id="amelia-canvas" width="864" height="1152" aria-label="Amelia, examiner from the UK"></canvas>
+        <div class="who">
+          <strong>Amelia</strong>
+          <span id="amelia-status">Here</span>
+        </div>
+        <div class="role">United Kingdom · English examiner</div>
+      </article>
+      <article class="coach">
+        <canvas id="mei-canvas" width="864" height="1152" aria-label="Mei, coach from China"></canvas>
+        <div class="who">
+          <strong>Mei</strong>
+          <span id="mei-status">Here</span>
+        </div>
+        <div class="role">China · Putonghua coach</div>
+      </article>
+    </div>
+    <p id="subtitle">Loading both coaches…</p>
+    <div class="actions">
+      <button id="play" type="button">Play the conversation</button>
+      <button class="secondary" type="button" data-line="0">Amelia greets</button>
+      <button class="secondary" type="button" data-line="2">Amelia asks</button>
+      <button class="secondary" type="button" data-line="1">Mei explains</button>
+    </div>
+  </main>
+  <script type="module" src="./talk.js"></script>
+</body>
+</html>
