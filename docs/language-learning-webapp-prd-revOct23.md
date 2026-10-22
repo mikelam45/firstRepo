@@ -3,7 +3,7 @@
 **Revision:** revOct23, 23 October 2026 (Hong Kong).
 **Product:** mobile-first IELTS training, with explanations in English, Putonghua, or Cantonese, plus a separate daily-conversation track in those three languages. The learner talks to one partner at a time and can switch among three women and three men, all age 27, so the conversation does not stay with one face.
 **This document replaces** `docs/language-learning-webapp-prd.md` and the short architecture note. This file is the spec to build against.
-**Status:** v1 decisions are closed unless they appear in [Open decisions](#17-open-decisions). For `track: "ielts"`, [§19](#19-ielts-focus-training) wins where it differs from the daily-conversation rules. For who is on screen and how their face moves, [§20](#20-partners-and-faces) wins. For the language and the process that serves the app, [§21](#21-python-service-under-podman) wins.
+**Status:** v1 decisions are closed unless they appear in [Open decisions](#17-open-decisions). For `track: "ielts"`, [§19](#19-ielts-focus-training) wins where it differs from the daily-conversation rules. For who is on screen and how their face moves, [§20](#20-partners-and-faces) wins. For the language and the process that serves the app, [§21](#21-python-service-under-podman) wins. For which model answers a turn, [§22](#22-openrouter-models) wins.
 
 What revOct23 adds to the previous spec:
 
@@ -11,6 +11,7 @@ What revOct23 adds to the previous spec:
 - The learner can change partner without deleting the chat.
 - The partner on screen blinks, listens, and moves their mouth with the line they are speaking.
 - The service is Python, and the way it runs is a Podman container. See [§21](#21-python-service-under-podman). The page in the browser is still a page: the mic, the speaker, and the face mesh stay on the device.
+- Model calls go through the OpenRouter API. Different jobs use different cheap models. See [§22](#22-openrouter-models).
 
 ---
 
@@ -605,7 +606,7 @@ Field rules the server enforces:
 4. Run the phonetic pipeline. Attach `character.phonetic`, `character.phonetic_complete`, and, when a suggestion exists, `coaching.suggested_reply_phonetic`.
 5. Drop invalid `reading_hints` and unknown signal ids rather than failing the turn.
 
-Temperature stays low (around 0.4). The scene should be stable across retries of the same prompt in tests. Provider choice is an implementation detail; the contract is the schema. Structured-output mode is used when the provider has it, and the repair path still exists for providers that only return text.
+Temperature stays low (around 0.4). The scene should be stable across retries of the same prompt in tests. The call goes to OpenRouter, and the model id comes from the route table in [§22](#22-openrouter-models). The contract is still the schema. Structured-output mode is requested on the OpenRouter call. The one repair retry still runs when the body is not valid JSON.
 
 ### 10.4 Worked behaviours the prompt must hit
 
@@ -842,12 +843,11 @@ Server TTS, phoneme scoring, Listening, and Reading are not steps in this list.
 
 These are deliberately not decided here:
 
-1. **Live provider.** Any provider that can return the schema is acceptable. Pick one when the key and the latency budget are known. The repair path stays either way.
-2. **Cantonese TTS in v1.** Decide after the device pass in step 5. If `zh-HK` voices are rare on the phones we care about, add `POST /api/speak` before calling v1 done. The rest of the contract does not change.
-3. **Han script default for Cantonese support text** is `Hant`. Putonghua target lines default to `Hans`. Whether a single script toggle should split “script for target lines” from “script for UI” is worth a second look once real Traditional-speaking Mandarin learners use it. v1 uses one toggle for all Han text.
-4. **Accounts.** Not in v1. When they exist, history moves off the device and the privacy line is rewritten first.
-5. **Keeping the microphone audio on device** so a learner can replay a Part 2 take, and so a future pronunciation criterion has something to score. v1 stores timers and transcripts only. Dual-running `MediaRecorder` and `SpeechRecognition` is unreliable on phones, so replay is not a v1 promise.
-6. **An in-house raw-score scale** for Listening and Reading. Until that scale is written down and labeled as ours, those skills show “correct out of 40” and no band.
+1. **Cantonese TTS in v1.** Decide after the device pass in step 5. If `zh-HK` voices are rare on the phones we care about, add `POST /api/speak` before calling v1 done. The rest of the contract does not change.
+2. **Han script default for Cantonese support text** is `Hant`. Putonghua target lines default to `Hans`. Whether a single script toggle should split “script for target lines” from “script for UI” is worth a second look once real Traditional-speaking Mandarin learners use it. v1 uses one toggle for all Han text.
+3. **Accounts.** Not in v1. When they exist, history moves off the device and the privacy line is rewritten first.
+4. **Keeping the microphone audio on device** so a learner can replay a Part 2 take, and so a future pronunciation criterion has something to score. v1 stores timers and transcripts only. Dual-running `MediaRecorder` and `SpeechRecognition` is unreliable on phones, so replay is not a v1 promise.
+5. **An in-house raw-score scale** for Listening and Reading. Until that scale is written down and labeled as ours, those skills show “correct out of 40” and no band.
 
 ---
 
@@ -862,6 +862,7 @@ The source note’s four product points stay in force, with the meanings this sp
 5. **IELTS-style training** means scripted speaking parts, exam timers, a practice review in the support language, and a next drill. It does not mean an official score. The rules are [§19](#19-ielts-focus-training).
 6. **A partner, not a logo.** The learner sees one 27-year-old partner and can switch among three women and three men. That partner’s mouth and expression follow the line. The rules are [§20](#20-partners-and-faces).
 7. **Python in Podman.** The service is one Python process in one container. The rules are [§21](#21-python-service-under-podman).
+8. **OpenRouter, with a route per job.** Daily English roleplay, Cantonese, and IELTS review each have a model id. The rules are [§22](#22-openrouter-models).
 
 ---
 
@@ -1406,11 +1407,11 @@ podman run --rm --name lingocoach \
   --read-only --tmpfs /tmp \
   --cap-drop=ALL --security-opt=no-new-privileges \
   -p 8080:8080 \
-  -e LINGOCOACH_PROVIDER_KEY \
+  -e OPENROUTER_API_KEY \
   lingocoach:revOct23
 ```
 
-The provider key arrives as that environment variable, or as a Podman secret mounted at start. It is not a layer in the image. If the variable is empty, the process still starts, `/health` still returns ok, and `/api/turn` uses the recorded fixture provider from §16 step 3. A missing key is not a crash.
+`OPENROUTER_API_KEY` is an OpenRouter key. It arrives as that environment variable, or as a Podman secret mounted at start. It is not a layer in the image. If the variable is empty, the process still starts, `/health` still returns ok, and `/api/turn` uses the recorded fixture provider from §16 step 3. A missing key is not a crash. Live turns use the routes in [§22](#22-openrouter-models).
 
 Tests, with no published port and no key:
 
@@ -1432,3 +1433,50 @@ Logs go to stdout. They include `session_id`, latency, and validation failures. 
 | Mouth, blink, brows, nod | The browser, using the viseme list and mood the Python response already computed, §20 |
 
 The container does not open a microphone and does not draw the portrait. A phone uses the published port, then the device’s own speech APIs.
+
+---
+
+## 22. OpenRouter models
+
+Every live model call is an OpenRouter chat completion. One key, one HTTP API. The route picks the model. Examiner questions stay the authored strings in §19.3 and do not call a model at all.
+
+```text
+POST https://openrouter.ai/api/v1/chat/completions
+Authorization: Bearer $OPENROUTER_API_KEY
+Content-Type: application/json
+X-Title: LingoCoach
+```
+
+The body sets `model` from the table below, `temperature` about 0.4, and `response_format` for JSON when that model accepts it. The repair retry from §10.3 uses the same model as the call that failed. Token use and the model id go to the log. The prompt text and the learner’s transcript do not.
+
+Prices below are US dollars per million tokens, read from OpenRouter’s public model list (`https://openrouter.ai/api/v1/models`) on 23 October 2026. They will move. The pinned thing is the model id. Before a deploy, re-read `pricing.prompt` and `pricing.completion` for these ids. Do not add a guessed platform fee on top.
+
+### 22.1 Routes
+
+| Route | Used for | OpenRouter model id | Input / output per 1M | Why this one |
+| --- | --- | --- | --- | --- |
+| `roleplay` | Daily character lines, and the English practice answer inside a review | `deepseek/deepseek-v4-flash` | $0.091 / $0.182 | Short in-character JSON, high volume, large context, low output price |
+| `yue` | Any roleplay turn whose target or support language is Cantonese, and an IELTS review whose support language is Cantonese | `qwen/qwen3.7-flash` | $0.030 / $0.130 | Cheapest current Qwen flash. Qwen is the Chinese-specialist family on this list, which is what colloquial Cantonese and Cantonese explanations need |
+| `review` | IELTS speaking review and writing review when support is English or Putonghua | `anthropic/claude-haiku-5.5` | $0.100 / $0.500 | Follows a rubric and a denylist closely enough that the server clamps are a backstop, not the only thing keeping the band honest. Output is still half a dollar per million tokens |
+
+A Cantonese review uses `yue`, not `review`. The server clamps in §19.2 and §19.6 still overwrite `aim_band`, pronunciation, and `next_drill` no matter which model wrote the JSON.
+
+Fallback if that model returns a rate limit or a server error, one try, then the normal 502:
+
+| Route | Fallback id | Input / output per 1M |
+| --- | --- | --- |
+| `roleplay` | `google/gemini-2.5-flash-lite` | $0.100 / $0.400 |
+| `yue` | `qwen/qwen3.8-flash` | $0.150 / $0.470 |
+| `review` | `deepseek/deepseek-v4-flash` | $0.091 / $0.182 |
+
+The fallback is a different provider, so a DeepSeek or Qwen outage does not take the whole hour with it. Frontiers such as `google/gemini-4-argon` ($2 / $10), `x-ai/grok-4.7` ($2 / $6), and `openai/gpt-5-mini` ($0.25 / $2) are not on these routes. They cost more than this product needs for a short practice turn.
+
+If the Cantonese fixtures in §10.4 and §20.8 fail on `qwen/qwen3.7-flash`, change only the `yue` id, first to `qwen/qwen3.8-flash`, then to `qwen/qwen3.6-plus` ($0.325 / $1.950). Leave `roleplay` and `review` where they are.
+
+### 22.2 What a turn costs
+
+These are catalog arithmetic, not a measured bill. A daily roleplay turn is about 800 input tokens and 250 output tokens. On `deepseek/deepseek-v4-flash` that is about $0.00012. A Cantonese turn on `qwen/qwen3.7-flash` is about $0.00006. An English IELTS review is about 2,000 input tokens and 800 output tokens. On `anthropic/claude-haiku-5.5` that is about $0.0006. A learner who does a diagnostic and three drills stays well under one cent of model spend. The bill to watch is retries and a route accidentally pointed at a frontier id, which the route table and the log of model id are there to prevent.
+
+### 22.3 Config
+
+The map lives in `app/models.py` as data: route name, model id, fallback id. Tests load that table and assert the three ids above. Changing an id is a one-line edit and a fixture update, not a prompt rewrite. The empty-key path in §21.2 never calls OpenRouter. It uses the recorded fixtures.
