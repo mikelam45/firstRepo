@@ -1,0 +1,798 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Candidate Evaluation — {{ role_title }}</title>
+  <link rel="icon" href="/static/favicon.ico" sizes="any" />
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml" />
+  <link rel="apple-touch-icon" href="/static/apple-touch-icon.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700&family=Source+Sans+3:wght@400;600&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --ink: #1a2421;
+      --panel: rgba(255, 252, 247, 0.92);
+      --accent: #0f6b5c;
+      --accent-deep: #094a40;
+      --warn: #8a4b12;
+      --fail: #8b1e1e;
+      --ok: #0f6b5c;
+      --line: rgba(26, 36, 33, 0.12);
+      --matched: #0f6b5c;
+      --partial: #8a4b12;
+      --unmatched: #6b7280;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "Source Sans 3", sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(ellipse 80% 50% at 10% -10%, #c5ddd4 0%, transparent 55%),
+        radial-gradient(ellipse 60% 40% at 100% 0%, #d9e4c8 0%, transparent 50%),
+        linear-gradient(165deg, #dfece4 0%, #f3efe6 45%, #e7ebe3 100%);
+    }
+    main {
+      max-width: 56rem;
+      margin: 0 auto;
+      padding: 3rem 1.25rem 4rem;
+    }
+    .brand {
+      font-family: "Fraunces", serif;
+      font-size: clamp(2rem, 5vw, 2.75rem);
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      line-height: 1.1;
+      margin: 0 0 0.5rem;
+    }
+    .lede {
+      margin: 0 0 2rem;
+      font-size: 1.05rem;
+      line-height: 1.45;
+      max-width: 40rem;
+      opacity: 0.85;
+    }
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      padding: 1.25rem 1.35rem 1.4rem;
+      backdrop-filter: blur(6px);
+      animation: rise 0.45s ease-out both;
+    }
+    .panel + .panel { margin-top: 1rem; animation-delay: 0.08s; }
+    @keyframes rise {
+      from { opacity: 0; transform: translateY(8px); }
+      to { opacity: 1; transform: none; }
+    }
+    h2 {
+      font-family: "Fraunces", serif;
+      font-size: 1.15rem;
+      margin: 0 0 0.75rem;
+      font-weight: 500;
+    }
+    label {
+      display: block;
+      font-weight: 600;
+      font-size: 0.9rem;
+      margin-bottom: 0.4rem;
+    }
+    input[type="text"], input[type="file"], textarea {
+      width: 100%;
+      padding: 0.7rem 0.85rem;
+      border: 1px solid var(--line);
+      background: #fff;
+      font: inherit;
+      color: var(--ink);
+    }
+    textarea {
+      min-height: 9rem;
+      resize: vertical;
+      line-height: 1.4;
+    }
+    input:focus, textarea:focus {
+      outline: 2px solid var(--accent);
+      outline-offset: 1px;
+    }
+    .hint { font-size: 0.85rem; opacity: 0.7; margin: 0.4rem 0 1rem; }
+    button, .btn {
+      appearance: none;
+      border: 0;
+      background: var(--accent);
+      color: #f7fffc;
+      font: inherit;
+      font-weight: 600;
+      padding: 0.7rem 1.2rem;
+      cursor: pointer;
+      transition: background 0.15s ease, transform 0.15s ease;
+      display: inline-block;
+      text-decoration: none;
+    }
+    button:hover, .btn:hover { background: var(--accent-deep); }
+    button:active, .btn:active { transform: scale(0.98); }
+    button.secondary {
+      background: transparent;
+      color: var(--accent-deep);
+      border: 1px solid var(--accent);
+    }
+    button.secondary:hover { background: rgba(15, 107, 92, 0.08); }
+    button:disabled { opacity: 0.55; cursor: wait; }
+    .actions { display: flex; flex-wrap: wrap; gap: 0.6rem; align-items: center; margin-top: 0.25rem; }
+    .meta {
+      margin: 0 0 0.9rem;
+      font-size: 0.85rem;
+      line-height: 1.45;
+      opacity: 0.8;
+    }
+    .meta code { font-size: 0.8rem; }
+    .status {
+      display: inline-block;
+      font-size: 0.8rem;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      margin-bottom: 0.6rem;
+    }
+    .status.ok { color: var(--ok); }
+    .status.fail { color: var(--fail); }
+    .status.warn { color: var(--warn); }
+    pre {
+      margin: 0;
+      padding: 0.75rem;
+      background: rgba(26, 36, 33, 0.04);
+      overflow: auto;
+      font-size: 0.78rem;
+      line-height: 1.4;
+      max-height: 12rem;
+    }
+    .error {
+      color: var(--fail);
+      margin: 0 0 0.75rem;
+      font-weight: 600;
+    }
+    .counts {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+      margin: 0.75rem 0 1rem;
+    }
+    .count-chip {
+      font-size: 0.85rem;
+      font-weight: 600;
+      padding: 0.35rem 0.65rem;
+      border: 1px solid var(--line);
+      background: #fff;
+    }
+    .count-chip strong { font-family: "Fraunces", serif; font-size: 1.1rem; margin-right: 0.25rem; }
+    .table-wrap { overflow-x: auto; margin-top: 0.5rem; }
+    table.results {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.9rem;
+    }
+    table.results th, table.results td {
+      text-align: left;
+      padding: 0.65rem 0.55rem;
+      border-bottom: 1px solid var(--line);
+      vertical-align: top;
+    }
+    table.results th {
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      opacity: 0.7;
+      font-weight: 600;
+    }
+    table.results tr:hover td { background: rgba(15, 107, 92, 0.04); }
+    .badge {
+      display: inline-block;
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      padding: 0.2rem 0.45rem;
+      border: 1px solid currentColor;
+    }
+    .badge.matched { color: var(--matched); }
+    .badge.partial { color: var(--partial); }
+    .badge.not_matched, .badge.blocked { color: var(--unmatched); }
+    .score { font-family: "Fraunces", serif; font-weight: 700; }
+    .hits { font-size: 0.8rem; opacity: 0.8; }
+    .hits span {
+      display: inline-block;
+      margin: 0.1rem 0.25rem 0.1rem 0;
+      padding: 0.1rem 0.35rem;
+      background: rgba(15, 107, 92, 0.1);
+    }
+    details.raw { margin-top: 1rem; }
+    details.raw summary { cursor: pointer; font-weight: 600; font-size: 0.9rem; }
+    footer {
+      margin-top: 2rem;
+      font-size: 0.8rem;
+      opacity: 0.55;
+    }
+    #llm-test-status[hidden] { display: none; }
+    .grid-2 {
+      display: grid;
+      gap: 1rem;
+    }
+    @media (min-width: 720px) {
+      .grid-2 { grid-template-columns: 1fr 1fr; }
+    }
+    .path-row {
+      display: flex;
+      gap: 0.5rem;
+      align-items: stretch;
+    }
+    .path-row input { flex: 1; min-width: 0; }
+    .path-row button { flex-shrink: 0; white-space: nowrap; }
+    .browse-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(26, 36, 33, 0.45);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 1rem;
+      z-index: 40;
+      animation: fadeIn 0.18s ease-out;
+    }
+    .browse-backdrop[hidden] { display: none; }
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+    .browse-modal {
+      width: min(36rem, 100%);
+      max-height: min(32rem, 90vh);
+      background: #fffcf7;
+      border: 1px solid var(--line);
+      display: flex;
+      flex-direction: column;
+      animation: rise 0.25s ease-out;
+    }
+    .browse-modal header {
+      padding: 1rem 1.15rem 0.65rem;
+      border-bottom: 1px solid var(--line);
+    }
+    .browse-modal header h3 {
+      font-family: "Fraunces", serif;
+      font-size: 1.15rem;
+      margin: 0 0 0.35rem;
+      font-weight: 500;
+    }
+    .browse-cwd {
+      font-size: 0.78rem;
+      word-break: break-all;
+      opacity: 0.75;
+      margin: 0;
+    }
+    .browse-shortcuts {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.4rem;
+      padding: 0.65rem 1.15rem 0;
+    }
+    .browse-shortcuts button {
+      font-size: 0.8rem;
+      padding: 0.35rem 0.65rem;
+      background: transparent;
+      color: var(--accent-deep);
+      border: 1px solid var(--accent);
+    }
+    .browse-shortcuts button:hover { background: rgba(15, 107, 92, 0.08); }
+    .browse-shortcuts button:disabled { opacity: 0.4; cursor: not-allowed; }
+    .browse-list {
+      list-style: none;
+      margin: 0.65rem 0 0;
+      padding: 0;
+      overflow: auto;
+      flex: 1;
+      min-height: 10rem;
+      border-top: 1px solid var(--line);
+    }
+    .browse-list li {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.55rem 1.15rem;
+      border-bottom: 1px solid var(--line);
+      cursor: pointer;
+      font-size: 0.92rem;
+    }
+    .browse-list li:hover, .browse-list li:focus {
+      background: rgba(15, 107, 92, 0.08);
+      outline: none;
+    }
+    .browse-list li.selected { background: rgba(15, 107, 92, 0.14); }
+    .browse-list .kind {
+      font-size: 0.7rem;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      opacity: 0.55;
+      min-width: 2.6rem;
+    }
+    .browse-list .kind.mbox { color: var(--accent); opacity: 1; }
+    .browse-error {
+      color: var(--fail);
+      font-size: 0.85rem;
+      padding: 0.5rem 1.15rem 0;
+      margin: 0;
+      font-weight: 600;
+    }
+    .browse-modal footer {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      padding: 0.85rem 1.15rem;
+      border-top: 1px solid var(--line);
+      margin: 0;
+      opacity: 1;
+      font-size: inherit;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1 class="brand">Candidate Evaluation</h1>
+    <p class="lede">
+      Upload a job description, match it against every candidate in your mailbox,
+      and review all results on this Mac only
+      (<code>http://127.0.0.1:{{ port }}</code>).
+      Contact PII stays in local SQLite; the LLM only sees redacted text.
+    </p>
+
+    <section class="panel">
+      <h2>Privacy</h2>
+      <div class="status ok">Local DB · redaction {{ privacy.redaction_status }}</div>
+      <p class="meta">
+        <strong>Mode</strong> <code>{{ privacy.privacy_mode }}</code><br />
+        <strong>LOCAL_DB_PATH</strong> <code>{{ privacy.local_db_path }}</code>
+        {% if privacy.local_db_exists %} · present{% else %} · not created yet{% endif %}<br />
+        <strong>REVIEW_USE_LLM</strong> <code>{{ "true" if privacy.review_use_llm else "false" }}</code>
+        {% if not privacy.review_use_llm %} · heuristic offline scoring{% endif %}<br />
+        <strong>Guardrail</strong> <code>{{ privacy.guardrail }}</code>
+        {% if privacy.redaction_count is not none %}
+        <br /><strong>Last run</strong> {{ privacy.redaction_count }} redactions
+        {% if privacy.candidate_count is not none %} · {{ privacy.candidate_count }} candidates{% endif %}
+        {% if privacy.guardrail_blocked %} · {{ privacy.guardrail_blocked }} blocked{% endif %}
+        {% endif %}
+      </p>
+      <p class="hint" style="margin-top:0">{{ privacy.note }}</p>
+    </section>
+
+    <section class="panel">
+      <h2>Match candidates to a JD</h2>
+      {% if error %}<p class="error">{{ error }}</p>{% endif %}
+      <form method="post" action="/jd-match" enctype="multipart/form-data">
+        <label for="jd_file">Upload JD file</label>
+        <input id="jd_file" name="jd_file" type="file"
+               accept=".txt,.md,.pdf,.docx,text/plain,application/pdf" />
+        <p class="hint">Accepted: <code>.txt</code>, <code>.md</code>, <code>.pdf</code>, <code>.docx</code>. Or paste below.</p>
+
+        <label for="jd_text">Job description text</label>
+        <textarea id="jd_text" name="jd_text"
+                  placeholder="Paste the full job description here…">{{ jd_text }}</textarea>
+        <p class="hint">Sensitive contact details in the JD are redacted before any LLM call. Candidate PII stays in the local SQLite DB.</p>
+
+        <div class="grid-2">
+          <div>
+            <label for="mail_path">Mailbox folder path</label>
+            <div class="path-row">
+              <input id="mail_path" name="mail_path" type="text" required
+                     value="{{ mail_path }}"
+                     placeholder="./fixtures/mbox"
+                     autocomplete="off"
+                     spellcheck="false" />
+              <button type="button" class="secondary" id="browse-mail-btn"
+                      aria-haspopup="dialog" aria-controls="browse-mail-modal">
+                Browse Mac folder…
+              </button>
+            </div>
+          </div>
+          <div>
+            <label for="mail_folder">Mailbox folder name</label>
+            <div class="path-row">
+              <input id="mail_folder" name="mail_folder" type="text"
+                     value="{{ mail_folder }}"
+                     placeholder="Inbox or Applications"
+                     autocomplete="off"
+                     spellcheck="false" />
+              <button type="button" class="secondary" id="browse-mbox-btn"
+                      aria-haspopup="dialog" aria-controls="browse-mail-modal">
+                Pick mbox…
+              </button>
+            </div>
+          </div>
+        </div>
+        <p class="hint">
+          Use <strong>Browse Mac folder…</strong> to navigate your Mac
+          (<code>Home</code>, <code>Documents</code>, Thunderbird
+          <code>~/Library/Thunderbird/Profiles/…/Mail/…</code>).
+          Select a folder or an mbox file. Demo: <code>./fixtures/mbox</code> + <code>Applications</code>.
+        </p>
+
+        <label for="keywords">Review keywords (optional)</label>
+        <input id="keywords" name="keywords" type="text"
+               value="{{ keywords }}"
+               placeholder="kubernetes, react, system design, remote" />
+        <p class="hint">Leave blank to auto-extract topics from the JD.</p>
+
+        <div class="actions">
+          <button type="submit">Match all candidates</button>
+        </div>
+      </form>
+    </section>
+
+    {% if jd_match %}
+    <section class="panel" id="match-results">
+      <h2>All candidate results</h2>
+      <p class="meta">
+        Run <code>{{ jd_match.run_id }}</code>
+        · keywords
+        {% for kw in jd_match.review_keywords %}<code>{{ kw }}</code>{% if not loop.last %}, {% endif %}{% endfor %}<br />
+        <strong>Privacy</strong> <code>{{ jd_match.privacy_mode or privacy.privacy_mode }}</code>
+        · redaction <code>{{ jd_match.redaction_status or privacy.redaction_status }}</code>
+        {% if jd_match.summary %}· {{ jd_match.summary.redaction_count or 0 }} tokens{% endif %}<br />
+        <strong>Local DB</strong> <code>{{ jd_match.local_db_path or privacy.local_db_path }}</code>
+        · LLM {{ "on" if (jd_match.review_use_llm if jd_match.review_use_llm is defined else privacy.review_use_llm) else "off (heuristic)" }}
+      </p>
+      <div class="counts">
+        <div class="count-chip"><strong>{{ jd_match.counts.total }}</strong> total</div>
+        <div class="count-chip"><strong>{{ jd_match.counts.matched }}</strong> matched</div>
+        <div class="count-chip"><strong>{{ jd_match.counts.partial }}</strong> partial</div>
+        <div class="count-chip"><strong>{{ jd_match.counts.not_matched }}</strong> not matched</div>
+      </div>
+      {% if jd_match.jd_preview %}
+        <p class="hint" style="margin-top:0"><strong>JD preview:</strong> {{ jd_match.jd_preview }}</p>
+      {% endif %}
+
+      <div class="table-wrap">
+        <table class="results">
+          <thead>
+            <tr>
+              <th>Match</th>
+              <th>Candidate</th>
+              <th>Score</th>
+              <th>Tier</th>
+              <th>Keyword hits</th>
+              <th>Notes</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for c in jd_match.candidates %}
+            <tr>
+              <td><span class="badge {{ c.match_status }}">{{ c.match_status }}</span></td>
+              <td>
+                <strong>{{ c.name or "(unknown)" }}</strong><br />
+                <span class="hits">{{ c.email or "—" }}</span><br />
+                <span class="hits">{{ c.subject or "" }}</span>
+              </td>
+              <td class="score">{{ "%.2f"|format(c.weighted_score or 0) }}</td>
+              <td>{{ c.tier }}</td>
+              <td class="hits">
+                {% if c.keyword_hits %}
+                  {% for h in c.keyword_hits %}<span>{{ h }}</span>{% endfor %}
+                {% else %}
+                  —
+                {% endif %}
+              </td>
+              <td class="hits">
+                {% if c.knockout_reasons %}
+                  {{ c.knockout_reasons | join("; ") }}
+                {% elif c.rationales and c.rationales.role_alignment %}
+                  {{ c.rationales.role_alignment[:120] }}{% if c.rationales.role_alignment|length > 120 %}…{% endif %}
+                {% else %}
+                  —
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      <details class="raw">
+        <summary>Raw JSON</summary>
+        <pre>{{ jd_match | tojson(indent=2) }}</pre>
+      </details>
+    </section>
+    {% endif %}
+
+    <section class="panel">
+      <h2>LLM connectivity</h2>
+      <p class="meta">
+        <strong>Provider</strong> <code>{{ llm_env.provider or "custom" }}</code><br />
+        <strong>API_URL</strong> <code>{{ llm_env.api_url or "(unset)" }}</code><br />
+        <strong>MODEL_NAME</strong> <code>{{ llm_env.model_name or "(unset)" }}</code><br />
+        <strong>Auth</strong> <code>{{ llm_env.auth_source or "(unset)" }}</code>
+        {% if llm_env.token_loaded %} · key loaded{% else %} · <span style="color:var(--fail)">missing</span>{% endif %}<br />
+        <strong>TLS</strong> <code>system CA</code>
+        {% if llm_env.skip_ssl_cert_token %} · CERT_FILE / TOKEN_FILE skipped{% endif %}
+      </p>
+      <div class="actions">
+        <form method="post" action="/llm-test" id="llm-test-form">
+          <button type="submit" id="llm-test-btn">Test LLM connectivity</button>
+        </form>
+        <button type="button" class="secondary" id="llm-test-ajax">Test (live)</button>
+      </div>
+      <div id="llm-test-status" {% if llm_test is none %}hidden{% endif %}>
+        {% if llm_test is not none %}
+          {% if llm_test_ok %}
+            <div class="status ok" style="margin-top:0.85rem">LLM reachable</div>
+          {% else %}
+            <div class="status fail" style="margin-top:0.85rem">LLM test failed</div>
+          {% endif %}
+          <pre id="llm-test-json">{{ llm_test | tojson(indent=2) }}</pre>
+        {% else %}
+          <div class="status warn" style="margin-top:0.85rem" id="llm-test-label"></div>
+          <pre id="llm-test-json"></pre>
+        {% endif %}
+      </div>
+    </section>
+
+    {% if result %}
+    <section class="panel">
+      <h2>Keyword review result</h2>
+      <p class="meta">
+        <strong>Privacy</strong> <code>{{ result.privacy_mode or privacy.privacy_mode }}</code>
+        · redaction <code>{{ result.redaction_status or "applied" }}</code>
+        {% if result.summary %}· {{ result.summary.redaction_count or 0 }} tokens · {{ result.summary.candidate_count or 0 }} candidates{% endif %}<br />
+        <strong>Local DB</strong> <code>{{ result.local_db_path or privacy.local_db_path }}</code>
+        · LLM {{ "on" if result.review_use_llm else "off (heuristic)" }}
+      </p>
+      <pre>{{ result | tojson(indent=2) }}</pre>
+    </section>
+    {% endif %}
+
+    <footer>
+      v{{ version }} · MacBook local ·
+      <a href="/health">/health</a> ·
+      <a href="/api/smoke">/api/smoke</a> ·
+      <a href="/api/browse-mail">/api/browse-mail</a> ·
+      <a href="/api/llm-test">/api/llm-test</a> ·
+      <a href="/api/jd-match">/api/jd-match</a>
+    </footer>
+  </main>
+
+  <div class="browse-backdrop" id="browse-mail-modal" hidden role="dialog"
+       aria-modal="true" aria-labelledby="browse-mail-title">
+    <div class="browse-modal">
+      <header>
+        <h3 id="browse-mail-title">Browse Mac mailbox folders</h3>
+        <p class="browse-cwd" id="browse-cwd">Loading…</p>
+        <p class="hint" id="browse-hint" style="margin:0.35rem 0 0"></p>
+      </header>
+      <div class="browse-shortcuts" id="browse-shortcuts"></div>
+      <p class="browse-error" id="browse-error" hidden></p>
+      <ul class="browse-list" id="browse-list" tabindex="0"></ul>
+      <footer>
+        <button type="button" class="secondary" id="browse-up" disabled>Up</button>
+        <button type="button" id="browse-select-dir" disabled>Use this folder</button>
+        <button type="button" id="browse-select-file" disabled>Use selected mbox</button>
+        <button type="button" class="secondary" id="browse-cancel">Cancel</button>
+      </footer>
+    </div>
+  </div>
+
+  <script>
+    (function () {
+      var btn = document.getElementById("llm-test-ajax");
+      var formBtn = document.getElementById("llm-test-btn");
+      var statusBox = document.getElementById("llm-test-status");
+      if (btn && statusBox) {
+        btn.addEventListener("click", async function () {
+          btn.disabled = true;
+          if (formBtn) formBtn.disabled = true;
+          statusBox.hidden = false;
+          var label = statusBox.querySelector(".status") || document.createElement("div");
+          label.className = "status warn";
+          label.style.marginTop = "0.85rem";
+          label.textContent = "Testing…";
+          if (!statusBox.querySelector(".status")) statusBox.insertBefore(label, statusBox.firstChild);
+          var pre = document.getElementById("llm-test-json");
+          if (!pre) {
+            pre = document.createElement("pre");
+            pre.id = "llm-test-json";
+            statusBox.appendChild(pre);
+          }
+          pre.textContent = "Calling /api/llm-test …";
+          try {
+            var res = await fetch("/api/llm-test", { method: "POST" });
+            var data = await res.json();
+            label.className = data.ok ? "status ok" : "status fail";
+            label.textContent = data.ok ? "LLM reachable" : "LLM test failed";
+            pre.textContent = JSON.stringify(data, null, 2);
+          } catch (err) {
+            label.className = "status fail";
+            label.textContent = "LLM test failed";
+            pre.textContent = String(err);
+          } finally {
+            btn.disabled = false;
+            if (formBtn) formBtn.disabled = false;
+          }
+        });
+      }
+    })();
+
+    (function () {
+      var openBtn = document.getElementById("browse-mail-btn");
+      var openMboxBtn = document.getElementById("browse-mbox-btn");
+      var modal = document.getElementById("browse-mail-modal");
+      var cwdEl = document.getElementById("browse-cwd");
+      var hintEl = document.getElementById("browse-hint");
+      var listEl = document.getElementById("browse-list");
+      var errEl = document.getElementById("browse-error");
+      var shortcutsEl = document.getElementById("browse-shortcuts");
+      var upBtn = document.getElementById("browse-up");
+      var selectDirBtn = document.getElementById("browse-select-dir");
+      var selectFileBtn = document.getElementById("browse-select-file");
+      var cancelBtn = document.getElementById("browse-cancel");
+      var mailPath = document.getElementById("mail_path");
+      var mailFolder = document.getElementById("mail_folder");
+      if (!openBtn || !modal) return;
+
+      var state = { cwd: null, parent: null, selected: null, entries: [], preferMbox: false };
+
+      function showError(msg) {
+        if (!msg) {
+          errEl.hidden = true;
+          errEl.textContent = "";
+          return;
+        }
+        errEl.hidden = false;
+        errEl.textContent = msg;
+      }
+
+      function setSelected(entry) {
+        state.selected = entry;
+        Array.prototype.forEach.call(listEl.querySelectorAll("li"), function (li) {
+          li.classList.toggle("selected", entry && li.dataset.path === entry.path);
+        });
+        selectFileBtn.disabled = !(entry && entry.type === "file" && entry.is_mbox);
+      }
+
+      function render(data) {
+        state.cwd = data.cwd;
+        state.parent = data.parent || null;
+        state.entries = data.entries || [];
+        cwdEl.textContent = data.cwd || "";
+        if (hintEl) hintEl.textContent = data.hint || "Navigate your Mac folders, then select a folder or mbox.";
+        upBtn.disabled = !state.parent;
+        selectDirBtn.disabled = !data.cwd;
+        showError(null);
+
+        shortcutsEl.innerHTML = "";
+        (data.shortcuts || []).forEach(function (s) {
+          var b = document.createElement("button");
+          b.type = "button";
+          b.textContent = s.label;
+          b.disabled = s.exists === false;
+          b.title = s.path;
+          b.addEventListener("click", function () {
+            load(s.path);
+          });
+          shortcutsEl.appendChild(b);
+        });
+
+        listEl.innerHTML = "";
+        if (!state.entries.length) {
+          var empty = document.createElement("li");
+          empty.style.cursor = "default";
+          empty.textContent = "(No folders or mbox files here)";
+          listEl.appendChild(empty);
+        }
+        state.entries.forEach(function (entry) {
+          var li = document.createElement("li");
+          li.dataset.path = entry.path;
+          li.tabIndex = 0;
+          var kind = document.createElement("span");
+          kind.className = "kind" + (entry.is_mbox ? " mbox" : "");
+          kind.textContent = entry.type === "dir" ? "dir" : "mbox";
+          var name = document.createElement("span");
+          name.textContent = entry.name;
+          li.appendChild(kind);
+          li.appendChild(name);
+          li.addEventListener("click", function () {
+            if (entry.type === "dir") {
+              load(entry.path);
+            } else {
+              setSelected(entry);
+            }
+          });
+          li.addEventListener("dblclick", function () {
+            if (entry.type === "file" && entry.is_mbox) {
+              applyMbox(entry);
+            }
+          });
+          listEl.appendChild(li);
+        });
+        setSelected(null);
+      }
+
+      async function load(path) {
+        showError(null);
+        cwdEl.textContent = "Loading…";
+        listEl.innerHTML = "";
+        var url = "/api/browse-mail";
+        if (path) url += "?path=" + encodeURIComponent(path);
+        try {
+          var res = await fetch(url);
+          var data = await res.json();
+          if (!res.ok) {
+            showError(data.error || ("Browse failed (" + res.status + ")"));
+            cwdEl.textContent = state.cwd || "";
+            return;
+          }
+          render(data);
+        } catch (err) {
+          showError(String(err));
+          cwdEl.textContent = state.cwd || "";
+        }
+      }
+
+      function applyFolder() {
+        if (!state.cwd) return;
+        mailPath.value = state.cwd;
+        close();
+      }
+
+      function applyMbox(entry) {
+        var target = entry || state.selected;
+        if (!target || target.type !== "file") return;
+        var parts = target.path.split(/[/\\]/);
+        var name = parts.pop() || target.name;
+        var parent = parts.join("/") || "/";
+        // Preserve drive letter on Windows-style paths if ever present
+        if (target.path.indexOf("\\") >= 0 && parts.length) {
+          parent = parts.join("\\");
+        }
+        mailPath.value = parent;
+        mailFolder.value = name;
+        close();
+      }
+
+      function open(preferMbox) {
+        state.preferMbox = !!preferMbox;
+        modal.hidden = false;
+        var start = (mailPath && mailPath.value) ? mailPath.value.trim() : "";
+        // mailbox:// is not a filesystem path — let the API pick Thunderbird/Home.
+        if (!start || start.toLowerCase().indexOf("mailbox:") === 0) {
+          start = "";
+        }
+        load(start || null);
+        (preferMbox ? selectFileBtn : selectDirBtn).focus();
+      }
+
+      function close() {
+        modal.hidden = true;
+        openBtn.focus();
+      }
+
+      openBtn.addEventListener("click", function () { open(false); });
+      if (openMboxBtn) {
+        openMboxBtn.addEventListener("click", function () { open(true); });
+      }
+      cancelBtn.addEventListener("click", close);
+      upBtn.addEventListener("click", function () {
+        if (state.parent) load(state.parent);
+      });
+      selectDirBtn.addEventListener("click", applyFolder);
+      selectFileBtn.addEventListener("click", function () { applyMbox(); });
+      modal.addEventListener("click", function (ev) {
+        if (ev.target === modal) close();
+      });
+      document.addEventListener("keydown", function (ev) {
+        if (modal.hidden) return;
+        if (ev.key === "Escape") {
+          ev.preventDefault();
+          close();
+        }
+      });
+    })();
+  </script>
+</body>
+</html>

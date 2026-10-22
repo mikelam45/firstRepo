@@ -1,0 +1,21 @@
+Senior Backend Engineer — Platform
+
+We are hiring a Senior Backend Engineer to own production Kubernetes services
+and high-throughput APIs. You will lead system design reviews, mentor engineers,
+and collaborate on clear written RFCs.
+
+Must-haves:
+- 5+ years backend engineering
+- Production experience with Kubernetes (EKS preferred)
+- Strong system design skills
+- Comfortable with remote collaboration
+
+Nice-to-haves:
+- Payments / fintech domain
+- OpenTelemetry / observability
+- React familiarity for internal tooling
+
+Location: remote (US / CA)
+Compensation: USD 140000–180000
+Notice period: ideally within 60 days
+Work authorization required.

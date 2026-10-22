@@ -1,0 +1,10 @@
+.git
+.env
+output/candidate_reviews/**
+!output/candidate_reviews/.gitkeep
+**/__pycache__
+**/*.pyc
+.venv
+venv
+*.md
+!README.md

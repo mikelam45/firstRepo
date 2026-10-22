@@ -1,0 +1,52 @@
+# Local deployment with Podman or Docker Compose — HTTP UI on port 3036.
+#
+# Podman:  podman compose up --build --force-recreate
+# Docker:  docker compose up --build --force-recreate
+# Then open: http://127.0.0.1:3036
+#
+# Pod DNS: extra_hosts injects the private RHOAI LLM hostname into the
+# container /etc/hosts (same as --add-host). Override via .env:
+#   RHOAI_LLM_IP=192.168.147.135
+#   RHOAI_LLM_HOST=redhataiqwen38-27b-int4-rhoai-test.apps.demo.rhoai.demo
+
+name: candidate-eval
+
+services:
+  screener:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: localhost/candidate-eval:local
+    container_name: candidate-eval
+    env_file:
+      - .env
+    environment:
+      THUNDERBIRD_MAIL_PATH: /data/mail
+      OUTPUT_DIR: /data/output
+      ROLE_CONFIG_PATH: /app/config/role_requirements.yaml
+      CERT_FILE: /app/SSLcert/qwen-tls.crt
+      TOKEN_FILE: /app/SSLcert/token_qwen3_8.txt
+      # Host Mac secrets dir bind-mounted below (default /Users/mikelam/SSLcert)
+      API_URL: ${API_URL:-https://redhataiqwen38-27b-int4-rhoai-test.apps.demo.rhoai.demo/v1/chat/completions}
+      MODEL_NAME: ${MODEL_NAME:-Qwen38-27b-int4}
+      HOST: 0.0.0.0
+      PORT: "3036"
+      RHOAI_LLM_IP: ${RHOAI_LLM_IP:-192.168.147.135}
+      RHOAI_LLM_HOST: ${RHOAI_LLM_HOST:-redhataiqwen38-27b-int4-rhoai-test.apps.demo.rhoai.demo}
+    ports:
+      - "${PORT:-3036}:3036"
+    # Pod / container DNS setup
+    # Pod DNS: baked into container /etc/hosts at create time (--add-host).
+    # For an already-running pod without recreate: bash scripts/add_pod_hosts.sh
+    extra_hosts:
+      - "host.containers.internal:host-gateway"
+      - "host.docker.internal:host-gateway"
+      - "${RHOAI_LLM_HOST:-redhataiqwen38-27b-int4-rhoai-test.apps.demo.rhoai.demo}:${RHOAI_LLM_IP:-192.168.147.135}"
+    dns_search: []
+    volumes:
+      - ${MAIL_HOST_PATH:-./fixtures/mbox}:/data/mail:ro
+      - ${OUTPUT_HOST_PATH:-./output/candidate_reviews}:/data/output:rw
+      - ./config/role_requirements.yaml:/app/config/role_requirements.yaml:ro
+      - ${SSL_HOST_PATH:-/Users/mikelam/SSLcert}:/app/SSLcert:ro
+    command: ["serve"]
+    restart: unless-stopped

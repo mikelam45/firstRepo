@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Candidate Evaluation">
+  <defs>
+    <linearGradient id="g" x1="8" y1="4" x2="56" y2="60" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#14806e"/>
+      <stop offset="100%" stop-color="#0f6b5c"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="14" fill="url(#g)"/>
+  <!-- soft paper inset -->
+  <rect x="6" y="6" width="52" height="52" rx="10" fill="#fff8ef" opacity="0.12"/>
+  <!-- CE monogram -->
+  <text x="32" y="40" text-anchor="middle" font-family="Georgia, 'Times New Roman', serif" font-size="26" font-weight="700" fill="#fff8ef" letter-spacing="-1">CE</text>
+  <!-- small checklist tick in corner -->
+  <path d="M44 14.5 L47.2 17.8 L53.5 10.5" fill="none" stroke="#d9e4c8" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

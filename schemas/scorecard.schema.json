@@ -1,0 +1,105 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.local/schemas/scorecard.schema.json",
+  "title": "CandidateLLMScorecard",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "candidate_id",
+    "scores",
+    "rationales",
+    "keyword_evidence",
+    "extracted"
+  ],
+  "properties": {
+    "candidate_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "scores": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "role_alignment",
+        "career_progression",
+        "application_quality",
+        "culture_fit",
+        "operational_logistics"
+      ],
+      "properties": {
+        "role_alignment": { "$ref": "#/$defs/rating" },
+        "career_progression": { "$ref": "#/$defs/rating" },
+        "application_quality": { "$ref": "#/$defs/rating" },
+        "culture_fit": { "$ref": "#/$defs/rating" },
+        "operational_logistics": { "$ref": "#/$defs/rating" }
+      }
+    },
+    "rationales": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "role_alignment",
+        "career_progression",
+        "application_quality",
+        "culture_fit",
+        "operational_logistics"
+      ],
+      "properties": {
+        "role_alignment": { "type": "string" },
+        "career_progression": { "type": "string" },
+        "application_quality": { "type": "string" },
+        "culture_fit": { "type": "string" },
+        "operational_logistics": { "type": "string" }
+      }
+    },
+    "keyword_evidence": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/keywordEvidence" }
+    },
+    "extracted": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "email"],
+      "properties": {
+        "name": { "type": ["string", "null"] },
+        "email": { "type": ["string", "null"] },
+        "phone": { "type": ["string", "null"] },
+        "linkedin": { "type": ["string", "null"] },
+        "years_experience": { "type": ["number", "null"] },
+        "current_title": { "type": ["string", "null"] },
+        "current_employer": { "type": ["string", "null"] },
+        "notice_days": { "type": ["integer", "null"] },
+        "salary_expectation": { "type": ["number", "null"] },
+        "work_authorization": { "type": ["boolean", "null"] },
+        "location_model": {
+          "type": ["string", "null"],
+          "enum": ["remote", "hybrid", "onsite", null]
+        }
+      }
+    },
+    "flags": {
+      "type": "array",
+      "items": { "type": "string" },
+      "default": []
+    }
+  },
+  "$defs": {
+    "rating": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 5
+    },
+    "keywordEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["keyword", "present", "strength", "evidence", "source"],
+      "properties": {
+        "keyword": { "type": "string", "minLength": 1 },
+        "present": { "type": "boolean" },
+        "strength": { "$ref": "#/$defs/rating" },
+        "evidence": { "type": "string" },
+        "source": { "type": "string", "enum": ["cv", "email"] }
+      }
+    }
+  }
+}

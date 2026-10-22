@@ -1,0 +1,65 @@
+# Role requirements + review scope for candidate screening.
+# See docs/candidate_evaluation_framework.md §§2–3.
+
+role:
+  title: "Senior Backend Engineer"
+  team: "Platform"
+  values:
+    - ownership
+    - clarity
+    - collaboration
+
+# Required: topics that confine Role Alignment scoring for this run.
+# Override per run: python review_candidates.py --keywords "a,b,c"
+review_keywords:
+  - kubernetes
+  - react
+  - system design
+  - remote
+
+keyword_policy:
+  # semantic = LLM judges topical relevance; exact = string/alias match only
+  match_mode: semantic
+  # Knockout (Tier 3) if fewer than N keywords are evidenced as present
+  min_must_match: 2
+  # Share of role_alignment driven by keyword coverage/strength (0.0–1.0)
+  weight_in_role_alignment: 0.5
+
+must_haves:
+  - "5+ years backend engineering"
+  - "Production experience with Kubernetes"
+
+nice_to_haves:
+  - "Payments domain"
+  - "OpenTelemetry"
+
+experience:
+  min_years: 5
+  preferred_industries:
+    - fintech
+    - saas
+
+education_certs:
+  required: []
+  preferred:
+    - CKA
+
+compensation:
+  currency: USD
+  band_min: 140000
+  band_max: 180000
+
+location_policy:
+  allowed_models:
+    - remote
+    - hybrid
+  allowed_regions:
+    - US
+    - CA
+  max_notice_days: 60
+
+knockouts:
+  work_authorization_required: true
+  required_licenses: []
+  # If candidate discloses salary above band_max → knockout fail
+  disallow_salary_above_band: true

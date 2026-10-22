@@ -1,0 +1,110 @@
+"""CLI for local Podman/Docker screening runs."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+
+from candidate_eval.service import load_env, run_review, run_smoke, test_llm_connectivity
+
+
+def cmd_smoke(args: argparse.Namespace) -> int:
+    load_env()
+    checks, code = run_smoke(probe_llm=not args.local_only)
+    print(json.dumps(checks, indent=2))
+    if code == 0:
+        if args.local_only:
+            print("OK: local smoke passed (mail + config; LLM not probed)")
+        else:
+            print("OK: container smoke passed (mail mount + keywords + LLM)")
+    elif code == 2:
+        print(checks.get("warning", "model warning"), file=sys.stderr)
+    else:
+        print(f"FAIL: {checks.get('error', 'smoke failed')}", file=sys.stderr)
+    return code
+
+
+def cmd_review(args: argparse.Namespace) -> int:
+    load_env()
+    try:
+        result = run_review(
+            args.keywords,
+            mail_path=getattr(args, "mail_path", None),
+            mail_folder=getattr(args, "mail_folder", None),
+        )
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+    print(json.dumps(result, indent=2))
+    return 0
+
+
+def cmd_llm_test(_: argparse.Namespace) -> int:
+    load_env()
+    result, code = test_llm_connectivity()
+    print(json.dumps(result, indent=2))
+    if code == 0:
+        print("OK: LLM connectivity")
+    else:
+        print(f"FAIL: {result.get('error', 'LLM test failed')}", file=sys.stderr)
+    return code
+
+
+def cmd_serve(args: argparse.Namespace) -> int:
+    import os
+
+    import uvicorn
+
+    load_env()
+    host = args.host or os.environ.get("HOST", "127.0.0.1")
+    port = args.port or int(os.environ.get("PORT", "3036"))
+    print(f"Serving candidate-eval on http://{host}:{port}", flush=True)
+    uvicorn.run("candidate_eval.web:app", host=host, port=port, reload=False)
+    return 0
+
+
+def main(argv: list[str] | None = None) -> None:
+    parser = argparse.ArgumentParser(description="Candidate evaluation (local container)")
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    p_smoke = sub.add_parser("smoke", help="Validate mounts, keywords, and LLM connectivity")
+    p_smoke.add_argument(
+        "--local-only",
+        action="store_true",
+        help="Skip LLM network probe (same checks as the portal Runtime panel)",
+    )
+    p_smoke.set_defaults(func=cmd_smoke)
+
+    p_review = sub.add_parser("review", help="Run screening (scaffold)")
+    p_review.add_argument(
+        "--keywords",
+        default=None,
+        help="Comma-separated topic keywords (overrides role YAML for this run)",
+    )
+    p_review.add_argument(
+        "--mail-path",
+        default=None,
+        help="Mailbox folder path (overrides THUNDERBIRD_MAIL_PATH)",
+    )
+    p_review.add_argument(
+        "--mail-folder",
+        default=None,
+        help="mbox folder name inside mail path (overrides TARGET_MAIL_FOLDER)",
+    )
+    p_review.set_defaults(func=cmd_review)
+
+    p_llm = sub.add_parser("llm-test", help="Test LLM connectivity (CERT/TOKEN/API_URL)")
+    p_llm.set_defaults(func=cmd_llm_test)
+
+    p_serve = sub.add_parser("serve", help="Run local HTTP UI/API (default port 3036)")
+    p_serve.add_argument("--host", default=None, help="Bind host (default 0.0.0.0)")
+    p_serve.add_argument("--port", type=int, default=None, help="Bind port (default 3036)")
+    p_serve.set_defaults(func=cmd_serve)
+
+    args = parser.parse_args(argv)
+    raise SystemExit(args.func(args))
+
+
+if __name__ == "__main__":
+    main()
