@@ -29,4 +29,4 @@ candidate-eval = "candidate_eval.cli:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-candidate_eval = ["templates/*.html"]
+candidate_eval = ["templates/*.html", "static/*"]

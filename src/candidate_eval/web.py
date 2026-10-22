@@ -8,6 +8,7 @@ from pathlib import Path
 import yaml
 from fastapi import FastAPI, File, Form, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from candidate_eval import __version__
@@ -33,7 +34,9 @@ load_env()
 PORT = int(os.environ.get("PORT", "3036"))
 HOST = os.environ.get("HOST", "127.0.0.1")
 
-_TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
+_PKG_DIR = Path(__file__).resolve().parent
+_TEMPLATES_DIR = _PKG_DIR / "templates"
+_STATIC_DIR = _PKG_DIR / "static"
 templates = Jinja2Templates(directory=str(_TEMPLATES_DIR))
 
 app = FastAPI(
@@ -41,6 +44,7 @@ app = FastAPI(
     version=__version__,
     description="Local screening UI — JD upload and candidate matching",
 )
+app.mount("/static", StaticFiles(directory=str(_STATIC_DIR)), name="static")
 
 
 def _role_title() -> str:
