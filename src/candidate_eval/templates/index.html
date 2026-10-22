@@ -502,7 +502,9 @@
         <strong>API_URL</strong> <code>{{ llm_env.api_url or "(unset)" }}</code><br />
         <strong>MODEL_NAME</strong> <code>{{ llm_env.model_name or "(unset)" }}</code><br />
         <strong>Auth</strong> <code>{{ llm_env.auth_source or "(unset)" }}</code>
-        {% if llm_env.token_loaded %} · key loaded{% else %} · <span style="color:var(--fail)">missing</span>{% endif %}
+        {% if llm_env.token_loaded %} · key loaded{% else %} · <span style="color:var(--fail)">missing</span>{% endif %}<br />
+        <strong>TLS</strong> <code>system CA</code>
+        {% if llm_env.skip_ssl_cert_token %} · CERT_FILE / TOKEN_FILE skipped{% endif %}
       </p>
       <div class="actions">
         <form method="post" action="/llm-test" id="llm-test-form">

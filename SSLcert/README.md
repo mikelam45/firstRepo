@@ -1,25 +1,15 @@
-# TLS secrets — Mac absolute paths
+# SSL cert / token — skipped
 
-On the MacBook, secrets live **outside the git repo**:
+This portal uses **OpenRouter API keys** only.
 
-| Absolute path | Env var |
-| --- | --- |
-| `/Users/mikelam/SSLcert/qwen-tls.crt` | `CERT_FILE` |
-| `/Users/mikelam/SSLcert/token_qwen3_8.txt` | `TOKEN_FILE` |
+- Do **not** set `CERT_FILE` or `TOKEN_FILE` in `.env`
+- TLS uses system CAs (`verify=True`)
+- Auth uses `OPENROUTER_API_KEY` / `LLM_API_KEY`
 
-```bash
-mkdir -p /Users/mikelam/SSLcert
-cp ~/Downloads/qwen-tls.crt /Users/mikelam/SSLcert/qwen-tls.crt
-cp ~/Downloads/token_qwen3_8.txt /Users/mikelam/SSLcert/token_qwen3_8.txt
-ls -la /Users/mikelam/SSLcert/
-```
-
-`.env`:
+Legacy private-host cert/token support exists only if you explicitly set:
 
 ```env
-CERT_FILE="/Users/mikelam/SSLcert/qwen-tls.crt"
-TOKEN_FILE="/Users/mikelam/SSLcert/token_qwen3_8.txt"
+ALLOW_LEGACY_TLS=true
 ```
 
-This repo folder (`SSLcert/`) may still hold a README only; do not commit real cert/token files.
-Optional compose on the same Mac can mount `/Users/mikelam/SSLcert` → `/app/SSLcert`.
+That path is not used for normal MacBook / OpenRouter runs.

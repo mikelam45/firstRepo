@@ -95,17 +95,23 @@ for key, value in replacements.items():
     else:
         text = text.rstrip() + "\n" + line + "\n"
 
-# Neutralize active RHOAI cert/token lines so OpenRouter uses system CAs + API key.
+# Remove CERT_FILE / TOKEN_FILE entirely (skipped by the app).
 for key in ("CERT_FILE", "TOKEN_FILE", "RHOAI_LLM_HOST", "RHOAI_LLM_IP"):
+    text = re.sub(rf"^{key}=.*\n?", "", text, flags=re.MULTILINE)
+    text = re.sub(rf"^#\s*{key}=.*\n?", "", text, flags=re.MULTILINE)
+
+if not re.search(r"^ALLOW_LEGACY_TLS=", text, re.MULTILINE):
+    text = text.rstrip() + "\nALLOW_LEGACY_TLS=false\n"
+else:
     text = re.sub(
-        rf"^({key}=.*)$",
-        r"# \1  # disabled for OpenRouter (Mac local)",
+        r"^ALLOW_LEGACY_TLS=.*$",
+        "ALLOW_LEGACY_TLS=false",
         text,
         flags=re.MULTILINE,
     )
 
 p.write_text(text, encoding="utf-8")
-print("==> .env MacBook-local OpenRouter settings refreshed (key left as-is; CERT/TOKEN commented)")
+print("==> .env OpenRouter-only (CERT_FILE / TOKEN_FILE removed)")
 PY
 
 mkdir -p output/candidate_reviews

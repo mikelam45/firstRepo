@@ -82,13 +82,8 @@ def _llm_env_summary() -> dict:
         "provider": "openrouter" if cfg["is_openrouter"] else "custom",
         "auth_source": cfg["auth_source"],
         "token_loaded": cfg["token_loaded"],
-        "cert_file": cfg["cert_file"],
-        "cert_file_raw": cfg["cert_file_raw"],
-        "cert_exists": cfg["cert_exists"],
-        "cert_required": cfg["cert_required"],
-        "token_file": cfg["token_file"],
-        "token_file_raw": cfg["token_file_raw"],
-        "token_exists": cfg["token_exists"],
+        "skip_ssl_cert_token": cfg["skip_ssl_cert_token"],
+        "tls_verify": cfg["verify"] if isinstance(cfg["verify"], bool) else str(cfg["verify"]),
         "api_url": cfg["api_url"] or os.environ.get("API_URL", ""),
         "model_name": cfg["model_name"]
         or os.environ.get("MODEL_NAME", "")

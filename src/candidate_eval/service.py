@@ -116,22 +116,27 @@ def resolve_keywords(cli_keywords: str | list[str] | None = None) -> list[str]:
     return keywords
 
 
+def _legacy_tls_allowed() -> bool:
+    """CERT_FILE / TOKEN_FILE are skipped unless ALLOW_LEGACY_TLS=true."""
+    return (os.environ.get("ALLOW_LEGACY_TLS") or "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+
 def _llm_config() -> dict:
     """Resolve OpenRouter / LLM settings from env.
 
-    Auth preference: OPENROUTER_API_KEY or LLM_API_KEY in .env; TOKEN_FILE is
-    legacy RHOAI only (ignored for OpenRouter). CERT_FILE is used only for
-    private non-OpenRouter TLS endpoints; OpenRouter always uses system CA
-    verification (verify=True).
+    Default: API key only (OPENROUTER_API_KEY or LLM_API_KEY) + system CA verify.
+    CERT_FILE / TOKEN_FILE are skipped unless ALLOW_LEGACY_TLS=true.
     """
-    cert_raw = (os.environ.get("CERT_FILE") or "").strip()
-    token_raw = (os.environ.get("TOKEN_FILE") or "").strip()
-    cert_path = (
-        resolve_repo_path(cert_raw) if cert_raw else Path()
-    )
-    token_path = (
-        resolve_repo_path(token_raw) if token_raw else Path()
-    )
+    allow_legacy = _legacy_tls_allowed()
+    cert_raw = (os.environ.get("CERT_FILE") or "").strip() if allow_legacy else ""
+    token_raw = (os.environ.get("TOKEN_FILE") or "").strip() if allow_legacy else ""
+    cert_path = resolve_repo_path(cert_raw) if cert_raw else Path()
+    token_path = resolve_repo_path(token_raw) if token_raw else Path()
 
     api_url = (os.environ.get("API_URL") or "").strip()
     if not api_url:
@@ -146,7 +151,6 @@ def _llm_config() -> dict:
 
     is_openrouter = "openrouter.ai" in api_url.lower()
 
-    # Prefer API key in .env; fall back to TOKEN_FILE only for non-OpenRouter / legacy.
     openrouter_key = (os.environ.get("OPENROUTER_API_KEY") or "").strip()
     llm_api_key = (os.environ.get("LLM_API_KEY") or "").strip()
     token = openrouter_key or llm_api_key
@@ -156,31 +160,27 @@ def _llm_config() -> dict:
         auth_source = "LLM_API_KEY"
     else:
         auth_source = ""
-    if not token and not is_openrouter and token_path.is_file():
-        # TOKEN_FILE is RHOAI-era only; OpenRouter requires OPENROUTER_API_KEY / LLM_API_KEY.
+    if not token and allow_legacy and token_path.is_file():
         token = token_path.read_text(encoding="utf-8").strip()
         auth_source = "TOKEN_FILE"
 
-    # OpenRouter needs public system CAs — never pin a private/demo CERT_FILE.
-    # Custom/private hosts may use CERT_FILE when the cert file exists.
+    # Default: system CAs. Optional private CA only when legacy TLS is enabled.
     verify: str | bool = True
-    if not is_openrouter and cert_raw and cert_path.is_file():
+    if allow_legacy and cert_raw and cert_path.is_file():
         verify = str(cert_path)
 
-    cert_display = str(cert_path) if cert_raw and str(cert_path) != "." else (cert_raw or "")
-    token_display = str(token_path) if token_raw and str(token_path) != "." else (token_raw or "")
-
     return {
-        "cert_file": cert_display,
-        "cert_file_raw": cert_raw,
-        "cert_exists": bool(cert_raw) and cert_path.is_file(),
-        "cert_required": bool(cert_raw) and not is_openrouter,
-        "token_file": token_display,
-        "token_file_raw": token_raw,
-        "token_exists": bool(token_raw) and token_path.is_file(),
+        "cert_file": "",
+        "cert_file_raw": "",
+        "cert_exists": False,
+        "cert_required": False,
+        "token_file": "",
+        "token_file_raw": "",
+        "token_exists": False,
         "token_loaded": bool(token),
         "auth_source": auth_source or ("none" if not token else "unknown"),
         "is_openrouter": is_openrouter,
+        "skip_ssl_cert_token": not allow_legacy,
         "project_root": str(project_root()),
         "api_url": api_url,
         "model_name": model_name,
@@ -200,7 +200,7 @@ def llm_chat(messages: list[dict], *, max_tokens: int | None = None) -> dict:
     if not cfg["api_url"]:
         raise ValueError("API_URL is not set")
     if not cfg["token_loaded"]:
-        raise ValueError("OPENROUTER_API_KEY / LLM_API_KEY unset (and no TOKEN_FILE)")
+        raise ValueError("OPENROUTER_API_KEY or LLM_API_KEY is not set in .env")
     if not cfg["model_name"]:
         raise ValueError("MODEL_NAME is not set")
 
@@ -234,14 +234,8 @@ def test_llm_connectivity() -> tuple[dict, int]:
         "test": "llm_connectivity",
         "provider": "openrouter" if cfg["is_openrouter"] else "custom",
         "project_root": cfg["project_root"],
-        "cert_file": cfg["cert_file"],
-        "cert_file_raw": cfg["cert_file_raw"],
-        "cert_exists": cfg["cert_exists"],
-        "cert_required": cfg["cert_required"],
+        "skip_ssl_cert_token": cfg["skip_ssl_cert_token"],
         "auth_source": cfg["auth_source"],
-        "token_file": cfg["token_file"],
-        "token_file_raw": cfg["token_file_raw"],
-        "token_exists": cfg["token_exists"],
         "token_loaded": cfg["token_loaded"],
         "api_url": cfg["api_url"],
         "model_name": cfg["model_name"],
@@ -250,13 +244,6 @@ def test_llm_connectivity() -> tuple[dict, int]:
         "llm_reachable": False,
     }
 
-    if cfg["cert_required"]:
-        if not cfg["cert_file"]:
-            result["error"] = "CERT_FILE is not set in .env"
-            return result, 1
-        if not cfg["cert_exists"]:
-            result["error"] = f"CERT_FILE not found: {cfg['cert_file']}"
-            return result, 1
     if not cfg["token_loaded"]:
         result["error"] = "OPENROUTER_API_KEY or LLM_API_KEY missing in .env"
         return result, 1
@@ -403,15 +390,9 @@ def run_smoke(
         "privacy_mode": privacy["privacy_mode"],
         "local_db_path": privacy["local_db_path"],
         "review_use_llm": privacy["review_use_llm"],
-        "cert_file": cfg["cert_file"],
-        "cert_file_raw": cfg["cert_file_raw"],
-        "cert_exists": cfg["cert_exists"],
-        "cert_required": cfg["cert_required"],
+        "skip_ssl_cert_token": cfg["skip_ssl_cert_token"],
         "auth_source": cfg["auth_source"],
         "provider": "openrouter" if cfg["is_openrouter"] else "custom",
-        "token_file": cfg["token_file"],
-        "token_file_raw": cfg["token_file_raw"],
-        "token_exists": cfg["token_exists"],
         "token_loaded": cfg["token_loaded"],
         "api_url": cfg["api_url"],
         "model_name": cfg["model_name"],
@@ -426,9 +407,6 @@ def run_smoke(
         checks["error"] = f"Mailbox folder path not found: {mail['mail_path']}"
         return checks, 1
 
-    if cfg["cert_required"] and not cfg["cert_exists"]:
-        checks["error"] = f"CERT_FILE not found: {cfg['cert_file']}"
-        return checks, 1
     if not cfg["token_loaded"]:
         checks["error"] = "OPENROUTER_API_KEY or LLM_API_KEY missing in .env"
         return checks, 1
