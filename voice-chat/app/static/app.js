@@ -1,4 +1,4 @@
-import { IllustratedPortrait, Portrait, englishVisemes, pinyinVisemes } from "./face.js?v=20261023-mouth";
+import { IllustratedPortrait, Portrait, englishVisemes, pinyinVisemes } from "./face.js?v=20261023-mouthonly";
 import { collectTranscript, recognitionLanguage, transcriptPiece } from "./transcript.js";
 
 const I18N = {
@@ -1666,7 +1666,6 @@ function visemeHold(name) {
 }
 
 function runMouth(shapes, mood, token, lineLang, rate) {
-  console.log('runMouth', shapes.length, shapes.slice(0, 6));
   const sequence = shapes.length ? shapes : ["sil"];
   const unit = (lineLang === "en" ? 74 : 102) / Math.max(0.72, rate || 1);
   const marks = [];
