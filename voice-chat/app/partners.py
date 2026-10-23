@@ -1,4 +1,4 @@
-"""Partners, age 27. Six scene partners, then Nora, the English teacher."""
+"""Partners, age 27. Six scene partners, then Chloe and Celine."""
 
 from __future__ import annotations
 
@@ -100,8 +100,8 @@ PARTNERS = [
         "palette": {"bg": "#d7ebe4", "hair": "#201814", "skin": "#e7b898", "shirt": "#1f6f78"},
     },
     {
-        "id": "nora",
-        "name": "Nora",
+        "id": "chloe",
+        "name": "Chloe",
         "gender": "woman",
         "age": 27,
         "city": "London",
@@ -118,11 +118,35 @@ PARTNERS = [
             "Corrects grammar, the wrong word, and a wrong phrase. "
             "Never comments on how a microphone heard the learner."
         ),
-        "mesh": False,
-        "display": "illustrated",
-        "portrait": "/static/avatars/nora.svg",
-        "mesh_url": None,
-        "palette": {"bg": "#e7e4f4", "hair": "#4a3428", "skin": "#f4cbb3", "shirt": "#2c3f66"},
+        "mesh": True,
+        "display": "mesh",
+        "portrait": "/static/avatars/chloe.jpg",
+        "mesh_url": "/static/avatars/chloe.json",
+        "palette": {"bg": "#e4d5d0", "hair": "#3a2a22", "skin": "#f3d0c0", "shirt": "#f3efe6"},
+    },
+    {
+        "id": "celine",
+        "name": "Celine",
+        "gender": "woman",
+        "age": 27,
+        "city": "Hong Kong",
+        "from": "Hong Kong",
+        "region": "HK",
+        "home_language": "yue",
+        "role": {
+            "en": "Coffee shop waitress",
+            "cmn": "咖啡店服务员",
+            "yue": "茶餐廳侍應",
+        },
+        "manner": (
+            "Warm Hong Kong café waitress. Colloquial Cantonese when the line is Cantonese, "
+            "唔該 for requests. She takes the order; she does not teach grammar."
+        ),
+        "mesh": True,
+        "display": "mesh",
+        "portrait": "/static/avatars/celine.jpg",
+        "mesh_url": "/static/avatars/celine.json",
+        "palette": {"bg": "#1c2430", "hair": "#2a211c", "skin": "#e7c2a8", "shirt": "#f4f1ea"},
     },
 ]
 

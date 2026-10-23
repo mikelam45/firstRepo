@@ -26,15 +26,20 @@ def test_health():
 def test_catalogue_includes_english_teacher():
     women = [row for row in PARTNERS if row["gender"] == "woman"]
     men = [row for row in PARTNERS if row["gender"] == "man"]
-    assert [row["name"] for row in women] == ["Amelia", "Mei", "Wing", "Nora"]
+    assert [row["name"] for row in women] == ["Amelia", "Mei", "Wing", "Chloe", "Celine"]
     assert [row["name"] for row in men] == ["Oliver", "Hao", "Lok"]
     assert all(row["age"] == 27 for row in PARTNERS)
     catalogue = client.get("/api/catalogue").json()
-    assert len(catalogue["partners"]) == 7
-    nora = next(row for row in catalogue["partners"] if row["id"] == "nora")
-    assert nora["name"] == "Nora"
-    assert nora["age"] == 27
-    assert nora["role"]["en"] == "English teacher"
+    assert len(catalogue["partners"]) == 8
+    chloe = next(row for row in catalogue["partners"] if row["id"] == "chloe")
+    assert chloe["name"] == "Chloe"
+    assert chloe["age"] == 27
+    assert chloe["role"]["en"] == "English teacher"
+    assert chloe["mesh"] is True
+    celine = next(row for row in catalogue["partners"] if row["id"] == "celine")
+    assert celine["name"] == "Celine"
+    assert celine["role"]["yue"] == "茶餐廳侍應"
+    assert celine["mesh"] is True
     teacher = next(row for row in catalogue["scenarios"] if row["id"] == "english-teacher")
     assert teacher["role_ai"]["en"] == "English teacher"
     assert "examiner" not in teacher["role_ai"]["en"].lower()

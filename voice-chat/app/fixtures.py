@@ -126,7 +126,7 @@ def _safety(scenario: dict, target: str) -> dict:
 
 def _opening(scenario_id: str, target: str, level: str) -> str:
     if scenario_id == "english-teacher":
-        return "Hello, I am Nora. Send me a sentence and I will help with the English."
+        return "Hello, I am Chloe. Send me a sentence and I will help with the English."
     if scenario_id == "hk-cha-chaan-teng":
         if target == "yue":
             if level == "intermediate":
@@ -494,10 +494,10 @@ def _translate(text: str, support: str) -> str:
         "我哋今日先到呢度。唔該。": ("Let's wrap up here.", "我们先到这里。", "我哋今日先到呢度。唔該。"),
         "Let's wrap up here.": ("Let's wrap up here.", "我们先到这里。", "我哋今日先到呢度。"),
         "我们先到这里。": ("Let's wrap up here.", "我们先到这里。", "我哋今日先到呢度。"),
-        "Hello, I am Nora. Send me a sentence and I will help with the English.": (
-            "Hello, I am Nora. Send me a sentence and I will help with the English.",
-            "你好，我是 Nora。发我一句英语，我来帮你改。",
-            "你好，我係 Nora。傳一句英文畀我，我幫你改。",
+        "Hello, I am Chloe. Send me a sentence and I will help with the English.": (
+            "Hello, I am Chloe. Send me a sentence and I will help with the English.",
+            "你好，我是 Chloe。发我一句英语，我来帮你改。",
+            "你好，我係 Chloe。傳一句英文畀我，我幫你改。",
         ),
         "Let us fix the grammar in that sentence.": (
             "Let us fix the grammar in that sentence.",

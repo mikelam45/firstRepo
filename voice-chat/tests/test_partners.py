@@ -6,17 +6,24 @@ from app.visemes import MOODS, english_visemes, pinyin_visemes, synthesis_reques
 def test_partner_catalogue_includes_english_teacher():
     women = [partner for partner in PARTNERS if partner["gender"] == "woman"]
     men = [partner for partner in PARTNERS if partner["gender"] == "man"]
-    assert [partner["name"] for partner in women] == ["Amelia", "Mei", "Wing", "Nora"]
+    assert [partner["name"] for partner in women] == ["Amelia", "Mei", "Wing", "Chloe", "Celine"]
     assert [partner["name"] for partner in men] == ["Oliver", "Hao", "Lok"]
-    assert [partner["name"] for partner in PARTNERS] == ["Amelia", "Mei", "Wing", "Oliver", "Hao", "Lok", "Nora"]
+    assert [partner["name"] for partner in PARTNERS] == [
+        "Amelia", "Mei", "Wing", "Oliver", "Hao", "Lok", "Chloe", "Celine",
+    ]
     assert all(partner["age"] == 27 for partner in PARTNERS)
-    teacher = get_partner("nora")
-    assert teacher["name"] == "Nora"
+    teacher = get_partner("chloe")
+    assert teacher["name"] == "Chloe"
     assert teacher["age"] == 27
     assert teacher["role"]["en"] == "English teacher"
-    assert teacher["display"] == "illustrated"
-    assert teacher["mesh"] is False
-    assert teacher["portrait"].endswith("nora.svg")
+    assert teacher["display"] == "mesh"
+    assert teacher["mesh"] is True
+    assert teacher["portrait"].endswith("chloe.jpg")
+    waitress = get_partner("celine")
+    assert waitress["name"] == "Celine"
+    assert waitress["role"]["en"] == "Coffee shop waitress"
+    assert waitress["city"] == "Hong Kong"
+    assert waitress["portrait"].endswith("celine.jpg")
 
 
 def test_english_and_pinyin_visemes():

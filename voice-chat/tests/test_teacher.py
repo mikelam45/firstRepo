@@ -1,4 +1,4 @@
-"""Nora corrects grammar, a wrong word, and a wrong phrase from the text alone."""
+"""Chloe corrects grammar, a wrong word, and a wrong phrase from the text alone."""
 
 import json
 
@@ -28,7 +28,7 @@ def _turn(text, support="en"):
         json={
             "session_id": "teacher",
             "scenario_id": "english-teacher",
-            "partner_id": "nora",
+            "partner_id": "chloe",
             "settings": settings,
             "history": history,
             "fired_signals": [],
@@ -47,8 +47,8 @@ def _clean(body):
 def test_teacher_opening_is_english():
     body = _turn(None)
     assert body["coaching"] is None
-    assert body["partner_id"] == "nora"
-    assert "Nora" in body["character"]["text"]
+    assert body["partner_id"] == "chloe"
+    assert "Chloe" in body["character"]["text"]
     assert body["character"]["phonetic_system"] == "ipa-rp"
     assert body["meta"]["route"] == "roleplay"
     _clean(body)
@@ -89,10 +89,12 @@ def test_teacher_fixes_a_wrong_phrase_and_translates_the_explanation():
     _clean(body)
 
 
-def test_teacher_page_offers_nora():
+def test_teacher_page_offers_chloe_and_celine():
     page = client.get("/").text
     script = client.get("/static/app.js").text
     assert "english-teacher" in script
     assert 'data-act="teacher"' in script
-    assert "Nora" in script or "teacher" in script
+    assert "chloe" in script
+    assert "celine" in script
+    assert "hk-cha-chaan-teng" in script
     assert "app.js" in page

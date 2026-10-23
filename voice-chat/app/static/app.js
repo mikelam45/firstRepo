@@ -55,7 +55,7 @@ const I18N = {
     yes: "Start new",
     cancel: "Cancel",
     close: "Close",
-    womenMen: "All 27. Nora is the English teacher.",
+    womenMen: "All 27. Chloe teaches English. Celine takes the café order.",
     corrGrammar: "Grammar",
     corrWord: "Wrong word",
     corrPhrase: "Wrong phrase",
@@ -150,7 +150,7 @@ const I18N = {
     yes: "开始新的",
     cancel: "取消",
     close: "关闭",
-    womenMen: "全部 27 岁。Nora 是英语老师。",
+    womenMen: "全部 27 岁。Chloe 是英语老师。Celine 是咖啡店服务员。",
     corrGrammar: "语法",
     corrWord: "用词",
     corrPhrase: "短语",
@@ -245,7 +245,7 @@ const I18N = {
     yes: "開始新嘅",
     cancel: "取消",
     close: "關閉",
-    womenMen: "全部 27 歲。Nora 係英文老師。",
+    womenMen: "全部 27 歲。Chloe 係英文老師。Celine 係茶餐廳侍應。",
     corrGrammar: "文法",
     corrWord: "用詞",
     corrPhrase: "短語",
@@ -358,7 +358,11 @@ function loadSettings() {
   const base = defaults();
   try {
     const v3 = localStorage.getItem("lingocoach.settings.v3");
-    if (v3) return { ...base, ...JSON.parse(v3) };
+    if (v3) {
+      const data = { ...base, ...JSON.parse(v3) };
+      if (data.partner === "nora") data.partner = "chloe";
+      return data;
+    }
     const v2 = localStorage.getItem("lingocoach.settings.v2");
     if (v2) {
       const data = { ...base, ...JSON.parse(v2), partner: "amelia" };
@@ -422,7 +426,9 @@ function practiceTarget() {
   return state.settings.target || "en";
 }
 
-const TEACHER_ID = "nora";
+const TEACHER_ID = "chloe";
+const CAFE_ID = "celine";
+const CAFE_SCENE = "hk-cha-chaan-teng";
 
 function scenario() {
   const list = state.catalogue?.scenarios || [];
@@ -900,7 +906,7 @@ function openEnglishTeacher() {
   const saved = state.screen === "daily" && state.daily ? state.daily : loadOpen();
   const same = saved && saved.scenario_id === "english-teacher";
   const busy = saved && !same && sceneHasLearnerLines(saved);
-  const run = () => openDaily("english-teacher", !same);
+  const run = () => openDaily("english-teacher", !same, TEACHER_ID);
   if (busy) {
     state.sheet = null;
     state.confirm = { text: t("startNew"), run };
@@ -910,17 +916,48 @@ function openEnglishTeacher() {
   run();
 }
 
-async function openDaily(scenarioId, force) {
+function openCafeWaitress() {
+  const saved = state.screen === "daily" && state.daily ? state.daily : loadOpen();
+  const same = saved && saved.scenario_id === CAFE_SCENE;
+  const busy = saved && !same && sceneHasLearnerLines(saved);
+  const run = () => openDaily(CAFE_SCENE, !same, CAFE_ID);
+  if (busy) {
+    state.sheet = null;
+    state.confirm = { text: t("startNew"), run };
+    render();
+    return;
+  }
+  run();
+}
+
+async function openDaily(scenarioId, force, partnerId) {
   const saved = !force && loadOpen();
   state.screen = "daily";
   state.sheet = null;
   state.notice = "";
   composerDraft = "";
-  if (saved && saved.scenario_id === scenarioId) {
+  const retiredTeacher = scenarioId === "english-teacher" && (saved?.bubbles || []).some((bubble) => {
+    const text = `${bubble.text || ""} ${bubble.translation || ""}`;
+    return text.includes("I am Nora") || text.includes("我是 Nora") || text.includes("我係 Nora");
+  });
+  if (saved && saved.scenario_id === scenarioId && !retiredTeacher) {
     state.daily = saved;
-    if (scenarioId === "english-teacher" && !state.daily.partner_id) state.daily.partner_id = TEACHER_ID;
+    if (state.daily.partner_id === "nora") state.daily.partner_id = TEACHER_ID;
+    if (partnerId) {
+      state.daily.partner_id = partnerId;
+      state.settings.partner = partnerId;
+      saveSettings();
+    } else if (scenarioId === "english-teacher" && !state.daily.partner_id) {
+      state.daily.partner_id = TEACHER_ID;
+    }
+    saveOpen();
     render();
     return;
+  }
+  const assigned = partnerId || (scenarioId === "english-teacher" ? TEACHER_ID : null);
+  if (assigned) {
+    state.settings.partner = assigned;
+    saveSettings();
   }
   state.daily = {
     session_id: uuid(),
@@ -929,7 +966,7 @@ async function openDaily(scenarioId, force) {
     fired: [],
     goal: "open",
     cap_reached: false,
-    partner_id: scenarioId === "english-teacher" ? TEACHER_ID : null,
+    partner_id: assigned,
   };
   render();
   await postTurn([]);
@@ -1076,9 +1113,24 @@ function pickPartner(id) {
     openEnglishTeacher();
     return;
   }
+  if (id === CAFE_ID) {
+    if (state.screen === "daily" && state.daily?.scenario_id === CAFE_SCENE) {
+      state.settings.partner = CAFE_ID;
+      state.daily.partner_id = CAFE_ID;
+      saveSettings();
+      saveOpen();
+      state.sheet = null;
+      render();
+      const live = document.querySelector("#live");
+      if (live) live.textContent = `${t("nowTalking")} ${activePartner()?.name || "Celine"}`;
+      return;
+    }
+    openCafeWaitress();
+    return;
+  }
   state.settings.partner = id;
   saveSettings();
-  if (state.screen === "daily" && state.daily?.scenario_id === "english-teacher") {
+  if (state.screen === "daily" && state.daily) {
     state.daily.partner_id = id;
     saveOpen();
   }

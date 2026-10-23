@@ -218,14 +218,14 @@ def test_english_teacher_grammar_fixture():
     response = _turn(
         [{"role": "learner", "text": learner}],
         scenario="english-teacher",
-        settings=_settings(target="yue", support="en", partner="nora"),
+        settings=_settings(target="yue", support="en", partner="chloe"),
     )
     assert response.status_code == 200
     body = response.json()
     assert body["meta"]["provider"] == "fixture"
     assert body["meta"]["route"] == "roleplay"
     assert body["meta"]["model"] is None
-    assert body["partner_id"] == "nora"
+    assert body["partner_id"] == "chloe"
     correction = body["coaching"]["corrections"][0]
     assert correction["type"] == "grammar"
     assert correction["quote"] in learner
@@ -243,7 +243,7 @@ def test_english_teacher_wrong_word_fixture():
     response = _turn(
         [{"role": "learner", "text": learner}],
         scenario="english-teacher",
-        settings=_settings(target="en", support="cmn", partner="nora", script="Hans"),
+        settings=_settings(target="en", support="cmn", partner="chloe", script="Hans"),
     )
     assert response.status_code == 200
     body = response.json()
@@ -265,7 +265,7 @@ def test_english_teacher_support_cantonese_keeps_english_line():
     response = _turn(
         [{"role": "learner", "text": "I want go to school yesterday"}],
         scenario="english-teacher",
-        settings=_settings(target="cmn", support="yue", partner="nora"),
+        settings=_settings(target="cmn", support="yue", partner="chloe"),
     )
     body = response.json()
     assert response.status_code == 200
@@ -295,7 +295,7 @@ def test_english_teacher_denylist_rejects_pronunciation_praise(monkeypatch):
         response = _turn(
             [{"role": "learner", "text": "I want go to school yesterday"}],
             scenario="english-teacher",
-            settings=_settings(target="en", support="en", partner="nora"),
+            settings=_settings(target="en", support="en", partner="chloe"),
             client_id=f"deny-teacher-{praise.split()[0]}",
         )
         assert response.status_code == 502
