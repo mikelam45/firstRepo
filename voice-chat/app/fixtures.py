@@ -45,6 +45,8 @@ def build_fixture(payload: dict, scenario: dict) -> dict:
     allowed = signal_ids(scenario)
     if _refused(history):
         return _safety(scenario, target)
+    if scenario["id"] == "english-teacher" and settings.get("mode") == "conversation":
+        return _teacher_conversation(payload, scenario)
     if not history:
         text = _opening(scenario["id"], target, level)
         return _pack(text, None, target, support, [], "open")
@@ -76,6 +78,38 @@ def _last_learner(history: list[dict]) -> str:
         if item.get("role") == "learner":
             return str(item.get("text") or "")
     return ""
+
+
+def _teacher_conversation(payload: dict, scenario: dict) -> dict:
+    settings = payload["settings"]
+    history = payload["history"]
+    target = settings["target"]
+    support = settings["support"]
+    level = settings["level"]
+    allowed = signal_ids(scenario)
+    if _refused(history):
+        return _safety(scenario, target)
+    if not history:
+        return _pack("Hello! How are you today?", None, target, support, [], "open")
+    fired = _signals_in_history(scenario["id"], history)
+    fired = union_signals(payload.get("fired_signals") or [], fired, allowed)
+    including = turns_remaining_including_this(level, history)
+    text = _conversation_reply(history, level, including)
+    empty_coaching = {"praise": None, "corrections": [], "suggested_reply": None, "reading_hints": []}
+    return _pack(text, empty_coaching, target, support, fired, "open")
+
+
+def _conversation_reply(history: list[dict], level: str, including: int) -> str:
+    if learner_count(history) > 0 and including <= 1:
+        return "It was great chatting with you today."
+    replies = (
+        "Nice to meet you too. What do you like to do in your free time?",
+        "That sounds nice. Tell me more about it.",
+        "I see. Do you have any plans for the weekend?",
+        "Really? I would love to hear more.",
+        "Hmm, interesting. What else is on your mind?",
+    )
+    return replies[learner_count(history) % len(replies)]
 
 
 def _refused(history: list[dict]) -> bool:
@@ -528,6 +562,41 @@ def _translate(text: str, support: str) -> str:
             "Let us stop here for today.",
             "今天先到这里。",
             "今日先到呢度。",
+        ),
+        "Hello! How are you today?": (
+            "Hello! How are you today?",
+            "你好！今天怎么样？",
+            "你好！今日點呀？",
+        ),
+        "Nice to meet you too. What do you like to do in your free time?": (
+            "Nice to meet you too. What do you like to do in your free time?",
+            "我也很高兴认识你。你空闲时喜欢做什么？",
+            "我都好高興認識你。你空閒嗰陣鍾意做咩？",
+        ),
+        "That sounds nice. Tell me more about it.": (
+            "That sounds nice. Tell me more about it.",
+            "听起来不错。再多告诉我一点。",
+            "聽落唔錯。再講多啲嚟聽下。",
+        ),
+        "I see. Do you have any plans for the weekend?": (
+            "I see. Do you have any plans for the weekend?",
+            "原来如此。你周末有什么安排吗？",
+            "我明白。你週末有咩安排？",
+        ),
+        "Really? I would love to hear more.": (
+            "Really? I would love to hear more.",
+            "真的吗？我很想再听多点。",
+            "真係？我想再聽多啲。",
+        ),
+        "Hmm, interesting. What else is on your mind?": (
+            "Hmm, interesting. What else is on your mind?",
+            "嗯，有意思。你还在想什么？",
+            "嗯，幾得意。你仲有咩諗緊？",
+        ),
+        "It was great chatting with you today.": (
+            "It was great chatting with you today.",
+            "今天聊得很开心。",
+            "今日傾得好開心。",
         ),
     }
     if text in table:

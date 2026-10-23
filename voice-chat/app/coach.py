@@ -224,7 +224,8 @@ def build_messages(payload: dict, scenario: dict, partner: dict) -> list[dict]:
             "",
             "OPENING_HINT:",
             scenario["opening_hint"][settings["level"]],
-            _teacher_rules() if scenario["id"] == "english-teacher" else "",
+            _teacher_rules() if scenario["id"] == "english-teacher" and settings.get("mode") != "conversation" else "",
+            _conversation_rules() if scenario["id"] == "english-teacher" and settings.get("mode") == "conversation" else "",
         ]
     )
     user = {
@@ -263,6 +264,20 @@ def _teacher_rules() -> str:
             "Leave reading_hints as an empty array. The server writes how a word is read.",
             "You cannot hear the learner. Do not score pronunciation.",
             'Never write "you pronounced", "pronunciation was", or "your tone".',
+        ]
+    )
+
+
+def _conversation_rules() -> str:
+    return "\n".join(
+        [
+            "",
+            "CONVERSATION_MODE:",
+            "You are having a casual conversation with the learner.",
+            "Do not correct grammar, vocabulary, or phrases.",
+            "Reply naturally in English as Chloe, in a friendly, short, conversational voice.",
+            "If the learner asks you to correct something, still keep the reply light.",
+            "Set coaching.praise to null, coaching.corrections to [], suggested_reply to null, and reading_hints to [].",
         ]
     )
 
@@ -352,14 +367,19 @@ def normalize_turn(raw: dict, payload: dict, scenario: dict) -> dict:
         translation = str(translation)[:400]
     coaching = None if opening or refused else _coaching(raw.get("coaching"), payload)
     if coaching and scenario["id"] == "english-teacher":
-        learner = _latest_learner(payload)
-        coaching["reading_hints"] = _english_reading_hints(
-            learner,
-            coaching.get("suggested_reply"),
-            coaching.get("corrections") or [],
-            settings["support"],
-            settings.get("accent", "en-GB"),
-        )
+        if settings.get("mode") == "conversation":
+            coaching["corrections"] = []
+            coaching["suggested_reply"] = None
+            coaching["reading_hints"] = []
+        else:
+            learner = _latest_learner(payload)
+            coaching["reading_hints"] = _english_reading_hints(
+                learner,
+                coaching.get("suggested_reply"),
+                coaching.get("corrections") or [],
+                settings["support"],
+                settings.get("accent", "en-GB"),
+            )
     _scan_denied(text, translation, coaching)
     text = _script(text, settings["script"])
     if isinstance(translation, str):
@@ -647,6 +667,9 @@ def validate_request(body: Any) -> dict:
     if settings.get("accent") not in {"en-GB", "en-US"}:
         raise ServiceError(400, "invalid_request", "accent must be en-GB or en-US.")
     settings = dict(settings)
+    if settings.get("mode") not in {None, "correction", "conversation"}:
+        raise ServiceError(400, "invalid_request", "mode must be correction or conversation.")
+    settings["mode"] = settings.get("mode") or "correction"
     if settings.get("pinyin_tone") not in {None, "mark", "number"}:
         raise ServiceError(400, "invalid_request", "pinyin_tone must be mark or number.")
     settings["pinyin_tone"] = settings.get("pinyin_tone") or "mark"

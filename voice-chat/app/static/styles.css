@@ -91,6 +91,21 @@ canvas.face, img.face {
 .chips { display: flex; gap: 8px; overflow: auto; padding: 8px 16px 0; }
 .chip[aria-pressed="true"] { background: var(--accent); color: white; border-color: transparent; }
 .goal { margin: 8px 16px; color: var(--muted); }
+.mode-toggle { display: flex; gap: 8px; margin: 8px 16px 12px; }
+.mode-btn {
+  flex: 1;
+  min-height: 36px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--bg-2);
+  color: var(--ink);
+  padding: 0 12px;
+}
+.mode-btn.active {
+  background: var(--accent);
+  color: var(--accent-ink);
+  border-color: transparent;
+}
 .thread { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 8px 16px 12px; }
 .bubble { margin: 8px 0; max-width: 100%; }
 .bubble .who { color: var(--muted); font-size: 0.85rem; margin-bottom: 4px; }

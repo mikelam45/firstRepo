@@ -17,6 +17,8 @@ const INNER_LIP = [78, 191, 80, 81, 82, 13, 312, 311, 310, 415, 308, 324, 318, 4
 const LOWER_INNER = new Set([324, 318, 402, 317, 14, 87, 178, 88, 95]);
 const LOWER_OUTER = new Set([146, 91, 181, 84, 17, 314, 405, 321, 375]);
 const UPPER_LIP = new Set([191, 80, 81, 82, 13, 312, 311, 310, 415, 185, 40, 39, 37, 0, 267, 269, 270, 409, 61, 291, 78, 308]);
+const LIP_INDICES = new Set([...INNER_LIP, ...LOWER_INNER, ...LOWER_OUTER, ...UPPER_LIP]);
+function isLip(index) { return LIP_INDICES.has(index); }
 
 const SHAPES = {
   sil: { open: 0.02, round: 0, wide: 0, jaw: 0, press: 0 },
@@ -284,7 +286,7 @@ export class Portrait {
     const mood = MOODS[this.mode === "listen" ? "listen" : this.mood] || MOODS.neutral;
     const speaking = this.mode === "speak";
     const shape = blendedShape(this.viseme, this.nextViseme, speaking ? this.blend || 0 : 0);
-    const nodTarget = this.reduceMotion
+    const nodTarget = speaking || this.reduceMotion
       ? 0
       : this.mode === "listen"
         ? Math.sin(now / 620) * 0.045
@@ -304,10 +306,10 @@ export class Portrait {
       open: shape.open,
       round: shape.round,
       wide: shape.wide,
-      jaw: shape.jaw,
+      jaw: speaking ? 0 : shape.jaw,
       press: shape.press,
       smile,
-      brow: mood.brow,
+      brow: speaking ? 0 : mood.brow,
       look: this.lookTarget,
       nod: nodTarget,
       blink,
@@ -326,14 +328,15 @@ export class Portrait {
       pts[i][0] = rest[i][0];
       pts[i][1] = rest[i][1];
     }
+    const speaking = this.mode === "speak";
     const limits = this.mouthLimits || mouthLimits(rest, n, this.triangles);
     const mw = limits.mw;
     const cx = (rest[61][0] + rest[291][0]) / 2;
     const cy = (rest[13][1] + rest[14][1]) / 2;
     const s = this.shown;
     // Closed photos keep the inner lip on one line. Split that line by landmark
-    // so the upper lip rises and the lower lip drops, and let the chin follow
-    // a little later. A y-only split left the lower lip on the upper sheet.
+    // so the upper lip rises and the lower lip drops. During speech only the
+    // lip landmarks are deformed; the chin, cheeks, brows, and head stay still.
     const shut = 1 - s.press * 0.92;
     const U = s.open * limits.up * shut;
     const D = s.open * limits.down * shut;
@@ -347,46 +350,58 @@ export class Portrait {
       const dx = (p[0] - cx) / mw;
       const y = p[1];
       const hx = smoothstep(1 - Math.abs(dx) / 1.35);
+      const lip = isLip(i);
       let dy = 0;
-      if (!onLowerLip(i, y, cy)) {
-        const fade = y >= lipTop ? 1 : smoothstep((y - nose) / Math.max(0.02, lipTop - nose));
-        dy = -U * fade * hx;
-      } else if (y <= lowerY) {
-        dy = D * hx;
-      } else {
-        const span = Math.max(0.02, chinY - lowerY);
-        const jawT = Math.min(1, (y - lowerY) / span);
-        let mag = D * (1 - jawT) + chinDrop * jawT;
-        if (y > chinY) mag *= Math.max(0, 1 - (y - chinY) / limits.clearance);
-        dy = mag * hx;
+      if (!speaking || lip) {
+        if (!onLowerLip(i, y, cy)) {
+          const fade = y >= lipTop ? 1 : smoothstep((y - nose) / Math.max(0.02, lipTop - nose));
+          dy = -U * fade * hx;
+        } else if (y <= lowerY) {
+          dy = D * hx;
+        } else {
+          const span = Math.max(0.02, chinY - lowerY);
+          const jawT = Math.min(1, (y - lowerY) / span);
+          let mag = D * (1 - jawT) + chinDrop * jawT;
+          if (y > chinY) mag *= Math.max(0, 1 - (y - chinY) / limits.clearance);
+          dy = mag * hx;
+        }
       }
       const side = dx >= 0 ? 1 : -1;
       const corner = smoothstep(Math.max(0, Math.abs(dx) - 0.2) / 0.45);
-      let dxPx = side * s.wide * mw * 0.05 * corner - side * s.round * mw * 0.2 * corner;
-      dy -= s.smile * mw * 0.05 * corner;
-      dxPx += side * s.smile * mw * 0.02 * corner;
+      let dxPx = 0;
+      let smileDy = 0;
+      if (!speaking || lip) {
+        dxPx = side * s.wide * mw * 0.05 * corner - side * s.round * mw * 0.2 * corner;
+        smileDy = s.smile * mw * 0.05 * corner;
+        dxPx += side * s.smile * mw * 0.02 * corner;
+      }
+      dy -= smileDy;
       pts[i][0] = p[0] + dxPx;
       pts[i][1] = p[1] + dy;
     }
     this.mouth = { cx, cy, mw };
-    const lift = s.smile * mw * 0.12;
-    for (const i of CHEEK_L.concat(CHEEK_R)) pts[i][1] -= lift;
-    for (const i of BROW_L.concat(BROW_R)) pts[i][1] = rest[i][1] - s.brow * mw * 0.32;
-    pts[107][1] -= s.brow * mw * 0.12;
-    pts[336][1] -= s.brow * mw * 0.12;
+    if (!speaking) {
+      const lift = s.smile * mw * 0.12;
+      for (const i of CHEEK_L.concat(CHEEK_R)) pts[i][1] -= lift;
+      for (const i of BROW_L.concat(BROW_R)) pts[i][1] = rest[i][1] - s.brow * mw * 0.32;
+      pts[107][1] -= s.brow * mw * 0.12;
+      pts[336][1] -= s.brow * mw * 0.12;
+    }
     this._blink(LID_UPPER_L, LID_LOWER_L, s.blink);
     this._blink(LID_UPPER_R, LID_LOWER_R, s.blink);
     const look = s.look * mw * 0.22;
     for (const i of IRIS_L.concat(IRIS_R)) pts[i][0] = rest[i][0] + look;
-    const pivotX = (rest[234][0] + rest[454][0]) / 2;
-    const pivotY = rest[152][1] + mw * 1.1;
-    const c = Math.cos(s.nod);
-    const sn = Math.sin(s.nod);
-    for (let i = 0; i < n; i++) {
-      const x = pts[i][0] - pivotX;
-      const y = pts[i][1] - pivotY;
-      pts[i][0] = pivotX + x * c - y * sn;
-      pts[i][1] = pivotY + x * sn + y * c;
+    if (!speaking) {
+      const pivotX = (rest[234][0] + rest[454][0]) / 2;
+      const pivotY = rest[152][1] + mw * 1.1;
+      const c = Math.cos(s.nod);
+      const sn = Math.sin(s.nod);
+      for (let i = 0; i < n; i++) {
+        const x = pts[i][0] - pivotX;
+        const y = pts[i][1] - pivotY;
+        pts[i][0] = pivotX + x * c - y * sn;
+        pts[i][1] = pivotY + x * sn + y * c;
+      }
     }
   }
 
@@ -649,10 +664,10 @@ export class IllustratedPortrait {
       open: shape.open,
       round: shape.round,
       wide: shape.wide,
-      jaw: shape.jaw,
+      jaw: speaking ? 0 : shape.jaw,
       press: shape.press,
       smile,
-      brow: mood.brow,
+      brow: speaking ? 0 : mood.brow,
       blink,
       nod,
     };

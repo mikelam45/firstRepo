@@ -19,9 +19,10 @@ SETTINGS = {
 }
 
 
-def _turn(text, support="en"):
+def _turn(text, support="en", mode="correction"):
     settings = dict(SETTINGS)
     settings["support"] = support
+    settings["mode"] = mode
     history = [] if text is None else [{"role": "learner", "text": text}]
     response = client.post(
         "/api/turn",
@@ -109,3 +110,31 @@ def test_teacher_page_offers_chloe_and_celine():
     assert "celine" in script
     assert "hk-cha-chaan-teng" in script
     assert "app.js" in page
+
+
+def test_teacher_conversation_mode_natural_reply():
+    body = _turn("Hello! Nice to meet you.", mode="conversation")
+    assert body["meta"]["provider"] == "fixture"
+    assert body["coaching"]["corrections"] == []
+    assert body["coaching"]["suggested_reply"] is None
+    assert body["coaching"]["reading_hints"] == []
+    text = body["character"]["text"]
+    correction_phrases = {
+        "Let us fix the grammar in that sentence.",
+        "One word in that sentence does not match the meaning.",
+        "That phrase is not the one English uses here.",
+        "I have not checked that sentence with the model yet.",
+        "Send that sentence in English and I will help.",
+        "Let us stop here for today.",
+    }
+    assert text not in correction_phrases
+    assert text
+    _clean(body)
+
+
+def test_teacher_correction_mode_keeps_corrections():
+    body = _turn("I want go to school yesterday", mode="correction")
+    correction = body["coaching"]["corrections"][0]
+    assert correction["type"] == "grammar"
+    assert "wanted" in body["coaching"]["suggested_reply"].lower()
+    _clean(body)
