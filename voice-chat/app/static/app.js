@@ -1,4 +1,4 @@
-import { IllustratedPortrait, Portrait, englishVisemes, pinyinVisemes } from "./face.js?v=20261023-lips";
+import { IllustratedPortrait, Portrait, englishVisemes, pinyinVisemes } from "./face.js?v=20261023-mouth";
 import { collectTranscript, recognitionLanguage, transcriptPiece } from "./transcript.js";
 
 const I18N = {
@@ -8,6 +8,8 @@ const I18N = {
     daily: "Daily talk",
     teacher: "English teacher",
     teacherHint: "Grammar, words, and phrases",
+    correctionMode: "Correction",
+    conversationMode: "Conversation",
     history: "History",
     settings: "Settings",
     back: "Back",
@@ -112,6 +114,8 @@ const I18N = {
     daily: "日常对话",
     teacher: "英语老师",
     teacherHint: "语法、用词和短语",
+    correctionMode: "纠错模式",
+    conversationMode: "对话模式",
     history: "历史",
     settings: "设置",
     back: "返回",
@@ -216,6 +220,8 @@ const I18N = {
     daily: "日常對話",
     teacher: "英文老師",
     teacherHint: "文法、用詞同短語",
+    correctionMode: "糾錯模式",
+    conversationMode: "對話模式",
     history: "紀錄",
     settings: "設定",
     back: "返回",
@@ -328,6 +334,7 @@ const state = {
   daily: null,
   ielts: null,
   history: [],
+  teacherMode: loadTeacherMode(),
   micHidden: false,
   cantoneseMicHidden: false,
   micMessage: "",
@@ -360,6 +367,8 @@ let micSuppressClick = false;
 let micStartTimer = 0;
 let micDownAt = 0;
 let llmToken = 0;
+let threadUserScrolled = false;
+let ignoreThreadScrollUntil = 0;
 
 function t(key) {
   const pack = I18N[state.settings.support] || I18N.en;
@@ -412,6 +421,20 @@ function loadSettings() {
 
 function saveSettings() {
   localStorage.setItem("lingocoach.settings.v3", JSON.stringify(state.settings));
+}
+
+function loadTeacherMode() {
+  try {
+    const v = localStorage.getItem("lingocoach.teacher.mode.v1");
+    if (v === "correction" || v === "conversation") return v;
+  } catch (err) {
+    /* keep default */
+  }
+  return "correction";
+}
+
+function saveTeacherMode() {
+  localStorage.setItem("lingocoach.teacher.mode.v1", state.teacherMode);
 }
 
 function clientId() {
@@ -479,22 +502,17 @@ function esc(value) {
 function render() {
   app.innerHTML = `<div class="phone">${view()}${openRouterBar()}${sheet()}</div><p id="live" class="sr" aria-live="polite"></p>`;
   mountFace();
-  scrollThread();
+  scrollThread(false);
 }
 
-function scrollThread() {
-  const thread = document.querySelector("#thread");
+function scrollThread(force = false) {
+  const thread = document.querySelector("#thread") || document.querySelector(".thread");
   if (!thread) return;
-  const coach = thread.querySelector(".coach");
-  if (!coach) {
-    thread.scrollTop = thread.scrollHeight;
-    return;
+  const nearBottom = thread.scrollHeight - thread.scrollTop - thread.clientHeight <= 80;
+  if (force || !threadUserScrolled || nearBottom) {
+    ignoreThreadScrollUntil = performance.now() + (force ? 50 : 500);
+    thread.scrollTo({ top: thread.scrollHeight, behavior: force ? "auto" : "smooth" });
   }
-  const threadRect = thread.getBoundingClientRect();
-  const coachRect = coach.getBoundingClientRect();
-  const below = coachRect.bottom - threadRect.bottom;
-  if (below > 0) thread.scrollTop += below + 12;
-  else if (coachRect.top < threadRect.top) thread.scrollTop -= threadRect.top - coachRect.top - 8;
 }
 
 function view() {
@@ -558,6 +576,7 @@ function dailyView() {
       ${scenes.map((item) => `<button class="chip" type="button" data-act="scenario" data-id="${esc(item.id)}" aria-pressed="${item.id === sc.id}">${esc(item.title[support] || item.title.en)}</button>`).join("")}
     </div>`}
     <p class="goal">${esc(t("goal"))}: ${esc(goal)}${state.daily.goal === "met" ? ` · ${esc(t("goalMet"))}` : ""}</p>
+    ${teacher ? modeToggleHtml() : ""}
     ${state.provider === "fixture" ? `<p class="banner">${esc(t("fixture"))}</p>` : ""}
     <div class="stage large"><canvas id="face" class="face" width="480" height="640" aria-label="${esc(who.name)}, ${esc(who.city)}, 27"></canvas></div>
     <div class="row" style="padding:0 16px 8px">
@@ -591,6 +610,14 @@ function phoneticHtml(bubble) {
   const amb = new Set((bubble.syllables || []).filter((item) => item.ambiguous).map((item) => item.reading));
   const html = esc(bubble.phonetic).split(" ").map((token) => amb.has(token.replace(/^\/|\/$/g, "")) ? `<span class="amb" title="${esc(token)}">${token}</span>` : token).join(" ");
   return `<p class="phonetic"><span class="muted">${esc(label)}</span> ${html}</p>`;
+}
+
+function modeToggleHtml() {
+  const mode = state.teacherMode || "correction";
+  return `<div class="mode-toggle" role="group" aria-label="${esc(`${t("correctionMode")} / ${t("conversationMode")}`)}">
+    <button class="mode-btn${mode === "correction" ? " active" : ""}" type="button" data-act="teacher-mode" data-mode="correction">${esc(t("correctionMode"))}</button>
+    <button class="mode-btn${mode === "conversation" ? " active" : ""}" type="button" data-act="teacher-mode" data-mode="conversation">${esc(t("conversationMode"))}</button>
+  </div>`;
 }
 
 function correctionLabel(type) {
@@ -809,6 +836,13 @@ app.addEventListener("keydown", (event) => {
   }
 });
 
+app.addEventListener("scroll", (event) => {
+  const target = event.target;
+  if (!target?.classList?.contains("thread")) return;
+  if (performance.now() < ignoreThreadScrollUntil) return;
+  threadUserScrolled = true;
+}, true);
+
 app.addEventListener("pointerdown", (event) => {
   const mic = eventElement(event)?.closest?.("#mic");
   if (!mic || mic.disabled) return;
@@ -858,6 +892,7 @@ function onAct(act, data) {
   if (act === "confirm-no") { state.confirm = null; render(); return; }
   if (act === "confirm-yes") { const pending = state.confirm; state.confirm = null; pending?.run(); return; }
   if (act === "pick-partner") { pickPartner(data.id); return; }
+  if (act === "teacher-mode") { state.teacherMode = data.mode; saveTeacherMode(); render(); return; }
   if (act === "teacher") { openEnglishTeacher(); return; }
   if (act === "daily") { openDaily(state.catalogue.scenarios[0].id); return; }
   if (act === "scenario") { changeScenario(data.id); return; }
@@ -982,6 +1017,7 @@ async function openDaily(scenarioId, force, partnerId) {
     }
     saveOpen();
     render();
+    scrollThread(true);
     return;
   }
   const assigned = partnerId || (scenarioId === "english-teacher" ? TEACHER_ID : null);
@@ -1047,6 +1083,7 @@ async function postTurn(history) {
       accent: state.settings.accent,
       pinyin_tone: state.settings.pinyin_tone,
       partner: state.settings.partner,
+      mode: state.teacherMode,
     },
     history,
     fired_signals: state.daily.fired || [],
@@ -1629,6 +1666,7 @@ function visemeHold(name) {
 }
 
 function runMouth(shapes, mood, token, lineLang, rate) {
+  console.log('runMouth', shapes.length, shapes.slice(0, 6));
   const sequence = shapes.length ? shapes : ["sil"];
   const unit = (lineLang === "en" ? 74 : 102) / Math.max(0.72, rate || 1);
   const marks = [];
@@ -2289,6 +2327,7 @@ async function boot() {
     state.screen = "daily";
   }
   render();
+  if (state.screen === "daily") scrollThread(true);
   requestAnimationFrame(loop);
   checkOpenRouter();
 }
