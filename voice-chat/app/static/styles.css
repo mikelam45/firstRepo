@@ -24,6 +24,7 @@ button { cursor: pointer; }
   background: var(--bg);
   display: flex;
   flex-direction: column;
+  overflow: hidden;
   padding-top: env(safe-area-inset-top);
 }
 .top, .composer, .sheet, .home, .history {
@@ -59,7 +60,8 @@ button { cursor: pointer; }
   color: var(--accent-ink);
   padding: 0 16px;
 }
-.home { padding-bottom: 24px; overflow: auto; }
+.home, .history { flex: 1 1 auto; min-height: 0; overflow: auto; }
+.home { padding-bottom: 24px; }
 .choices { display: flex; flex-direction: column; gap: 10px; margin-top: 16px; }
 .choice {
   text-align: left;
@@ -89,7 +91,7 @@ canvas.face, img.face {
 .chips { display: flex; gap: 8px; overflow: auto; padding: 8px 16px 0; }
 .chip[aria-pressed="true"] { background: var(--accent); color: white; border-color: transparent; }
 .goal { margin: 8px 16px; color: var(--muted); }
-.thread { flex: 1; overflow: auto; padding: 8px 16px 12px; }
+.thread { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 8px 16px 12px; }
 .bubble { margin: 8px 0; max-width: 100%; }
 .bubble .who { color: var(--muted); font-size: 0.85rem; margin-bottom: 4px; }
 .bubble .text { font-size: 16px; line-height: 1.45; }
@@ -121,7 +123,7 @@ canvas.face, img.face {
   gap: 8px;
   align-items: flex-end;
   padding-top: 8px;
-  padding-bottom: calc(10px + env(safe-area-inset-bottom));
+  padding-bottom: 8px;
   border-top: 1px solid var(--line);
   background: var(--bg);
 }
@@ -199,6 +201,24 @@ textarea { resize: none; min-height: 44px; max-height: 120px; }
 label.field { display: block; margin: 10px 0; }
 label.field span { display: block; margin-bottom: 4px; color: var(--muted); }
 .banner { margin: 8px 16px; color: var(--muted); font-size: 0.9rem; }
+.llm-status {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: auto;
+  padding: 6px 12px calc(6px + env(safe-area-inset-bottom));
+  border-top: 1px solid var(--line);
+  background: #0e1624;
+  color: var(--muted);
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+.llm-status .llm-copy { flex: 1; min-width: 0; margin: 0; }
+.llm-status .llm-result.wait { color: var(--ink); }
+.llm-status .llm-result.ok { color: #9ddec0; }
+.llm-status .llm-result.bad { color: #ffb4b4; }
+.llm-status .ghost { flex: 0 0 auto; min-height: 36px; padding: 0 12px; font-size: 0.85rem; }
 .error { color: #ffb4b4; }
 a.inline { color: #b9d0ff; }
 @media (max-width: 360px) {

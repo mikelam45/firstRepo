@@ -96,6 +96,14 @@ const I18N = {
     goal: "Goal",
     partner: "Partner",
     age: "27",
+    orCheck: "OpenRouter LLM connectivity check",
+    orChecking: "Checking…",
+    orConnected: "Connected",
+    orNotConnected: "Not connected",
+    orNoKey: "no key",
+    orRejected: "rejected",
+    orUnreachable: "unreachable",
+    orRecheck: "Check",
   },
   cmn: {
     drill: "今天的雅思口语练习",
@@ -191,6 +199,14 @@ const I18N = {
     goal: "目标",
     partner: "练习伙伴",
     age: "27",
+    orCheck: "OpenRouter 大模型连通检查",
+    orChecking: "正在检查…",
+    orConnected: "已连接",
+    orNotConnected: "未连接",
+    orNoKey: "没有密钥",
+    orRejected: "被拒绝",
+    orUnreachable: "无法连接",
+    orRecheck: "检查",
   },
   yue: {
     drill: "今日嘅雅思口試練習",
@@ -286,6 +302,14 @@ const I18N = {
     goal: "目標",
     partner: "練習夥伴",
     age: "27",
+    orCheck: "OpenRouter 大模型連線檢查",
+    orChecking: "檢查緊…",
+    orConnected: "已連線",
+    orNotConnected: "未連線",
+    orNoKey: "冇金鑰",
+    orRejected: "被拒絕",
+    orUnreachable: "連唔到",
+    orRecheck: "檢查",
   },
 };
 
@@ -306,6 +330,7 @@ const state = {
   micMessage: "",
   lastBody: null,
   speaking: null,
+  llm: { phase: "checking", connected: false, reason: "" },
 };
 
 let face = null;
@@ -331,6 +356,7 @@ let micGestureId = null;
 let micSuppressClick = false;
 let micStartTimer = 0;
 let micDownAt = 0;
+let llmToken = 0;
 
 function t(key) {
   const pack = I18N[state.settings.support] || I18N.en;
@@ -448,7 +474,7 @@ function esc(value) {
 }
 
 function render() {
-  app.innerHTML = `<div class="phone">${view()}${sheet()}</div><p id="live" class="sr" aria-live="polite"></p>`;
+  app.innerHTML = `<div class="phone">${view()}${openRouterBar()}${sheet()}</div><p id="live" class="sr" aria-live="polite"></p>`;
   mountFace();
   scrollThread();
 }
@@ -819,6 +845,7 @@ app.addEventListener("contextmenu", (event) => {
 });
 
 function onAct(act, data) {
+  if (act === "or-status") { checkOpenRouter(); return; }
   if (act === "settings") { state.sheet = "settings"; render(); return; }
   if (act === "close-sheet") { state.sheet = null; render(); return; }
   if (act === "partners") { state.sheet = "partners"; render(); return; }
@@ -2171,6 +2198,77 @@ function reqAsPromise(request) {
   });
 }
 
+function openRouterReason(reason) {
+  if (reason === "no_key") return t("orNoKey");
+  if (reason === "auth") return t("orRejected");
+  if (reason === "unreachable") return t("orUnreachable");
+  return t("orUnreachable");
+}
+
+function openRouterStatusText() {
+  const llm = state.llm || { phase: "checking" };
+  if (llm.phase !== "done") return t("orChecking");
+  if (llm.connected) return t("orConnected");
+  return `${t("orNotConnected")} (${openRouterReason(llm.reason)})`;
+}
+
+function openRouterBar() {
+  const llm = state.llm || { phase: "checking", connected: false, reason: "" };
+  const checking = llm.phase !== "done";
+  const ok = !checking && llm.connected;
+  const cls = checking ? "wait" : ok ? "ok" : "bad";
+  const reason = checking ? "checking" : ok ? "ok" : (llm.reason === "no_key" || llm.reason === "auth" || llm.reason === "unreachable" ? llm.reason : "unreachable");
+  return `<footer class="llm-status" role="status" aria-live="polite" data-connected="${checking ? "pending" : ok ? "true" : "false"}" data-reason="${esc(reason)}">
+    <p class="llm-copy"><span class="llm-label">${esc(t("orCheck"))}</span> <span class="llm-result ${cls}">${esc(openRouterStatusText())}</span></p>
+    <button class="ghost" type="button" data-act="or-status">${esc(t("orRecheck"))}</button>
+  </footer>`;
+}
+
+function rememberFields() {
+  const field = document.querySelector("#field");
+  if (field) composerDraft = field.value;
+  const notes = document.querySelector("#notes");
+  if (notes && state.ielts) state.ielts.notes = notes.value;
+}
+
+function paintOpenRouterBar() {
+  const footer = document.querySelector("footer.llm-status");
+  const copy = footer?.querySelector(".llm-result");
+  if (!footer || !copy) {
+    rememberFields();
+    render();
+    return;
+  }
+  const llm = state.llm || { phase: "checking", connected: false, reason: "" };
+  const checking = llm.phase !== "done";
+  const ok = !checking && llm.connected;
+  copy.className = `llm-result ${checking ? "wait" : ok ? "ok" : "bad"}`;
+  copy.textContent = openRouterStatusText();
+  footer.dataset.connected = checking ? "pending" : ok ? "true" : "false";
+  footer.dataset.reason = checking ? "checking" : ok ? "ok" : (llm.reason === "no_key" || llm.reason === "auth" || llm.reason === "unreachable" ? llm.reason : "unreachable");
+}
+
+async function checkOpenRouter() {
+  const token = ++llmToken;
+  rememberFields();
+  state.llm = { phase: "checking", connected: false, reason: "" };
+  paintOpenRouterBar();
+  let next = { phase: "done", connected: false, reason: "unreachable" };
+  try {
+    const response = await fetch("/api/openrouter/status");
+    const data = await response.json();
+    if (data && data.connected === true) next = { phase: "done", connected: true, reason: "" };
+    else if (data && (data.reason === "no_key" || data.reason === "auth" || data.reason === "unreachable")) {
+      next = { phase: "done", connected: false, reason: data.reason };
+    }
+  } catch (err) {
+    next = { phase: "done", connected: false, reason: "unreachable" };
+  }
+  if (token !== llmToken) return;
+  state.llm = next;
+  paintOpenRouterBar();
+}
+
 async function boot() {
   const response = await fetch("/api/catalogue");
   state.catalogue = await response.json();
@@ -2189,6 +2287,7 @@ async function boot() {
   }
   render();
   requestAnimationFrame(loop);
+  checkOpenRouter();
 }
 
 boot();

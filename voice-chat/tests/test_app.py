@@ -1,3 +1,7 @@
+import logging
+from pathlib import Path
+
+import httpx
 from fastapi.testclient import TestClient
 
 from app.main import app
@@ -110,3 +114,93 @@ def test_golden_jyutping_and_visemes():
     goi = pinyin_visemes("m4 goi1")
     assert goi[0] == "PP"
     assert any(name in {"aa", "E", "I", "O", "U"} for name in goi)
+
+
+STATIC = Path(__file__).resolve().parents[1] / "app" / "static"
+
+
+class _StatusClient:
+    def __init__(self, *args, **kwargs):
+        pass
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def get(self, url, headers=None):
+        assert url == "https://openrouter.ai/api/v1/key"
+        assert headers["Authorization"].startswith("Bearer ")
+        token = headers["Authorization"].split(" ", 1)[1]
+        assert token not in url
+        if self.mode == "timeout":
+            raise httpx.TimeoutException("timed out")
+        if self.mode == "network":
+            raise httpx.ConnectError("network down")
+        return httpx.Response(
+            self.code,
+            json={"data": {"label": "secret-account", "limit_remaining": 3}},
+        )
+
+
+def _install_status_client(monkeypatch, mode, code=200):
+    class Client(_StatusClient):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self.mode = mode
+            self.code = code
+
+    monkeypatch.setattr("app.main.httpx.Client", Client)
+
+
+def test_openrouter_status_without_key_skips_the_network(monkeypatch):
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    monkeypatch.delenv("LINGOCOACH_ENV_FILE", raising=False)
+
+    def forbid(*args, **kwargs):
+        raise AssertionError("OpenRouter must not be contacted without a key")
+
+    monkeypatch.setattr("app.main.httpx.Client", forbid)
+    response = client.get("/api/openrouter/status")
+    assert response.status_code == 200
+    assert response.json() == {"connected": False, "reason": "no_key"}
+    assert "OPENROUTER_API_KEY=" not in response.text
+    assert "sk-or-" not in response.text
+    blob = "\n".join(
+        path.read_text(encoding="utf-8", errors="ignore")
+        for path in STATIC.rglob("*")
+        if path.is_file() and path.suffix in {".html", ".js", ".css", ".svg"}
+    )
+    assert "OPENROUTER_API_KEY=" not in blob
+    page = (STATIC / "index.html").read_text(encoding="utf-8")
+    script = (STATIC / "app.js").read_text(encoding="utf-8")
+    assert 'src="/static/app.js?v=20261023-or"' in page
+    assert "OpenRouter LLM connectivity check" in script
+    assert 'data-act="or-status"' in script
+    assert "/api/openrouter/status" in script
+
+
+def test_openrouter_status_maps_auth_timeout_and_ok(monkeypatch, caplog):
+    secret = "unit-test-key"
+    monkeypatch.setenv("OPENROUTER_API_KEY", secret)
+    cases = [
+        ("ok", 200, {"connected": True}),
+        ("auth", 401, {"connected": False, "reason": "auth"}),
+        ("auth", 403, {"connected": False, "reason": "auth"}),
+        ("timeout", 0, {"connected": False, "reason": "unreachable"}),
+        ("network", 500, {"connected": False, "reason": "unreachable"}),
+        ("other", 500, {"connected": False, "reason": "unreachable"}),
+    ]
+    for mode, code, expected in cases:
+        _install_status_client(monkeypatch, mode, code)
+        with caplog.at_level(logging.INFO, logger="lingocoach"):
+            response = client.get("/api/openrouter/status")
+        assert response.status_code == 200
+        assert response.json() == expected
+        assert secret not in response.text
+        assert "secret-account" not in response.text
+        assert secret not in caplog.text
+        assert "Bearer" not in caplog.text
+        assert "secret-account" not in caplog.text
+        caplog.clear()

@@ -8,6 +8,7 @@ import sys
 import time
 from pathlib import Path
 
+import httpx
 from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -42,6 +43,48 @@ if "pytest" not in sys.modules:
 @app.get("/health")
 def health() -> dict:
     return {"status": "ok"}
+
+
+@app.get("/api/openrouter/status")
+def openrouter_status() -> dict:
+    """Say whether OpenRouter accepts the configured key.
+
+    The body is only booleans and a short reason. The key, account payload,
+    and response body never leave this function.
+    """
+    if not ensure_openrouter_key():
+        logger.info("openrouter_status status=- reason=no_key")
+        return {"connected": False, "reason": "no_key"}
+    key = os.environ.get("OPENROUTER_API_KEY", "").strip()
+    if not key:
+        logger.info("openrouter_status status=- reason=no_key")
+        return {"connected": False, "reason": "no_key"}
+    return _probe_openrouter(key)
+
+
+def _probe_openrouter(key: str) -> dict:
+    status_code = None
+    try:
+        with httpx.Client(timeout=4.0) as client:
+            response = client.get(
+                "https://openrouter.ai/api/v1/key",
+                headers={
+                    "Authorization": f"Bearer {key}",
+                    "X-Title": "LingoCoach",
+                },
+            )
+            status_code = response.status_code
+    except (httpx.TimeoutException, httpx.HTTPError, OSError):
+        logger.info("openrouter_status status=- reason=unreachable")
+        return {"connected": False, "reason": "unreachable"}
+    if status_code == 200:
+        logger.info("openrouter_status status=200 reason=ok")
+        return {"connected": True}
+    if status_code in (401, 403):
+        logger.info("openrouter_status status=%s reason=auth", status_code)
+        return {"connected": False, "reason": "auth"}
+    logger.info("openrouter_status status=%s reason=unreachable", status_code)
+    return {"connected": False, "reason": "unreachable"}
 
 
 @app.get("/api/catalogue")
