@@ -1675,6 +1675,7 @@ function runMouth(shapes, mood, token, lineLang, rate) {
     acc += visemeHold(name) * unit;
   }
   const total = Math.max(acc, 280);
+  const endAt = performance.now() + total + 160;
   let clockOffset = 0;
   let clockAt = performance.now();
   const apply = () => {
@@ -1705,6 +1706,7 @@ function runMouth(shapes, mood, token, lineLang, rate) {
   mouthTimer = window.setInterval(apply, 32);
   return {
     total,
+    endAt,
     sync(charIndex, length) {
       const frac = length > 0 ? Math.max(0, Math.min(0.96, charIndex / length)) : 0;
       clockOffset = frac * total;
@@ -1732,6 +1734,12 @@ function speakText(text, lineLang, who, visemes, mood) {
   state.speaking = { text: spoken, lineLang: lang, partner_id: person.id, visemes: shapes, mood: mood || "happy" };
   const mouth = runMouth(shapes, mood, token, lang, rate);
   let said = false;
+  const finishWhenReady = () => {
+    if (token !== speakToken) return;
+    const left = mouth.endAt - performance.now();
+    if (left <= 0) finishMouth();
+    else window.setTimeout(finishWhenReady, left);
+  };
   const say = () => {
     if (token !== speakToken || said) return;
     said = true;
@@ -1745,12 +1753,12 @@ function speakText(text, lineLang, who, visemes, mood) {
       state.notice = message;
       showStatus(message, true);
       document.querySelectorAll("button.speak").forEach((button) => { button.title = message; });
-      window.setTimeout(() => { if (token === speakToken) finishMouth(); }, mouth.total + 240);
+      finishWhenReady();
       return;
     }
     if (!synthNow) {
       announce(t("noSynth"));
-      window.setTimeout(() => { if (token === speakToken) finishMouth(); }, mouth.total + 240);
+      finishWhenReady();
       return;
     }
     const utterance = new SpeechSynthesisUtterance(spoken);
@@ -1760,9 +1768,8 @@ function speakText(text, lineLang, who, visemes, mood) {
       try { utterance.voice = voice; } catch (err) { /* lang is already set; still speak */ }
     }
     utterance.rate = rate;
-    const done = () => { if (token === speakToken) finishMouth(); };
-    utterance.onend = done;
-    utterance.onerror = done;
+    utterance.onend = finishWhenReady;
+    utterance.onerror = finishWhenReady;
     utterance.onboundary = (event) => {
       if (token !== speakToken) return;
       if (event.name && event.name !== "word" && event.name !== "sentence") return;
@@ -1776,7 +1783,7 @@ function speakText(text, lineLang, who, visemes, mood) {
       if (synthNow.paused) synthNow.resume();
     } catch (err) {
       announce(t("noSynth"));
-      done();
+      finishWhenReady();
     }
   };
   const listed = synth?.getVoices?.() || [];
