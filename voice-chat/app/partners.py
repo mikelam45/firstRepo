@@ -1,4 +1,4 @@
-"""Six partners, age 27. Three women, then three men."""
+"""Partners, age 27. Six scene partners, then Nora, the English teacher."""
 
 from __future__ import annotations
 
@@ -99,6 +99,31 @@ PARTNERS = [
         "mesh_url": None,
         "palette": {"bg": "#d7ebe4", "hair": "#201814", "skin": "#e7b898", "shirt": "#1f6f78"},
     },
+    {
+        "id": "nora",
+        "name": "Nora",
+        "gender": "woman",
+        "age": 27,
+        "city": "London",
+        "from": "London, UK",
+        "region": "UK",
+        "home_language": "en",
+        "role": {
+            "en": "English teacher",
+            "cmn": "英语老师",
+            "yue": "英文老師",
+        },
+        "manner": (
+            "Patient English teacher. Speaks clear English. "
+            "Corrects grammar, the wrong word, and a wrong phrase. "
+            "Never comments on how a microphone heard the learner."
+        ),
+        "mesh": False,
+        "display": "illustrated",
+        "portrait": "/static/avatars/nora.svg",
+        "mesh_url": None,
+        "palette": {"bg": "#e7e4f4", "hair": "#4a3428", "skin": "#f4cbb3", "shirt": "#2c3f66"},
+    },
 ]
 
 _BY_ID = {partner["id"]: partner for partner in PARTNERS}
@@ -132,4 +157,5 @@ def public_partner(partner: dict) -> dict:
         "portrait": partner["portrait"],
         "mesh_url": partner["mesh_url"],
         "palette": partner["palette"],
+        "role": partner.get("role"),
     }

@@ -23,15 +23,21 @@ def test_health():
     assert response.json() == {"status": "ok"}
 
 
-def test_partners_are_six_people_aged_27():
+def test_catalogue_includes_english_teacher():
     women = [row for row in PARTNERS if row["gender"] == "woman"]
     men = [row for row in PARTNERS if row["gender"] == "man"]
-    assert len(women) == 3
-    assert len(men) == 3
+    assert [row["name"] for row in women] == ["Amelia", "Mei", "Wing", "Nora"]
+    assert [row["name"] for row in men] == ["Oliver", "Hao", "Lok"]
     assert all(row["age"] == 27 for row in PARTNERS)
-    catalogue = client.get("/api/catalogue")
-    assert catalogue.status_code == 200
-    assert len(catalogue.json()["partners"]) == 6
+    catalogue = client.get("/api/catalogue").json()
+    assert len(catalogue["partners"]) == 7
+    nora = next(row for row in catalogue["partners"] if row["id"] == "nora")
+    assert nora["name"] == "Nora"
+    assert nora["age"] == 27
+    assert nora["role"]["en"] == "English teacher"
+    teacher = next(row for row in catalogue["scenarios"] if row["id"] == "english-teacher")
+    assert teacher["role_ai"]["en"] == "English teacher"
+    assert "examiner" not in teacher["role_ai"]["en"].lower()
 
 
 def test_cantonese_register_fixture():

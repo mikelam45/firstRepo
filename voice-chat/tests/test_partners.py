@@ -3,15 +3,20 @@ from app.session import needs_reset_confirm
 from app.visemes import MOODS, english_visemes, pinyin_visemes, synthesis_request, viseme_at
 
 
-def test_partner_catalogue_three_and_three_age_27():
+def test_partner_catalogue_includes_english_teacher():
     women = [partner for partner in PARTNERS if partner["gender"] == "woman"]
     men = [partner for partner in PARTNERS if partner["gender"] == "man"]
-    assert [partner["name"] for partner in women] == ["Amelia", "Mei", "Wing"]
+    assert [partner["name"] for partner in women] == ["Amelia", "Mei", "Wing", "Nora"]
     assert [partner["name"] for partner in men] == ["Oliver", "Hao", "Lok"]
-    assert [partner["name"] for partner in PARTNERS] == ["Amelia", "Mei", "Wing", "Oliver", "Hao", "Lok"]
+    assert [partner["name"] for partner in PARTNERS] == ["Amelia", "Mei", "Wing", "Oliver", "Hao", "Lok", "Nora"]
     assert all(partner["age"] == 27 for partner in PARTNERS)
-    assert sum(1 for partner in PARTNERS if partner["gender"] == "woman") == 3
-    assert sum(1 for partner in PARTNERS if partner["gender"] == "man") == 3
+    teacher = get_partner("nora")
+    assert teacher["name"] == "Nora"
+    assert teacher["age"] == 27
+    assert teacher["role"]["en"] == "English teacher"
+    assert teacher["display"] == "illustrated"
+    assert teacher["mesh"] is False
+    assert teacher["portrait"].endswith("nora.svg")
 
 
 def test_english_and_pinyin_visemes():

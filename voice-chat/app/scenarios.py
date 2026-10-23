@@ -161,6 +161,54 @@ SCENARIOS = {
         # Surname Shan (单 shàn), not the default dān. Loaded for this scenario only.
         "pinyin_phrases": {"单先生": [["shàn"], ["xiān"], ["shēng"]]},
     },
+    "english-teacher": {
+        "id": "english-teacher",
+        "locale": "London",
+        "enabled": True,
+        "icon": "✏️",
+        "title": {
+            "en": "English teacher",
+            "cmn": "英语老师",
+            "yue": "英文老師",
+        },
+        "role_ai": {
+            "en": "English teacher",
+            "cmn": "英语老师",
+            "yue": "英文老師",
+        },
+        "role_learner": {
+            "en": "Learner",
+            "cmn": "学习者",
+            "yue": "學習者",
+        },
+        "goal": {
+            "en": "Send a sentence. The teacher corrects grammar, a wrong word, or a wrong phrase, and shows how a hard word is read.",
+            "cmn": "发一句英语。老师改正语法、用错的词或短语，并标出难读的词怎么读。",
+            "yue": "傳一句英文。老師改文法、用錯嘅字或者短語，再標出難讀嘅字點讀。",
+        },
+        "success_signals": [
+            {"id": "shared_sentence", "description": "The learner sent a sentence to correct."},
+            {"id": "revised_sentence", "description": "The learner tried a revised sentence after a correction."},
+        ],
+        "vocab": [
+            {"id": "past-want", "say": {"en": "I wanted to go", "cmn": "I wanted to go", "yue": "I wanted to go"}, "gloss": {"en": "past of want to", "cmn": "want 的过去式", "yue": "want 嘅過去式"}},
+            {"id": "bored", "say": {"en": "I am bored", "cmn": "I am bored", "yue": "I am bored"}, "gloss": {"en": "how you feel", "cmn": "你的感觉", "yue": "你嘅感覺"}},
+        ],
+        "cultural_notes": [
+            "Nora is an English teacher, not a café clerk, a hotel clerk, or an IELTS examiner.",
+            "character.text is English only. Explanations stay in the support language.",
+            "Correct grammar, a wrong word, or a wrong phrase. quote must be an exact substring of the learner line.",
+            "Do not score pronunciation and do not say what a microphone heard. Leave reading_hints empty; the server adds how a word is read from the spelling.",
+            "Never write “you pronounced”, “pronunciation was”, or “your tone”.",
+        ],
+        "opening_hint": {
+            "beginner": "Hello, I am Nora. Send me a sentence and I will help with the English.",
+            "intermediate": "Hello, I am Nora. Send me a sentence and I will help with the English.",
+            "advanced": "Hello, I am Nora. Send me a sentence and I will help with the English.",
+        },
+        "jyutping_overrides": {},
+        "pinyin_phrases": {},
+    },
 }
 
 

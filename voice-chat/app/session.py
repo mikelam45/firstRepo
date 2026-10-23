@@ -5,7 +5,7 @@ from __future__ import annotations
 LEVEL_CAPS = {"beginner": 8, "intermediate": 12, "advanced": 12}
 LEVEL_BUDGETS = {"beginner": 1, "intermediate": 2, "advanced": 2}
 
-CORRECTION_PRIORITY = ["mismatch", "completeness", "register", "grammar", "vocabulary"]
+CORRECTION_PRIORITY = ["mismatch", "completeness", "register", "grammar", "vocabulary", "phrase"]
 
 
 def learner_count(history: list[dict]) -> int:

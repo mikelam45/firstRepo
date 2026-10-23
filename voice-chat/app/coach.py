@@ -13,6 +13,7 @@ import httpx
 from app.fixtures import DAILY_DENY, build_fixture
 from app.models import ROUTES, route_for_turn
 from app.partners import get_partner
+from app.phonetics.english import english_ipa
 from app.phonetics.pipeline import annotate
 from app.scenarios import get_scenario, signal_ids
 from app.session import (
@@ -29,7 +30,14 @@ logger = logging.getLogger("lingocoach.turn")
 
 LANGS = {"en", "cmn", "yue"}
 LEVELS = {"beginner", "intermediate", "advanced"}
-CORRECTION_TYPES = {"register", "vocabulary", "grammar", "completeness", "mismatch"}
+CORRECTION_TYPES = {"register", "vocabulary", "grammar", "completeness", "mismatch", "phrase"}
+_TYPE_ALIASES = {
+    "wrong_word": "vocabulary",
+    "wrong-word": "vocabulary",
+    "word": "vocabulary",
+    "wrong_phrase": "phrase",
+    "wrong-phrase": "phrase",
+}
 
 
 class ServiceError(Exception):
@@ -120,9 +128,17 @@ def resolve_provider():
 
 def handle_turn(payload: dict, provider=None) -> dict:
     scenario = get_scenario(payload["scenario_id"])
+    if scenario["id"] == "english-teacher":
+        settings = dict(payload["settings"])
+        settings["target"] = "en"
+        payload = dict(payload)
+        payload["settings"] = settings
     partner = get_partner(payload.get("partner_id") or payload["settings"].get("partner"))
     provider = provider or resolve_provider()
-    route = route_for_turn(payload["settings"]["target"], payload["settings"]["support"])
+    if scenario["id"] == "english-teacher":
+        route = "roleplay"
+    else:
+        route = route_for_turn(payload["settings"]["target"], payload["settings"]["support"])
     model = ROUTES[route]["model"]
     fallback = ROUTES[route]["fallback"]
     if provider.name == "fixture":
@@ -197,6 +213,7 @@ def build_messages(payload: dict, scenario: dict, partner: dict) -> list[dict]:
             "",
             "OPENING_HINT:",
             scenario["opening_hint"][settings["level"]],
+            _teacher_rules() if scenario["id"] == "english-teacher" else "",
         ]
     )
     user = {
@@ -219,6 +236,24 @@ def build_messages(payload: dict, scenario: dict, partner: dict) -> list[dict]:
         {"role": "system", "content": system},
         {"role": "user", "content": json.dumps(user, ensure_ascii=False)},
     ]
+
+
+def _teacher_rules() -> str:
+    return "\n".join(
+        [
+            "",
+            "ENGLISH_TEACHER:",
+            "You are an English teacher. You are not a café clerk, a hotel clerk, or an IELTS examiner.",
+            "character.text is English only, one or two short sentences, in a teacher's voice.",
+            "Coaching explanations use SUPPORT_LANG only.",
+            "Correction types: grammar, vocabulary for a wrong word, phrase for a wrong phrase.",
+            "Each quote must be an exact substring of the learner's latest line.",
+            "If the sentence already works, corrections is empty and suggested_reply is null.",
+            "Leave reading_hints as an empty array. The server writes how a word is read.",
+            "You cannot hear the learner. Do not score pronunciation.",
+            'Never write "you pronounced", "pronunciation was", or "your tone".',
+        ]
+    )
 
 
 def _language_rules(target: str) -> str:
@@ -268,6 +303,15 @@ def normalize_turn(raw: dict, payload: dict, scenario: dict) -> dict:
     elif translation is not None:
         translation = str(translation)[:400]
     coaching = None if opening or refused else _coaching(raw.get("coaching"), payload)
+    if coaching and scenario["id"] == "english-teacher":
+        learner = _latest_learner(payload)
+        coaching["reading_hints"] = _english_reading_hints(
+            learner,
+            coaching.get("suggested_reply"),
+            coaching.get("corrections") or [],
+            settings["support"],
+            settings.get("accent", "en-GB"),
+        )
     _scan_denied(text, translation, coaching)
     text = _script(text, settings["script"])
     if isinstance(translation, str):
@@ -366,6 +410,8 @@ def _coaching(raw: Any, payload: dict) -> dict | None:
         if not isinstance(item, dict):
             continue
         ctype = item.get("type")
+        if isinstance(ctype, str):
+            ctype = _TYPE_ALIASES.get(ctype, ctype)
         quote = item.get("quote")
         why = item.get("why")
         if ctype not in CORRECTION_TYPES or ctype in seen_types:
@@ -405,6 +451,80 @@ def _coaching(raw: Any, payload: dict) -> dict | None:
         "suggested_reply": suggestion,
         "reading_hints": hints,
     }
+
+
+def _latest_learner(payload: dict) -> str:
+    for item in reversed(payload["history"]):
+        if item.get("role") == "learner":
+            return str(item.get("text") or "")
+    return ""
+
+
+_HINT_STOP = {
+    "a", "an", "i", "me", "my", "we", "us", "he", "she", "it", "they", "them",
+    "to", "of", "in", "on", "at", "or", "and", "but", "if", "so", "do", "be",
+    "is", "am", "are", "was", "were", "been", "as", "for", "from", "with",
+}
+
+
+def _english_reading_hints(
+    learner: str,
+    suggestion: str | None,
+    corrections: list,
+    support: str,
+    accent: str,
+) -> list[dict]:
+    """How a spelled word is read. This does not claim a microphone was heard."""
+    blocked = set()
+    for item in corrections:
+        for word in re.findall(r"[A-Za-z']+", str(item.get("quote") or "")):
+            blocked.add(word.lower())
+    pool: list[str] = []
+    seen: set[str] = set()
+    for source in (suggestion or "", learner or ""):
+        for word in re.findall(r"[A-Za-z]+(?:'[A-Za-z]+)?", source):
+            low = word.lower()
+            if low in seen or low in blocked or not _hard_to_read(low):
+                continue
+            seen.add(low)
+            pool.append(word)
+    pool.sort(key=_hint_rank)
+    hints = []
+    for word in pool[:2]:
+        ipa, _engine = english_ipa(word, accent)
+        shown = f"/{ipa}/" if ipa else word
+        note = {
+            "en": f"This word is read {shown}.",
+            "cmn": f"这个词这样读：{shown}。",
+            "yue": f"呢個字咁讀：{shown}。",
+        }.get(support, f"This word is read {shown}.")
+        hints.append({"term": word, "note": note})
+    return hints
+
+
+def _hard_to_read(word: str) -> bool:
+    if "th" in word:
+        return True
+    if word in _HINT_STOP or len(word) < 3:
+        return False
+    letters = re.sub(r"[^a-z]", "", word)
+    if len(letters) < 3:
+        return False
+    if letters.endswith("ed"):
+        return True
+    if letters[-1] not in "aeiouy" and letters[-2] not in "aeiouy":
+        return True
+    return letters[-1] not in "aeiouy"
+
+
+def _hint_rank(word: str) -> tuple:
+    low = word.lower()
+    if "th" in low:
+        return (0, low)
+    letters = re.sub(r"[^a-z]", "", low)
+    if letters.endswith("ed") or (len(letters) >= 2 and letters[-1] not in "aeiouy" and letters[-2] not in "aeiouy"):
+        return (1, low)
+    return (2, low)
 
 
 def _same_line(suggestion: str, learner: str) -> bool:

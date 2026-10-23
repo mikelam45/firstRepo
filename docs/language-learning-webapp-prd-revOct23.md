@@ -7,7 +7,7 @@
 
 What revOct23 adds to the previous spec:
 
-- A roster of six partners, three women and three men, each 27 years old, from the UK, mainland China, and Hong Kong.
+- A roster of six scene partners, three women and three men, each 27 years old, from the UK, mainland China, and Hong Kong, plus Nora, a 27-year-old English teacher in London.
 - The learner can change partner without deleting the chat.
 - The partner on screen blinks, listens, and moves their mouth with the line they are speaking.
 - The service is Python, and the way it runs is a Podman container. See [§21](#21-python-service-under-podman). The page in the browser is still a page: the mic, the speaker, and the face mesh stay on the device.
@@ -73,7 +73,7 @@ The six people the learner talks to are all 27. That age is part of the cast, no
 - Support-language glosses of examiner questions in drills. Glosses are hidden during a mock.
 - Daily track: one chat screen, three target languages, three support languages, three levels, and the three scenarios in [§6](#6-scenario-content). Three further daily scenarios stay off the chip row until they have the same content record.
 - Text send, press-to-talk where the browser can recognize the language, tap-to-hear where a matching voice exists.
-- Six partners in [§20](#20-partners-and-faces). A partner sheet with three women and three men. Switching partner keeps the thread and changes the face and voice from the next line.
+- Six scene partners in [§20](#20-partners-and-faces), plus Nora, the English teacher in [§6.6](#66-english-teacher). Switching partner keeps the thread and changes the face and voice from the next line.
 - Local transcript history on this device, including which partner spoke each line.
 
 ### 1.4 v1 excludes
@@ -95,6 +95,7 @@ Both of these work on a phone:
 
 - **IELTS.** With Cantonese (or Putonghua, or English) as the support language and a target of 6.5, a learner can finish a Part 2 drill with Amelia on screen: 60 seconds to prepare, a hard stop at 2 minutes, her mouth moving while she asks the cue-card follow-up, a listening face while the learner speaks, a review that names missed cue bullets, grammar and vocabulary notes in the support language, pronunciation marked “not assessed”, and a 6.5 practice answer that keeps their example. They can switch to Oliver, or to any of the other four partners, and the next line uses that face and voice without wiping the transcript. They can also finish a scripted speaking mock with no coaching until the end, and still see no overall band.
 - **Daily.** A learner can finish the cha-chaan-teng scene in Cantonese with Wing or Lok, with Jyutping that matches `to-jyutping`, a support-language explanation, and a goal state of “bill requested”, without the UI claiming it heard their tones.
+- **English teacher.** Home opens Nora on `english-teacher` with English as the target. She corrects grammar, a wrong word, or a wrong phrase. The quote is copied from the learner’s line. A reading hint shows how a hard spelling is read. The screen does not score pronunciation.
 
 ---
 
@@ -376,6 +377,26 @@ Opening hint, beginner: “您好，请问您有预订吗？”
 
 Content for these three is written in the same shape as §6.2–6.4 before they are enabled in the chip row. A chip with no content record is not shown.
 
+### 6.6 `english-teacher`
+
+Home has an **English teacher** button. This scene is not a chip on the daily row. Opening it uses Nora and English for this lesson, and does not replace the partner already in an ongoing daily scene.
+
+| Field | Value |
+| --- | --- |
+| id | `english-teacher` |
+| locale | London |
+| role | English teacher, Nora, 27 |
+| goal | The learner sends a sentence. Nora corrects grammar, a wrong word, or a wrong phrase. The server adds how a hard word is read. |
+| signals | `shared_sentence` when the learner sends English. The chat stays open until the level’s turn cap. |
+
+`character.text` is English only. Explanations use the support language. Reading hints come from the spelling, for example the `th` in “the”. The server does not score pronunciation and does not claim a microphone was heard. Forbidden wording includes “you pronounced”, “pronunciation was”, and “your tone”.
+
+Pinned lines, with the key absent so the fixture provider answers:
+
+- “I want go to school yesterday.” → `grammar`. The quote is a substring. The suggested reply uses a past form, “I wanted to go to school yesterday.”
+- “I am very boring in the class.” → `vocabulary`. The quote is `boring`. The suggested reply uses `bored`.
+- “Please discuss about this.” → `phrase`. The suggested reply drops the extra “about”.
+
 ---
 
 ## 7. Coaching rules
@@ -391,6 +412,7 @@ The model returns structured coaching. The server checks it. The UI renders it.
 | `grammar` | A form that blocks understanding. |
 | `completeness` | The clerk cannot act yet: no size, no destination, no name. |
 | `mismatch` | The utterance is in the wrong language. |
+| `phrase` | A phrase English does not use that way. `discuss about` → `discuss`. `explain me` → `explain to me`. |
 
 `reading` is not a correction type. Reading hints are a separate array and never claim the microphone heard a tone.
 
@@ -815,7 +837,7 @@ The mock in the prototype always returns an English hot-or-iced line. There is n
 
 **Partners**
 
-- The partner sheet lists exactly three women (Amelia, Mei, Wing) and three men (Oliver, Hao, Lok), each with age 27.
+- The partner sheet lists Amelia, Mei, Wing, Oliver, Hao, and Lok, then Nora. Each age is 27. Nora’s role is English teacher.
 - Switching from Amelia to Hao while a thread has bubbles keeps those bubbles and the next spoken line uses Hao’s mesh and a male voice.
 - During playback of a line, the mouth is not the resting shape for the whole line, and it is back to rest within 200ms after the line ends.
 - A Putonghua line spoken by Mei does not use Amelia’s portrait. A Cantonese line does not select a `zh-CN` voice.
@@ -1263,8 +1285,9 @@ Every partner is 27. The portraits are original people, not celebrities, and the
 | `oliver` | Oliver | man | 27 | Manchester, UK | English | The other English examiner |
 | `hao` | Hao | man | 27 | Shanghai, China | Putonghua | The other Putonghua coach |
 | `lok` | Lok | man | 27 | Hong Kong | Cantonese | The other Cantonese coach |
+| `nora` | Nora | woman | 27 | London, UK | English | English teacher |
 
-Three women, then three men, in that order, in the partner sheet. A portrait with no mesh is not shown, so the sheet never offers a face that cannot move.
+The first six stay in that order. Nora follows them. Her portrait is illustrated, and her mouth still moves with the English line. The home button **English teacher** opens `english-teacher` with Nora and with English as the target. Choosing Nora in the partner sheet does the same. Amelia and Mei keep photo meshes. Wing, Oliver, Hao, Lok, and Nora use illustrated portraits, so the sheet can show a face before a photo mesh exists.
 
 The partner speaks the session’s target language. Amelia can take a Cantonese café scene, and Wing can ask an English IELTS question. That is the same practice fiction as §6. What changes with the partner is the face, the voice, and a short manner line in the prompt:
 
@@ -1367,7 +1390,7 @@ Speak the target language in character. Manner: MANNER_LINE.
 
 ### 20.8 Fixtures
 
-1. The partner catalogue has 3 records with `gender: "woman"` and 3 with `gender: "man"`, and every `age` is 27.
+1. The partner catalogue has 4 records with `gender: "woman"` and 3 with `gender: "man"`, and every `age` is 27. Nora is the English teacher.
 2. `englishVisemes("Do you usually cook at home?")` contains `TH` or `DD` for “Do”, an open vowel, and `PP` for the “p” in a word such as “up” if present. It is not a one-element list.
 3. `pinyinVisemes("pu tong hua")` starts with a labial or rounded viseme for `pu` and includes an `aa` for `hua`. The same helper accepts jyutping `m4 goi1` as `PP` then an open vowel.
 4. A 400ms English clip advances through more than one viseme and is `sil` by 200ms after the clip’s end.

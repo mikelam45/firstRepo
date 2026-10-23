@@ -109,6 +109,7 @@ canvas.face, img.face {
   padding: 12px;
 }
 .coach .phonetic { color: #243044; }
+.coach .quote { font-style: italic; }
 .coach .icon-btn, .coach .ghost {
   background: #fffdf8;
   color: var(--card-ink);
@@ -135,7 +136,20 @@ textarea, input[type="text"], input[type="date"], select {
   min-height: 44px;
 }
 textarea { resize: none; min-height: 44px; max-height: 120px; }
-.mic.live { background: var(--danger); color: white; }
+.mic {
+  background: var(--bg-2);
+  border: 1px solid var(--line);
+  padding: 0 12px;
+  white-space: nowrap;
+}
+.mic.live {
+  background: var(--danger);
+  color: white;
+  min-width: 7.5rem;
+  font-weight: 700;
+}
+.mic:disabled { opacity: 0.5; cursor: not-allowed; }
+.banner.listening { color: #fff; font-weight: 700; }
 @media (prefers-reduced-motion: no-preference) {
   .mic.live { animation: pulse 1.2s ease-in-out infinite; }
 }

@@ -213,6 +213,94 @@ def test_repair_failure_is_502(monkeypatch):
     assert provider.calls == 2
 
 
+def test_english_teacher_grammar_fixture():
+    learner = "I want go to school yesterday"
+    response = _turn(
+        [{"role": "learner", "text": learner}],
+        scenario="english-teacher",
+        settings=_settings(target="yue", support="en", partner="nora"),
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["meta"]["provider"] == "fixture"
+    assert body["meta"]["route"] == "roleplay"
+    assert body["meta"]["model"] is None
+    assert body["partner_id"] == "nora"
+    correction = body["coaching"]["corrections"][0]
+    assert correction["type"] == "grammar"
+    assert correction["quote"] in learner
+    assert "wanted" in body["coaching"]["suggested_reply"]
+    assert "to go" in body["coaching"]["suggested_reply"]
+    assert body["character"]["text"]
+    assert not any("\u4e00" <= ch <= "\u9fff" for ch in body["character"]["text"])
+    assert body["goal"]["status"] == "open"
+    _assert_reading_hints(body, learner)
+    _assert_clean(body)
+
+
+def test_english_teacher_wrong_word_fixture():
+    learner = "I am very boring in the class"
+    response = _turn(
+        [{"role": "learner", "text": learner}],
+        scenario="english-teacher",
+        settings=_settings(target="en", support="cmn", partner="nora", script="Hans"),
+    )
+    assert response.status_code == 200
+    body = response.json()
+    correction = body["coaching"]["corrections"][0]
+    assert correction["type"] == "vocabulary"
+    assert correction["quote"] == "boring"
+    assert correction["quote"] in learner
+    assert "bored" in body["coaching"]["suggested_reply"]
+    assert "boring" not in body["coaching"]["suggested_reply"].lower()
+    assert any("\u4e00" <= ch <= "\u9fff" for ch in correction["why"])
+    assert not any("\u4e00" <= ch <= "\u9fff" for ch in body["character"]["text"])
+    assert all(hint["term"].lower() != "boring" for hint in body["coaching"]["reading_hints"])
+    assert any(hint["term"].lower() == "the" for hint in body["coaching"]["reading_hints"])
+    _assert_reading_hints(body, learner)
+    _assert_clean(body)
+
+
+def test_english_teacher_support_cantonese_keeps_english_line():
+    response = _turn(
+        [{"role": "learner", "text": "I want go to school yesterday"}],
+        scenario="english-teacher",
+        settings=_settings(target="cmn", support="yue", partner="nora"),
+    )
+    body = response.json()
+    assert response.status_code == 200
+    assert body["meta"]["route"] == "roleplay"
+    assert "wanted" in body["coaching"]["suggested_reply"]
+    assert not any("\u4e00" <= ch <= "\u9fff" for ch in body["character"]["text"])
+    assert any("\u4e00" <= ch <= "\u9fff" for ch in (body["character"]["translation"] or ""))
+    assert any("\u4e00" <= ch <= "\u9fff" for ch in body["coaching"]["corrections"][0]["why"])
+    _assert_clean(body)
+
+
+def test_english_teacher_denylist_rejects_pronunciation_praise(monkeypatch):
+    for praise in ("you pronounced that clearly", "pronunciation was good"):
+        bad = {
+            "contract": "1",
+            "character": {"text": "Let us look at that sentence.", "translation": None},
+            "coaching": {
+                "praise": praise,
+                "corrections": [],
+                "suggested_reply": None,
+                "reading_hints": [],
+            },
+            "goal": {"status": "open", "fired": []},
+            "safety": {"refused": False},
+        }
+        monkeypatch.setattr("app.coach.resolve_provider", lambda bad=bad: _Scripted([json.dumps(bad)]))
+        response = _turn(
+            [{"role": "learner", "text": "I want go to school yesterday"}],
+            scenario="english-teacher",
+            settings=_settings(target="en", support="en", partner="nora"),
+            client_id=f"deny-teacher-{praise.split()[0]}",
+        )
+        assert response.status_code == 502
+
+
 def test_denylist_is_rejected(monkeypatch):
     bad = {
         "contract": "1",
@@ -269,6 +357,21 @@ def _assert_clean(body: dict):
     blob = json.dumps(body, ensure_ascii=False).lower()
     for phrase in DAILY_DENY:
         assert phrase.lower() not in blob
+
+
+def _assert_reading_hints(body: dict, learner: str):
+    suggestion = body["coaching"].get("suggested_reply") or ""
+    blob = f"{learner}\n{suggestion}"
+    hints = body["coaching"]["reading_hints"]
+    assert hints
+    for hint in hints:
+        assert hint["term"] in blob
+        note = hint["note"].lower()
+        assert "you pronounced" not in note
+        assert "pronunciation was" not in note
+        assert "your tone" not in note
+        assert "/" in hint["note"]
+        assert any(token in hint["note"].lower() for token in ("read", "读", "讀"))
 
 
 class _Scripted:

@@ -1,15 +1,18 @@
 import { IllustratedPortrait, Portrait, englishVisemes, pinyinVisemes } from "./face.js";
+import { collectTranscript, recognitionLanguage, transcriptPiece } from "./transcript.js";
 
 const I18N = {
   en: {
     drill: "Today's IELTS drill",
     mock: "Full speaking mock",
     daily: "Daily talk",
+    teacher: "English teacher",
+    teacherHint: "Grammar, words, and phrases",
     history: "History",
     settings: "Settings",
     back: "Back",
     change: "Change partner",
-    placeholder: "Type, or hold the mic",
+    placeholder: "Type, or tap the mic",
     send: "Send",
     play: "Play line",
     listening: "Listening",
@@ -23,17 +26,18 @@ const I18N = {
     disclaimer: "Practice estimate only. This is not an IELTS result, and this app is not an IELTS test center.",
     noBand: "Pronunciation was not assessed, so there is no speaking band.",
     nowTalking: "Now talking with",
-    micBlocked: "Microphone is blocked. You can type instead.",
+    micBlocked: "The browser blocked the microphone. You can type instead.",
     recNetwork: "Recognition needs a connection.",
     noMic: "No microphone found.",
     noCantoneseMic: "Cantonese recognition isn’t available in this browser. Type in Cantonese.",
     noVoice: "No matching voice is installed on this device.",
     noCantoneseVoice: "No Cantonese voice is installed, so this line stays silent instead of using Mandarin. The mouth can still move.",
     noSynth: "This browser has no speech synthesis. Typing still works.",
-    micInsecure: "Voice input is blocked on this address because it is not a secure localhost page. Open",
+    micInsecure: "The browser blocks speech recognition on this address. Open",
     micUnsupported: "This browser has no speech recognition. You can type instead.",
     micError: "Voice input failed ({code}). You can type instead.",
-    noSpeech: "No speech heard. Hold the microphone while you speak. The text stays in the box; Enter sends it.",
+    micAborted: "Listening stopped.",
+    noSpeech: "No speech heard. Tap the microphone, speak, then tap it again. The text stays in the box; Enter sends it.",
     adult: "LingoCoach is for adult learners.",
     privacy: "Transcripts stay on this device and are sent as text for each turn. Browser recognition may send audio to the browser vendor. This server does not keep audio.",
     historyLoss: "Clearing this browser’s data deletes history. There is no account.",
@@ -51,7 +55,13 @@ const I18N = {
     yes: "Start new",
     cancel: "Cancel",
     close: "Close",
-    womenMen: "Three women, then three men. All 27.",
+    womenMen: "All 27. Nora is the English teacher.",
+    corrGrammar: "Grammar",
+    corrWord: "Wrong word",
+    corrPhrase: "Wrong phrase",
+    corrRegister: "Register",
+    corrCompleteness: "Missing piece",
+    corrMismatch: "Language",
     illustrated: "Illustrated portrait. The mouth still moves with the line.",
     mesh: "Photo portrait.",
     examSoon: "Your date is close. A full mock is the better first tap. The drill stays available.",
@@ -91,11 +101,13 @@ const I18N = {
     drill: "今天的雅思口语练习",
     mock: "完整口语模拟",
     daily: "日常对话",
+    teacher: "英语老师",
+    teacherHint: "语法、用词和短语",
     history: "历史",
     settings: "设置",
     back: "返回",
     change: "换一个人",
-    placeholder: "打字，或按住麦克风",
+    placeholder: "打字，或点一下麦克风",
     send: "发送",
     play: "播放这句",
     listening: "正在听",
@@ -109,17 +121,18 @@ const I18N = {
     disclaimer: "仅为练习估计。这不是雅思成绩，本应用也不是雅思考试中心。",
     noBand: "发音未作评估，所以没有口语总分。",
     nowTalking: "现在和",
-    micBlocked: "麦克风被阻止了。你可以打字。",
+    micBlocked: "浏览器阻止了麦克风。你可以打字。",
     recNetwork: "语音识别需要网络。",
     noMic: "没有找到麦克风。",
     noCantoneseMic: "这个浏览器不能识别粤语。请用粤语打字。",
     noVoice: "这台设备没有对应的语音。",
     noCantoneseVoice: "这台设备没有粤语语音，所以这句不会用普通话读出来。嘴仍然可以动。",
     noSynth: "这个浏览器不能朗读。打字仍然可以用。",
-    micInsecure: "这个地址不能用语音输入，因为它不是本机的安全页面。请打开",
+    micInsecure: "这个地址不能用语音识别，因为它不是本机安全页面。请打开",
     micUnsupported: "这个浏览器没有语音识别。你可以打字。",
     micError: "语音输入失败（{code}）。你可以打字。",
-    noSpeech: "没有听到说话。请按住麦克风再说。文字会留在框里，按回车送出。",
+    micAborted: "已经停止听了。",
+    noSpeech: "没有听到说话。点一下麦克风，说完再点一下。文字会留在框里，按回车送出。",
     adult: "LingoCoach 面向成年学习者。",
     privacy: "对话留在这台设备上，每次只把文字发给模型。浏览器识别可能会把声音发给浏览器厂商。这个服务器不保存录音。",
     historyLoss: "清除浏览器数据会丢掉历史。没有账号。",
@@ -137,7 +150,13 @@ const I18N = {
     yes: "开始新的",
     cancel: "取消",
     close: "关闭",
-    womenMen: "三位女性，然后三位男性。都是 27 岁。",
+    womenMen: "全部 27 岁。Nora 是英语老师。",
+    corrGrammar: "语法",
+    corrWord: "用词",
+    corrPhrase: "短语",
+    corrRegister: "说法",
+    corrCompleteness: "还缺信息",
+    corrMismatch: "语言",
     illustrated: "插画肖像。说话时嘴会动。",
     mesh: "照片肖像。",
     examSoon: "考试日期很近。可以先做完整模拟，练习仍然可以点。",
@@ -177,11 +196,13 @@ const I18N = {
     drill: "今日嘅雅思口試練習",
     mock: "全套口試模擬",
     daily: "日常對話",
+    teacher: "英文老師",
+    teacherHint: "文法、用詞同短語",
     history: "紀錄",
     settings: "設定",
     back: "返回",
     change: "轉人",
-    placeholder: "打字，或者撳住個咪",
+    placeholder: "打字，或者點一下個咪",
     send: "送出",
     play: "播呢句",
     listening: "聽緊",
@@ -195,17 +216,18 @@ const I18N = {
     disclaimer: "只係練習估計。呢個唔係雅思成績，呢個 app 亦都唔係雅思考試中心。",
     noBand: "發音未評估，所以冇口語總分。",
     nowTalking: "而家同",
-    micBlocked: "個咪被擋咗。你可以打字。",
+    micBlocked: "個瀏覽器擋咗個咪。你可以打字。",
     recNetwork: "語音識別要有網絡。",
     noMic: "搵唔到咪。",
     noCantoneseMic: "呢個瀏覽器認唔到廣東話。請打廣東話。",
     noVoice: "呢部機冇對應嘅語音。",
     noCantoneseVoice: "呢部機冇廣東話語音，所以呢句唔會用普通話讀出嚟。個嘴仍然可以郁。",
     noSynth: "呢個瀏覽器唔識朗讀。打字仍然用到。",
-    micInsecure: "呢個地址用唔到語音輸入，因為佢唔係本機安全頁面。請打開",
+    micInsecure: "呢個地址用唔到語音識別，因為佢唔係本機安全頁面。請打開",
     micUnsupported: "呢個瀏覽器冇語音識別。你可以打字。",
     micError: "語音輸入失敗（{code}）。你可以打字。",
-    noSpeech: "聽唔到你講。撳住個咪再講。文字會留喺格入面，撳 Enter 送出。",
+    micAborted: "停咗聽。",
+    noSpeech: "聽唔到你講。點一下個咪，講完再點一下。文字會留喺格入面，撳 Enter 送出。",
     adult: "LingoCoach 係俾成年學習者用。",
     privacy: "對話留喺呢部機。每次只係將文字送去模型。瀏覽器識別可能會將聲音交俾瀏覽器公司。呢個伺服器唔會留低錄音。",
     historyLoss: "清咗瀏覽器資料就冇紀錄。冇帳戶。",
@@ -223,7 +245,13 @@ const I18N = {
     yes: "開始新嘅",
     cancel: "取消",
     close: "關閉",
-    womenMen: "三個女，然後三個男。全部 27 歲。",
+    womenMen: "全部 27 歲。Nora 係英文老師。",
+    corrGrammar: "文法",
+    corrWord: "用詞",
+    corrPhrase: "短語",
+    corrRegister: "講法",
+    corrCompleteness: "仲缺資料",
+    corrMismatch: "語言",
     illustrated: "插畫肖像。講嘢嗰陣個嘴會郁。",
     mesh: "相片肖像。",
     examSoon: "考試日子近。可以先做全套模擬，練習仍然撳到。",
@@ -288,17 +316,21 @@ let sessionRate = null;
 let recognizer = null;
 let listening = false;
 let draftBeforeMic = "";
-let cantoneseRetried = false;
 let composerDraft = "";
 let speakToken = 0;
 let speakTimer = 0;
 let mouthTimer = 0;
 let activeUtterance = null;
-let micPointerId = null;
 let micEngineStarted = false;
 let micStopRequested = false;
 let micHeard = false;
 let acceptMicText = false;
+let micHoldTimer = 0;
+let micHolding = false;
+let micGestureId = null;
+let micSuppressClick = false;
+let micStartTimer = 0;
+let micDownAt = 0;
 
 function t(key) {
   const pack = I18N[state.settings.support] || I18N.en;
@@ -367,6 +399,31 @@ function partner() {
   return list.find((item) => item.id === state.settings.partner) || list[0];
 }
 
+function activePartner() {
+  const list = state.catalogue?.partners || [];
+  const id = state.screen === "daily" && state.daily?.partner_id ? state.daily.partner_id : state.settings.partner;
+  return list.find((item) => item.id === id) || partner();
+}
+
+function selectedPartnerId() {
+  if (state.screen === "daily" && state.daily?.partner_id) return state.daily.partner_id;
+  return state.settings.partner;
+}
+
+function roleLabel(item) {
+  if (!item?.role) return "";
+  const support = state.settings.support;
+  return item.role[support] || item.role.en || "";
+}
+
+function practiceTarget() {
+  if (state.screen === "ielts") return "en";
+  if (state.daily?.scenario_id === "english-teacher") return "en";
+  return state.settings.target || "en";
+}
+
+const TEACHER_ID = "nora";
+
 function scenario() {
   const list = state.catalogue?.scenarios || [];
   return list.find((item) => item.id === state.daily?.scenario_id) || list[0];
@@ -429,7 +486,7 @@ function homeView() {
         <canvas id="face" class="face" width="480" height="640" aria-label="${esc(who.name)}, ${esc(who.city)}, 27"></canvas>
         <div>
           <strong>${esc(who.name)}</strong>
-          <div class="muted">${esc(who.city)} · ${esc(t("age"))}</div>
+          <div class="muted">${esc(who.city)} · ${esc(t("age"))}${roleLabel(who) ? ` · ${esc(roleLabel(who))}` : ""}</div>
           <button class="ghost" type="button" data-act="partners">${esc(t("change"))}</button>
         </div>
       </div>
@@ -440,6 +497,7 @@ function homeView() {
         <button class="choice" type="button" data-act="drill"><strong>${esc(t("drill"))}</strong><span class="muted">${esc(plan.label || t("diagnostic"))}</span></button>
         <button class="choice" type="button" data-act="mock"><strong>${esc(t("mock"))}</strong><span class="muted">Part 1 · Part 2 · Part 3</span></button>
         <button class="choice" type="button" data-act="daily"><strong>${esc(t("daily"))}</strong></button>
+        <button class="choice" type="button" data-act="teacher"><strong>${esc(t("teacher"))}</strong><span class="muted">${esc(t("teacherHint"))}</span></button>
       </div>
       <p class="small muted">${esc(t("disclaimer"))}</p>
       <p class="small muted">${esc(t("adult"))}</p>
@@ -448,26 +506,28 @@ function homeView() {
 
 function dailyView() {
   const sc = scenario();
-  const who = partner();
+  const who = activePartner();
   const support = state.settings.support;
   const title = sc.title[support] || sc.title.en;
   const goal = sc.goal[support] || sc.goal.en;
-  const ended = state.daily.goal === "met" || state.daily.cap_reached;
+  const teacher = sc.id === "english-teacher";
+  const ended = teacher ? state.daily.cap_reached : (state.daily.goal === "met" || state.daily.cap_reached);
+  const scenes = (state.catalogue.scenarios || []).filter((item) => item.id !== "english-teacher");
   return `
     <header class="top">
       <button class="icon-btn" type="button" data-act="home">${esc(t("back"))}</button>
       <div class="grow"><h1>${esc(who.name)}</h1><div class="small muted">${esc(title)}</div></div>
       <button class="icon-btn" type="button" data-act="settings">⚙</button>
     </header>
-    <div class="chips" role="tablist">
-      ${(state.catalogue.scenarios || []).map((item) => `<button class="chip" type="button" data-act="scenario" data-id="${esc(item.id)}" aria-pressed="${item.id === sc.id}">${esc(item.title[support] || item.title.en)}</button>`).join("")}
-    </div>
+    ${teacher ? "" : `<div class="chips" role="tablist">
+      ${scenes.map((item) => `<button class="chip" type="button" data-act="scenario" data-id="${esc(item.id)}" aria-pressed="${item.id === sc.id}">${esc(item.title[support] || item.title.en)}</button>`).join("")}
+    </div>`}
     <p class="goal">${esc(t("goal"))}: ${esc(goal)}${state.daily.goal === "met" ? ` · ${esc(t("goalMet"))}` : ""}</p>
     ${state.provider === "fixture" ? `<p class="banner">${esc(t("fixture"))}</p>` : ""}
     <div class="stage large"><canvas id="face" class="face" width="480" height="640" aria-label="${esc(who.name)}, ${esc(who.city)}, 27"></canvas></div>
     <div class="row" style="padding:0 16px 8px">
       <strong>${esc(who.name)}</strong>
-      <span class="muted">${esc(who.city)} · 27</span>
+      <span class="muted">${esc(who.city)} · 27${roleLabel(who) ? ` · ${esc(roleLabel(who))}` : ""}</span>
       <button class="ghost" type="button" data-act="partners">${esc(t("change"))}</button>
     </div>
     <div class="thread" id="thread">${(state.daily.bubbles || []).map(bubbleHtml).join("")}</div>
@@ -480,7 +540,8 @@ function bubbleHtml(bubble, index) {
     return `<article class="bubble learner"><div class="said"><div class="row"><p class="text grow">${esc(bubble.text)}</p><button class="icon-btn speak" type="button" data-act="speak" data-index="${index}" aria-label="${esc(t("play"))}">▶</button></div></div>${coachHtml(bubble, index)}</article>`;
   }
   const who = (state.catalogue.partners || []).find((item) => item.id === bubble.partner_id);
-  const showTranslation = state.settings.support !== state.settings.target && bubble.translation;
+  const lineTarget = state.daily?.scenario_id === "english-teacher" ? "en" : state.settings.target;
+  const showTranslation = state.settings.support !== lineTarget && bubble.translation;
   let translation = "";
   if (showTranslation && state.settings.level === "beginner") translation = `<p>${esc(bubble.translation)}</p>`;
   else if (showTranslation && state.settings.level === "intermediate") translation = `<details><summary>${esc(t("showTranslation"))}</summary><p>${esc(bubble.translation)}</p></details>`;
@@ -497,32 +558,51 @@ function phoneticHtml(bubble) {
   return `<p class="phonetic"><span class="muted">${esc(label)}</span> ${html}</p>`;
 }
 
+function correctionLabel(type) {
+  const key = {
+    grammar: "corrGrammar",
+    vocabulary: "corrWord",
+    phrase: "corrPhrase",
+    register: "corrRegister",
+    completeness: "corrCompleteness",
+    mismatch: "corrMismatch",
+  }[type];
+  return key ? t(key) : type;
+}
+
 function coachHtml(bubble) {
   if (bubble.pending) return `<div class="coach">${esc(t("waiting"))}</div>`;
   if (bubble.error) return `<div class="coach"><p class="error">${esc(bubble.error)}</p><button class="ghost" type="button" data-act="retry">${esc(t("retry"))}</button></div>`;
   const coaching = bubble.coaching;
   if (!coaching) return "";
   const bits = [];
-  if (coaching.praise) bits.push(`<p><strong>${esc(t("praise"))}.</strong> ${esc(coaching.praise)}</p>`);
-  if (coaching.reading_hints?.length) {
-    bits.push(`<p><strong>${esc(t("howRead"))}</strong></p>`);
-    for (const hint of coaching.reading_hints) bits.push(`<p>${esc(hint.term)} — ${esc(hint.note)}</p>`);
+  const corrections = coaching.corrections || [];
+  if (!corrections.length && coaching.praise) bits.push(`<p><strong>${esc(t("praise"))}.</strong> ${esc(coaching.praise)}</p>`);
+  for (const item of corrections) {
+    bits.push(`<p><strong>${esc(correctionLabel(item.type))}.</strong> <span class="quote">“${esc(item.quote)}”</span></p>`);
+    if (item.why) bits.push(`<p><strong>${esc(t("why"))}.</strong> ${esc(item.why)}</p>`);
   }
   if (coaching.suggested_reply) {
     bits.push(`<p><strong>${esc(t("trySaying"))}</strong></p><p>${esc(coaching.suggested_reply)}</p>`);
     if (coaching.suggested_reply_phonetic) bits.push(`<p class="phonetic">${esc(coaching.suggested_reply_phonetic)}</p>`);
     bits.push(`<button class="ghost" type="button" data-act="speak-suggest" aria-label="${esc(t("play"))}">▶</button>`);
   }
-  const whys = (coaching.corrections || []).map((item) => item.why).filter(Boolean);
-  if (whys.length) bits.push(`<p><strong>${esc(t("why"))}</strong> ${esc(whys.join(" "))}</p>`);
+  if (coaching.reading_hints?.length) {
+    bits.push(`<p><strong>${esc(t("howRead"))}</strong></p>`);
+    for (const hint of coaching.reading_hints) bits.push(`<p>${esc(hint.term)} — ${esc(hint.note)}</p>`);
+  }
+  if (corrections.length && coaching.praise) bits.push(`<p><strong>${esc(t("praise"))}.</strong> ${esc(coaching.praise)}</p>`);
   if (!bits.length) return "";
   return `<div class="coach">${bits.join("")}</div>`;
 }
 
 function composerHtml() {
   const block = micBlock();
-  const mic = block === "" || block === "insecure"
-    ? `<button class="mic ${listening ? "live" : ""}" id="mic" type="button" aria-label="${esc(t("placeholder"))}">${listening ? esc(t("listening")) : "🎤"}</button>`
+  const showMic = block === "" || block === "insecure";
+  const off = block === "insecure";
+  const live = listening && !off;
+  const mic = showMic
+    ? `<button class="mic${live ? " live" : ""}" id="mic" type="button"${off ? " disabled" : ""} aria-pressed="${live ? "true" : "false"}" aria-label="${esc(live ? `${t("listening")}. Stop` : t("placeholder"))}">${live ? esc(t("listening")) : "🎤"}</button>`
     : "";
   return `<form class="composer" id="composer">
     ${mic}
@@ -602,10 +682,11 @@ function sheet() {
 }
 
 function partnerSheet() {
+  const selected = selectedPartnerId();
   const rows = state.catalogue.partners.map((item) => `
-    <button class="partner-row" type="button" data-act="pick-partner" data-id="${esc(item.id)}" aria-pressed="${item.id === state.settings.partner}">
+    <button class="partner-row" type="button" data-act="pick-partner" data-id="${esc(item.id)}" aria-pressed="${item.id === selected}">
       <img alt="" src="${esc(item.portrait)}">
-      <span><strong>${esc(item.name)}</strong><br><span class="muted">${esc(item.city)} · 27 · ${esc(item.gender === "woman" ? "woman" : "man")}</span><br><span class="small muted">${item.display === "mesh" ? esc(t("mesh")) : esc(t("illustrated"))}</span></span>
+      <span><strong>${esc(item.name)}</strong><br><span class="muted">${esc(item.city)} · 27 · ${esc(item.gender === "woman" ? "woman" : "man")}${roleLabel(item) ? ` · ${esc(roleLabel(item))}` : ""}</span><br><span class="small muted">${item.display === "mesh" ? esc(t("mesh")) : esc(t("illustrated"))}</span></span>
     </button>`).join("");
   return `<div class="backdrop" data-act="close-sheet"></div><section class="sheet"><div class="row"><h2 class="grow">${esc(t("change"))}</h2><button class="icon-btn" type="button" data-act="close-sheet">${esc(t("close"))}</button></div><p class="muted">${esc(t("womenMen"))}</p>${rows}</section>`;
 }
@@ -655,7 +736,18 @@ function clockText() {
 }
 
 app.addEventListener("click", (event) => {
-  const button = event.target.closest("[data-act]");
+  const el = eventElement(event);
+  const mic = el?.closest?.("#mic");
+  if (mic) {
+    if (mic.disabled) return;
+    if (micSuppressClick) {
+      micSuppressClick = false;
+      return;
+    }
+    toggleMic();
+    return;
+  }
+  const button = el?.closest?.("[data-act]");
   if (!button) return;
   onAct(button.dataset.act, button.dataset);
 });
@@ -675,22 +767,49 @@ app.addEventListener("keydown", (event) => {
     event.preventDefault();
     submitField();
   }
-  if (event.key === " " && event.target.id === "mic") {
+  if ((event.key === " " || event.code === "Space") && event.target?.id === "mic") {
     event.preventDefault();
-    if (listening) stopMic();
-    else startMic(event);
+    if (event.repeat) return;
+    toggleMic();
   }
 });
 
-window.addEventListener("pointerup", releaseMic);
-window.addEventListener("pointercancel", releaseMic);
-
 app.addEventListener("pointerdown", (event) => {
-  const mic = event.target.closest("#mic");
-  if (!mic) return;
-  event.preventDefault();
-  try { mic.setPointerCapture(event.pointerId); } catch (err) { /* pointer already gone */ }
-  startMic(event);
+  const mic = eventElement(event)?.closest?.("#mic");
+  if (!mic || mic.disabled) return;
+  if (event.button != null && event.button !== 0) return;
+  clearMicHold();
+  micSuppressClick = false;
+  micGestureId = event.pointerId;
+  micDownAt = Date.now();
+  micHoldTimer = window.setTimeout(() => {
+    micHoldTimer = 0;
+    micHolding = true;
+    micSuppressClick = true;
+    if (!listening && !micStartTimer) startMic();
+  }, 450);
+});
+
+function finishMicPointer(event, cancelled) {
+  if (micGestureId == null) return;
+  if (event?.pointerId != null && event.pointerId !== micGestureId) return;
+  if (cancelled) {
+    micGestureId = null;
+    return;
+  }
+  const held = micHolding;
+  const downFor = Date.now() - micDownAt;
+  clearMicHold();
+  if (!held) return;
+  micSuppressClick = true;
+  if (downFor >= 800 && (listening || micStartTimer)) stopMic();
+}
+
+window.addEventListener("pointerup", (event) => finishMicPointer(event, false));
+window.addEventListener("pointercancel", (event) => finishMicPointer(event, true));
+
+app.addEventListener("contextmenu", (event) => {
+  if (eventElement(event)?.closest?.("#mic")) event.preventDefault();
 });
 
 function onAct(act, data) {
@@ -703,6 +822,7 @@ function onAct(act, data) {
   if (act === "confirm-no") { state.confirm = null; render(); return; }
   if (act === "confirm-yes") { const pending = state.confirm; state.confirm = null; pending?.run(); return; }
   if (act === "pick-partner") { pickPartner(data.id); return; }
+  if (act === "teacher") { openEnglishTeacher(); return; }
   if (act === "daily") { openDaily(state.catalogue.scenarios[0].id); return; }
   if (act === "scenario") { changeScenario(data.id); return; }
   if (act === "again") { openDaily(state.daily.scenario_id, true); return; }
@@ -772,6 +892,24 @@ function changeScenario(id) {
   run();
 }
 
+function sceneHasLearnerLines(scene) {
+  return (scene?.bubbles || []).some((bubble) => bubble.role === "learner" && String(bubble.text || "").trim());
+}
+
+function openEnglishTeacher() {
+  const saved = state.screen === "daily" && state.daily ? state.daily : loadOpen();
+  const same = saved && saved.scenario_id === "english-teacher";
+  const busy = saved && !same && sceneHasLearnerLines(saved);
+  const run = () => openDaily("english-teacher", !same);
+  if (busy) {
+    state.sheet = null;
+    state.confirm = { text: t("startNew"), run };
+    render();
+    return;
+  }
+  run();
+}
+
 async function openDaily(scenarioId, force) {
   const saved = !force && loadOpen();
   state.screen = "daily";
@@ -780,6 +918,7 @@ async function openDaily(scenarioId, force) {
   composerDraft = "";
   if (saved && saved.scenario_id === scenarioId) {
     state.daily = saved;
+    if (scenarioId === "english-teacher" && !state.daily.partner_id) state.daily.partner_id = TEACHER_ID;
     render();
     return;
   }
@@ -790,6 +929,7 @@ async function openDaily(scenarioId, force) {
     fired: [],
     goal: "open",
     cap_reached: false,
+    partner_id: scenarioId === "english-teacher" ? TEACHER_ID : null,
   };
   render();
   await postTurn([]);
@@ -831,9 +971,9 @@ async function postTurn(history) {
   const body = {
     session_id: state.daily.session_id,
     scenario_id: state.daily.scenario_id,
-    partner_id: state.settings.partner,
+    partner_id: state.daily.partner_id || state.settings.partner,
     settings: {
-      target: state.settings.target,
+      target: practiceTarget(),
       support: state.settings.support,
       level: state.settings.level,
       script: state.settings.script,
@@ -922,10 +1062,28 @@ function pickPartner(id) {
   const session = state.ielts;
   if (session && session.kind === "mock" && (session.phase === "part2_prep" || session.phase === "part2_speak")) return;
   if (listening) return;
+  if (id === TEACHER_ID) {
+    if (state.screen === "daily" && state.daily?.scenario_id === "english-teacher") {
+      state.daily.partner_id = TEACHER_ID;
+      saveOpen();
+      state.sheet = null;
+      const name = activePartner()?.name || id;
+      render();
+      const live = document.querySelector("#live");
+      if (live) live.textContent = `${t("nowTalking")} ${name}`;
+      return;
+    }
+    openEnglishTeacher();
+    return;
+  }
   state.settings.partner = id;
   saveSettings();
+  if (state.screen === "daily" && state.daily?.scenario_id === "english-teacher") {
+    state.daily.partner_id = id;
+    saveOpen();
+  }
   state.sheet = null;
-  const name = partner()?.name || id;
+  const name = (state.screen === "daily" ? activePartner() : partner())?.name || id;
   const live = document.querySelector("#live");
   if (live) live.textContent = `${t("nowTalking")} ${name}`;
   if (state.speaking) {
@@ -937,16 +1095,41 @@ function pickPartner(id) {
   render();
 }
 
+function eventElement(event) {
+  const node = event?.target;
+  if (!node) return null;
+  return node.nodeType === 1 ? node : node.parentElement;
+}
+
+function clearMicHold() {
+  window.clearTimeout(micHoldTimer);
+  micHoldTimer = 0;
+  micHolding = false;
+  micGestureId = null;
+}
+
+function toggleMic() {
+  if (listening || micStartTimer) stopMic();
+  else startMic();
+}
+
 function localhostHref() {
-  const port = location.port ? `:${location.port}` : "";
-  return `http://127.0.0.1${port}${location.pathname || "/"}${location.search || ""}`;
+  const port = location.port || "8066";
+  const path = location.pathname && location.pathname !== "/" ? location.pathname : "";
+  return `http://127.0.0.1:${port}${path}${location.search || ""}`;
+}
+
+function recognitionContextOk() {
+  const host = String(location.hostname || "").toLowerCase();
+  if (host === "localhost" || host === "127.0.0.1") return true;
+  return window.isSecureContext === true;
 }
 
 function micBlock() {
-  if (!window.isSecureContext) return "insecure";
+  if (!recognitionContextOk()) return "insecure";
   if (!(window.SpeechRecognition || window.webkitSpeechRecognition)) return "unsupported";
   if (state.micHidden) return "hidden";
-  if (state.settings.target === "yue" && state.cantoneseMicHidden) return "cantonese";
+  if (practiceTarget() === "yue" && state.cantoneseMicHidden) return "cantonese";
   return "";
 }
 
@@ -964,8 +1147,9 @@ function statusHtml() {
     ? t("listening")
     : state.micMessage || (block === "unsupported" ? t("micUnsupported") : block === "cantonese" ? t("noCantoneseMic") : "");
   if (!text) return `<p id="status" class="banner" role="status" hidden></p>`;
-  const error = Boolean(state.micMessage) || block === "unsupported" || block === "cantonese";
-  return `<p id="status" class="banner${error ? " error" : ""}" role="status">${esc(text)}</p>`;
+  const error = !listening && (Boolean(state.micMessage) || block === "unsupported" || block === "cantonese");
+  const liveClass = listening ? " listening" : "";
+  return `<p id="status" class="banner${liveClass}${error ? " error" : ""}" role="status">${esc(text)}</p>`;
 }
 
 function showStatus(text, isError) {
@@ -988,19 +1172,26 @@ function clearDraft() {
 function paintMic(live) {
   const mic = document.querySelector("#mic");
   if (!mic) return;
+  if (mic.disabled) {
+    mic.classList.remove("live");
+    mic.textContent = "🎤";
+    return;
+  }
   mic.classList.toggle("live", Boolean(live));
+  mic.setAttribute("aria-pressed", live ? "true" : "false");
+  mic.setAttribute("aria-label", live ? `${t("listening")}. Stop` : t("placeholder"));
   mic.textContent = live ? t("listening") : "🎤";
 }
 
 function recognitionResults(ev) {
   const results = ev?.results;
-  if (!results || typeof results.length !== "number") return "";
+  const viaHelper = collectTranscript(results);
+  if (!results || typeof results.length !== "number") return viaHelper;
   let text = "";
   for (let i = 0; i < results.length; i += 1) {
-    const piece = results[i]?.[0]?.transcript || results[i]?.item?.(0)?.transcript || "";
-    text += piece;
+    text += transcriptPiece(results, i);
   }
-  return text.trim();
+  return text.trim() || viaHelper;
 }
 
 function writeRecognition(text) {
@@ -1009,25 +1200,120 @@ function writeRecognition(text) {
   micHeard = true;
   composerDraft = heard;
   const field = document.querySelector("#field");
-  if (field && field.value !== heard) field.value = heard;
+  if (!field || field.value === heard) return;
+  field.value = heard;
+  try { field.setSelectionRange(heard.length, heard.length); } catch (err) { /* keep the text */ }
 }
 
 function micErrorText(code) {
-  if (!window.isSecureContext) return `${t("micInsecure")} ${localhostHref()}`;
-  if (code === "not-allowed" || code === "service-not-allowed") return `${t("micBlocked")} (${code})`;
+  if (!recognitionContextOk()) return `${t("micInsecure")} ${localhostHref()}`;
+  if (code === "not-allowed" || code === "service-not-allowed") return t("micBlocked");
   if (code === "network") return t("recNetwork");
   if (code === "audio-capture") return t("noMic");
   if (code === "no-speech") return t("noSpeech");
+  if (code === "aborted") return t("micAborted");
   return t("micError").replace("{code}", code || "unknown");
 }
 
-function releaseMic(event) {
-  if (micPointerId == null) return;
-  if (event && event.pointerId != null && event.pointerId !== micPointerId) return;
-  stopMic();
+function markListening() {
+  listening = true;
+  state.micMessage = "";
+  if (face) {
+    try {
+      face.setMode("listen");
+      face.setViseme("sil");
+    } catch (err) { /* portrait */ }
+  }
+  if (state.ielts && !state.ielts.speechStarted && state.ielts.phase === "part2_speak") state.ielts.speechStarted = Date.now();
+  state.micStarted = state.micStarted || Date.now();
+  announce(t("listening"));
+  const node = document.querySelector("#status");
+  if (node) {
+    node.hidden = false;
+    node.className = "banner listening";
+    node.textContent = t("listening");
+  }
+  paintMic(true);
 }
 
-function startMic(event) {
+function idleFace() {
+  if (!face || state.speaking) return;
+  try { face.setMode("idle"); } catch (err) { /* portrait */ }
+}
+
+function armRecognizer() {
+  const Engine = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const session = new Engine();
+  session.interimResults = true;
+  session.continuous = false;
+  session.maxAlternatives = 1;
+  session.lang = recognitionLang();
+  session.onstart = () => {
+    micEngineStarted = true;
+    if (micStopRequested) {
+      try { session.stop(); } catch (err) { /* ending */ }
+    }
+  };
+  session.onresult = (ev) => {
+    if (!acceptMicText) return;
+    try {
+      const text = recognitionResults(ev);
+      if (text) writeRecognition(text);
+    } catch (err) {
+      showStatus(micErrorText("result"), true);
+    }
+  };
+  session.onerror = (ev) => {
+    const code = ev?.error || "unknown";
+    if (code === "language-not-supported" && practiceTarget() === "yue") {
+      state.cantoneseMicHidden = true;
+      listening = false;
+      showStatus(t("noCantoneseMic"), true);
+      paintMic(false);
+      idleFace();
+      return;
+    }
+    if (code === "aborted") {
+      listening = false;
+      paintMic(false);
+      showStatus(t("micAborted"), false);
+      idleFace();
+      return;
+    }
+    if (code === "no-speech" && !micHeard) {
+      const live = document.querySelector("#field");
+      if (!live || live.value === draftBeforeMic || live.value === composerDraft) {
+        composerDraft = draftBeforeMic;
+        if (live) live.value = composerDraft;
+      } else {
+        composerDraft = live.value;
+      }
+    }
+    listening = false;
+    showStatus(micErrorText(code), code !== "no-speech");
+    paintMic(false);
+    idleFace();
+  };
+  session.onend = () => {
+    listening = false;
+    micEngineStarted = false;
+    paintMic(false);
+    const fieldNow = document.querySelector("#field");
+    if (fieldNow && micHeard && composerDraft && fieldNow.value !== composerDraft) fieldNow.value = composerDraft;
+    if (!state.micMessage) {
+      const node = document.querySelector("#status");
+      if (node && !node.querySelector("a")) {
+        node.hidden = true;
+        node.textContent = "";
+        node.className = "banner";
+      }
+    }
+    idleFace();
+  };
+  return session;
+}
+
+function startMic() {
   const block = micBlock();
   if (block === "insecure") {
     showStatus(`${t("micInsecure")} ${localhostHref()}`, true);
@@ -1042,12 +1328,7 @@ function startMic(event) {
     return;
   }
   const Ctor = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!Ctor || listening) return;
-  stopSpeaking();
-  if (face) {
-    face.setMode("listen");
-    face.setViseme("sil");
-  }
+  if (!Ctor || listening || micStartTimer) return;
   const field = document.querySelector("#field");
   draftBeforeMic = field ? field.value : composerDraft;
   composerDraft = draftBeforeMic;
@@ -1055,118 +1336,53 @@ function startMic(event) {
   acceptMicText = true;
   micEngineStarted = false;
   micStopRequested = false;
-  micPointerId = event && typeof event.pointerId === "number" ? event.pointerId : null;
   state.micMessage = "";
-  recognizer = new Ctor();
-  recognizer.interimResults = true;
-  recognizer.continuous = true;
-  recognizer.maxAlternatives = 1;
-  recognizer.lang = recognitionLang();
-  if (state.ielts && !state.ielts.speechStarted && state.ielts.phase === "part2_speak") state.ielts.speechStarted = Date.now();
-  state.micStarted = state.micStarted || Date.now();
-  recognizer.onstart = () => {
-    micEngineStarted = true;
+  const synth = window.speechSynthesis;
+  const wasSpeaking = Boolean(
+    state.speaking || activeUtterance || speakTimer || (synth && (synth.speaking || synth.pending))
+  );
+  stopSpeaking();
+  markListening();
+  const begin = () => {
+    micStartTimer = 0;
     if (micStopRequested) {
-      try { recognizer.stop(); } catch (err) { /* ending */ }
-    }
-  };
-  recognizer.onresult = (ev) => {
-    if (!acceptMicText) return;
-    try {
-      const text = recognitionResults(ev);
-      if (text) writeRecognition(text);
-    } catch (err) {
-      showStatus(micErrorText(err?.name || "result"), true);
-    }
-  };
-  recognizer.onerror = (ev) => {
-    const code = ev?.error || "unknown";
-    if (code === "language-not-supported" && state.settings.target === "yue" && !cantoneseRetried) {
-      cantoneseRetried = true;
-      recognizer.lang = "zh-HK";
-      micEngineStarted = false;
-      micStopRequested = false;
-      try {
-        recognizer.start();
-        return;
-      } catch (err) {
-        state.cantoneseMicHidden = true;
-      }
-    }
-    if (code === "language-not-supported" && state.settings.target === "yue") {
-      state.cantoneseMicHidden = true;
       listening = false;
-      micPointerId = null;
-      showStatus(t("noCantoneseMic"), true);
-      render();
-      return;
-    }
-    if (code === "aborted" && micStopRequested) {
-      listening = false;
-      micPointerId = null;
       paintMic(false);
-      if (face && !state.speaking) face.setMode("idle");
+      idleFace();
       return;
     }
-    if (code === "no-speech" && !micHeard) {
-      composerDraft = draftBeforeMic;
-      const live = document.querySelector("#field");
-      if (live) live.value = composerDraft;
+    const again = window.speechSynthesis;
+    if (again) {
+      try { again.cancel(); } catch (err) { /* idle */ }
     }
-    listening = false;
-    micPointerId = null;
-    showStatus(micErrorText(code), code !== "no-speech");
-    paintMic(false);
-    if (face && !state.speaking) face.setMode("idle");
-  };
-  recognizer.onend = () => {
-    listening = false;
-    micPointerId = null;
-    paintMic(false);
-    const fieldNow = document.querySelector("#field");
-    if (fieldNow && micHeard && composerDraft && fieldNow.value !== composerDraft) fieldNow.value = composerDraft;
-    if (!state.micMessage) {
-      const node = document.querySelector("#status");
-      if (node && !node.querySelector("a")) {
-        node.hidden = true;
-        node.textContent = "";
-      }
-      announce(t("stopped"));
-    }
-    if (face && !state.speaking) face.setMode("idle");
-  };
-  const started = () => {
-    listening = true;
-    state.micMessage = "";
-    announce(t("listening"));
-    const node = document.querySelector("#status");
-    if (node && !node.querySelector("a")) {
-      node.hidden = false;
-      node.className = "banner";
-      node.textContent = t("listening");
-    }
-    paintMic(true);
-  };
-  try {
-    recognizer.start();
-    started();
-  } catch (err) {
     try {
-      recognizer.continuous = false;
+      if (recognizer) {
+        try {
+          recognizer.onstart = null;
+          recognizer.onresult = null;
+          recognizer.onerror = null;
+          recognizer.onend = null;
+        } catch (err) { /* replace */ }
+      }
+      recognizer = armRecognizer();
       recognizer.start();
-      started();
-    } catch (err2) {
+    } catch (err) {
       listening = false;
-      showStatus(micErrorText(err2?.name || err?.name || "start"), true);
+      micEngineStarted = false;
+      paintMic(false);
+      showStatus(micErrorText(err?.name || "start"), true);
+      idleFace();
     }
-  }
-  if (event) event.preventDefault();
+  };
+  if (wasSpeaking) micStartTimer = window.setTimeout(begin, 250);
+  else begin();
 }
 
 function stopMic() {
+  window.clearTimeout(micStartTimer);
+  micStartTimer = 0;
   const wasListening = listening || micEngineStarted;
   micStopRequested = true;
-  micPointerId = null;
   listening = false;
   paintMic(false);
   if (wasListening && !state.micMessage) announce(t("stopped"));
@@ -1175,10 +1391,7 @@ function stopMic() {
 }
 
 function recognitionLang() {
-  if (state.screen === "ielts") return state.settings.accent === "en-US" ? "en-US" : "en-GB";
-  if (state.settings.target === "cmn") return "zh-CN";
-  if (state.settings.target === "yue") return cantoneseRetried ? "zh-HK" : "yue-Hant-HK";
-  return state.settings.accent === "en-US" ? "en-US" : "en-GB";
+  return recognitionLanguage(practiceTarget(), state.settings.accent);
 }
 
 function announce(text) {
@@ -1268,8 +1481,8 @@ function shapesFor(text, lineLang, visemes) {
 }
 
 function speakLine(bubble) {
-  const who = (state.catalogue.partners || []).find((item) => item.id === bubble.partner_id) || partner();
-  const lang = state.screen === "ielts" ? "en" : (state.settings.target || "en");
+  const who = (state.catalogue.partners || []).find((item) => item.id === bubble.partner_id) || activePartner();
+  const lang = practiceTarget();
   speakText(bubble.text, lang, who, bubble.visemes, bubble.mood || "happy");
 }
 
@@ -1282,15 +1495,15 @@ function speakDraft() {
   const field = document.querySelector("#field");
   const text = (field?.value || composerDraft || "").trim();
   if (!text) return;
-  const lang = state.screen === "ielts" || state.settings.target === "en" ? "en" : (state.settings.target || "en");
-  speakText(text, lang, partner(), null, "encourage");
+  const lang = practiceTarget();
+  speakText(text, lang, activePartner(), null, "encourage");
 }
 
 function speakSuggestion() {
   const learner = [...(state.daily?.bubbles || [])].reverse().find((item) => item.coaching?.suggested_reply);
   if (!learner) return;
-  const lang = state.settings.target || "en";
-  speakText(learner.coaching.suggested_reply, lang, partner(), learner.coaching.suggested_reply_visemes, "encourage");
+  const lang = practiceTarget();
+  speakText(learner.coaching.suggested_reply, lang, activePartner(), learner.coaching.suggested_reply_visemes, "encourage");
 }
 
 function speakPractice() {
@@ -1428,7 +1641,7 @@ async function mountFace() {
     face = null;
     return;
   }
-  const who = partner();
+  const who = state.screen === "daily" ? activePartner() : partner();
   if (!who) return;
   if (who.mesh && who.mesh_url) {
     try {

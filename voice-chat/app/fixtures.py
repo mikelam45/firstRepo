@@ -56,7 +56,7 @@ def build_fixture(payload: dict, scenario: dict) -> dict:
     text = _character(scenario["id"], target, level, fired, learner, status)
     including = turns_remaining_including_this(level, history)
     if learner_count(history) > 0 and including <= 1 and status != "met":
-        text = _wrap(target)
+        text = "Let us stop here for today." if scenario["id"] == "english-teacher" else _wrap(target)
     return _pack(text, coaching, target, support, fired, status)
 
 
@@ -109,6 +109,11 @@ def _safety(scenario: dict, target: str) -> dict:
             "cmn": "我只能帮您办理入住。",
             "en": "I can only help with check-in.",
         },
+        "english-teacher": {
+            "yue": "I can only help with your English sentences.",
+            "cmn": "I can only help with your English sentences.",
+            "en": "I can only help with your English sentences.",
+        },
     }[scenario["id"]][target]
     return {
         "contract": "1",
@@ -120,6 +125,8 @@ def _safety(scenario: dict, target: str) -> dict:
 
 
 def _opening(scenario_id: str, target: str, level: str) -> str:
+    if scenario_id == "english-teacher":
+        return "Hello, I am Nora. Send me a sentence and I will help with the English."
     if scenario_id == "hk-cha-chaan-teng":
         if target == "yue":
             if level == "intermediate":
@@ -193,6 +200,8 @@ def _signals_in_text(scenario_id: str, text: str) -> list[str]:
             word in text for word in ("轉左", "轉右", "向左", "向右", "左边", "右边")
         ):
             found.append("confirmed_the_turn")
+    elif scenario_id == "english-teacher":
+        return _teacher_signals(text)
     else:
         if any(word in text for word in ("我叫", "姓名", "名字")) or bool(
             re.search(r"\bmy name is\b|\bi'm\b|\bi am\b", lowered)
@@ -221,6 +230,8 @@ def _wrong_language(text: str, target: str) -> bool:
 
 
 def _coach(scenario_id: str, learner: str, target: str, support: str, level: str, fired: list[str]) -> dict:
+    if scenario_id == "english-teacher":
+        return _teacher_coaching(learner, support)
     if _wrong_language(learner, target):
         return _mismatch(scenario_id, learner, target, support)
     special = _special(scenario_id, learner, target, support)
@@ -442,6 +453,8 @@ def _suggest_missing(scenario_id: str, target: str, fired: list[str]) -> str | N
 
 
 def _character(scenario_id: str, target: str, level: str, fired: list[str], learner: str, status: str) -> str:
+    if scenario_id == "english-teacher":
+        return _teacher_line(learner)
     if status == "met":
         return {
             "hk-cha-chaan-teng": {"yue": "好，埋單。一共廿八蚊。", "cmn": "好的，我来买单。一共二十八块。", "en": "Sure, here is the bill. That's twenty-eight dollars."},
@@ -481,6 +494,41 @@ def _translate(text: str, support: str) -> str:
         "我哋今日先到呢度。唔該。": ("Let's wrap up here.", "我们先到这里。", "我哋今日先到呢度。唔該。"),
         "Let's wrap up here.": ("Let's wrap up here.", "我们先到这里。", "我哋今日先到呢度。"),
         "我们先到这里。": ("Let's wrap up here.", "我们先到这里。", "我哋今日先到呢度。"),
+        "Hello, I am Nora. Send me a sentence and I will help with the English.": (
+            "Hello, I am Nora. Send me a sentence and I will help with the English.",
+            "你好，我是 Nora。发我一句英语，我来帮你改。",
+            "你好，我係 Nora。傳一句英文畀我，我幫你改。",
+        ),
+        "Let us fix the grammar in that sentence.": (
+            "Let us fix the grammar in that sentence.",
+            "我们来改这句的语法。",
+            "我哋嚟改呢句嘅文法。",
+        ),
+        "One word in that sentence does not match the meaning.": (
+            "One word in that sentence does not match the meaning.",
+            "这句里有一个词和意思不相符。",
+            "呢句有個字同意思唔夾。",
+        ),
+        "That phrase is not the one English uses here.": (
+            "That phrase is not the one English uses here.",
+            "这个短语不是英语这里的说法。",
+            "呢個短語唔係英文呢度嘅講法。",
+        ),
+        "That sentence works. Send another when you are ready.": (
+            "That sentence works. Send another when you are ready.",
+            "这句可以。准备好了再发一句。",
+            "呢句得。準備好再傳一句。",
+        ),
+        "Send that sentence in English and I will help.": (
+            "Send that sentence in English and I will help.",
+            "请用英语把那句发给我，我来帮你。",
+            "請用英文傳嗰句，我嚟幫你。",
+        ),
+        "Let us stop here for today.": (
+            "Let us stop here for today.",
+            "今天先到这里。",
+            "今日先到呢度。",
+        ),
     }
     if text in table:
         return table[text][{"en": 0, "cmn": 1, "yue": 2}[support]]
@@ -493,3 +541,226 @@ def _translate(text: str, support: str) -> str:
 
 def _t(support: str, en: str, cmn: str, yue: str) -> str:
     return {"en": en, "cmn": cmn, "yue": yue}[support]
+
+
+_TEACHER_VERBS = {
+    "go", "eat", "drink", "see", "buy", "make", "do", "study", "learn", "play",
+    "come", "take", "have", "get", "walk", "read", "write", "speak", "say",
+    "visit", "meet", "watch", "cook", "work", "sleep", "leave", "start",
+}
+
+_TEACHER_PAST = {
+    "go": "went",
+    "eat": "ate",
+    "see": "saw",
+    "come": "came",
+    "buy": "bought",
+    "drink": "drank",
+    "walk": "walked",
+}
+
+_TEACHER_SAY = {
+    "grammar": "Let us fix the grammar in that sentence.",
+    "vocabulary": "One word in that sentence does not match the meaning.",
+    "phrase": "That phrase is not the one English uses here.",
+    "mismatch": "Send that sentence in English and I will help.",
+    "fine": "That sentence works. Send another when you are ready.",
+}
+
+_PHRASE_FIXES = (
+    (
+        re.compile(r"\bdiscuss about\b", re.I),
+        "discuss",
+        (
+            "English uses discuss plus the topic. About is an extra word.",
+            "英语里 discuss 直接接话题，about 是多出来的。",
+            "英文 discuss 直接接話題，about 係多出嚟嘅。",
+        ),
+    ),
+    (
+        re.compile(r"\breturn back\b", re.I),
+        "return",
+        (
+            "Return already means go back. Back is an extra word.",
+            "return 已经是回去。back 是多出来的。",
+            "return 已經係返去。back 係多出嚟嘅。",
+        ),
+    ),
+    (
+        re.compile(r"\bmore better\b", re.I),
+        "better",
+        (
+            "Better is already the comparative. More is an extra word.",
+            "better 已经是比较级。more 是多出来的。",
+            "better 已經係比較級。more 係多出嚟嘅。",
+        ),
+    ),
+    (
+        re.compile(r"\bexplain me\b", re.I),
+        "explain to me",
+        (
+            "Explain needs to before the person: explain to me.",
+            "explain 后面说到人要用 to：explain to me。",
+            "explain 後面講到人要用 to：explain to me。",
+        ),
+    ),
+)
+
+
+def _teacher_signals(text: str) -> list[str]:
+    if re.search(r"[A-Za-z]", text):
+        return ["shared_sentence"]
+    return []
+
+
+def _teacher_line(learner: str) -> str:
+    kind = _teacher_coaching(learner, "en")["corrections"]
+    if not kind:
+        return _TEACHER_SAY["fine"]
+    return _TEACHER_SAY.get(kind[0]["type"], _TEACHER_SAY["fine"])
+
+
+def _tidy_sentence(text: str) -> str:
+    cleaned = re.sub(r"\s+", " ", text.strip())
+    if cleaned and cleaned[-1] not in ".!?":
+        cleaned += "."
+    return cleaned
+
+
+def _sentence_key(text: str) -> str:
+    return re.sub(r"\s+", " ", text.strip()).lower().rstrip(".!?")
+
+
+def _teacher_pack(support: str, ctype: str, quote: str, why: tuple[str, str, str], suggestion: str) -> dict:
+    return {
+        "praise": None,
+        "corrections": [{"type": ctype, "quote": quote, "why": _t(support, *why)}],
+        "suggested_reply": suggestion,
+        "reading_hints": [],
+    }
+
+
+def _teacher_coaching(learner: str, support: str) -> dict:
+    original = learner.strip()
+    text = re.sub(r"\s+", " ", original)
+    if _wrong_language(original, "en"):
+        return _teacher_pack(
+            support,
+            "mismatch",
+            original[:80],
+            (
+                "Send the sentence in English and I will correct it.",
+                "请用英语写这句，我再帮你改。",
+                "請用英文寫呢句，我再幫你改。",
+            ),
+            "I wanted to go to school yesterday.",
+        )
+    key = _sentence_key(original)
+    if key == "i want go to school yesterday":
+        match = re.search(r"want\s+go", original, re.I)
+        quote = original[match.start():match.end()] if match else "want go"
+        return _teacher_pack(
+            support,
+            "grammar",
+            quote,
+            (
+                "After want, use to before the verb. Yesterday needs the past: wanted.",
+                "want 后面要加 to 再接动词。yesterday 要用过去式 wanted。",
+                "want 後面要加 to 先接動詞。yesterday 要用過去式 wanted。",
+            ),
+            "I wanted to go to school yesterday.",
+        )
+    if key == "i am very boring in the class":
+        match = re.search(r"boring", original, re.I)
+        quote = original[match.start():match.end()] if match else "boring"
+        return _teacher_pack(
+            support,
+            "vocabulary",
+            quote,
+            (
+                "Boring describes something that makes you feel dull. You feel bored.",
+                "boring 用来形容让人觉得闷的事物。你自己的感觉要用 bored。",
+                "boring 係形容令人覺得悶嘅事物。你自己嘅感覺要用 bored。",
+            ),
+            "I am very bored in the class.",
+        )
+    patterned = _teacher_patterns(original, support)
+    if patterned is not None:
+        return patterned
+    return {
+        "praise": _t(support, "That sentence works.", "这句可以。", "呢句得。"),
+        "corrections": [],
+        "suggested_reply": None,
+        "reading_hints": [],
+    }
+
+
+def _teacher_patterns(text: str, support: str) -> dict | None:
+    feeling = re.search(
+        r"\b(?:i am|i'm|i feel|i felt|he is|she is|we are|they are|you are)\b(?:\s+\w+){0,4}\s+(boring)\b",
+        text,
+        re.I,
+    )
+    if feeling:
+        quote = text[feeling.start(1):feeling.end(1)]
+        suggestion = _tidy_sentence(text[:feeling.start(1)] + "bored" + text[feeling.end(1):])
+        return _teacher_pack(
+            support,
+            "vocabulary",
+            quote,
+            (
+                "Boring describes something that makes you feel dull. You feel bored.",
+                "boring 用来形容让人觉得闷的事物。你自己的感觉要用 bored。",
+                "boring 係形容令人覺得悶嘅事物。你自己嘅感覺要用 bored。",
+            ),
+            suggestion,
+        )
+    want = re.search(r"\b(want|need|needs|needed)\s+(?!to\b)([A-Za-z]+)\b", text, re.I)
+    if want and want.group(2).lower() in _TEACHER_VERBS:
+        quote = text[want.start():want.end()]
+        helper = want.group(1)
+        verb = want.group(2)
+        past = bool(re.search(r"\byesterday\b|\blast night\b|\blast week\b", text, re.I))
+        if helper.lower() in {"want", "need"} and past:
+            replacement = f"{helper.lower()}ed to {verb}"
+            why = (
+                "After want or need, use to before the verb. A past time needs the past form.",
+                "want 或 need 后面要加 to。说到过去要用过去式。",
+                "want 或者 need 後面要加 to。講到過去要用過去式。",
+            )
+        else:
+            replacement = f"{helper} to {verb}"
+            why = (
+                "After want or need, use to before the verb.",
+                "want 或 need 后面要加 to 再接动词。",
+                "want 或者 need 後面要加 to 先接動詞。",
+            )
+        suggestion = _tidy_sentence(text[:want.start()] + replacement + text[want.end():])
+        return _teacher_pack(support, "grammar", quote, why, suggestion)
+    if re.search(r"\byesterday\b", text, re.I) and not re.search(
+        r"\b(went|ate|saw|came|bought|drank|walked|wanted|needed|was|were)\b", text, re.I
+    ):
+        bare = re.search(r"\b(go|eat|see|come|buy|drink|walk)\b", text, re.I)
+        if bare:
+            verb = bare.group(1).lower()
+            quote = text[bare.start():bare.end()]
+            suggestion = _tidy_sentence(text[:bare.start()] + _TEACHER_PAST[verb] + text[bare.end():])
+            return _teacher_pack(
+                support,
+                "grammar",
+                quote,
+                (
+                    "Yesterday needs a past verb.",
+                    "yesterday 后面要用过去式动词。",
+                    "yesterday 後面要用過去式動詞。",
+                ),
+                suggestion,
+            )
+    for pattern, replacement, why in _PHRASE_FIXES:
+        match = pattern.search(text)
+        if not match:
+            continue
+        quote = text[match.start():match.end()]
+        suggestion = _tidy_sentence(text[:match.start()] + replacement + text[match.end():])
+        return _teacher_pack(support, "phrase", quote, why, suggestion)
+    return None
