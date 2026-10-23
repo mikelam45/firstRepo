@@ -1,4 +1,4 @@
-import { IllustratedPortrait, Portrait, englishVisemes, pinyinVisemes } from "./face.js?v=20261023-mouthonly";
+import { IllustratedPortrait, Portrait, englishVisemes, pinyinVisemes } from "./face.js?v=20261023-chloe-voice";
 import { collectTranscript, recognitionLanguage, transcriptPiece } from "./transcript.js";
 
 const I18N = {
@@ -506,13 +506,19 @@ function render() {
 }
 
 function scrollThread(force = false) {
-  const thread = document.querySelector("#thread") || document.querySelector(".thread");
-  if (!thread) return;
-  const nearBottom = thread.scrollHeight - thread.scrollTop - thread.clientHeight <= 80;
-  if (force || !threadUserScrolled || nearBottom) {
-    ignoreThreadScrollUntil = performance.now() + (force ? 50 : 500);
-    thread.scrollTo({ top: thread.scrollHeight, behavior: force ? "auto" : "smooth" });
-  }
+  // Wait until the browser has laid out the newly rendered content; otherwise
+  // scrollHeight is stale and the thread jumps back to the top (oldest).
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      const thread = document.querySelector("#thread") || document.querySelector(".thread");
+      if (!thread) return;
+      const nearBottom = thread.scrollHeight - thread.scrollTop - thread.clientHeight <= 120;
+      if (force || !threadUserScrolled || nearBottom) {
+        ignoreThreadScrollUntil = performance.now() + (force ? 80 : 600);
+        thread.scrollTop = thread.scrollHeight;
+      }
+    });
+  });
 }
 
 function view() {
@@ -840,7 +846,9 @@ app.addEventListener("scroll", (event) => {
   const target = event.target;
   if (!target?.classList?.contains("thread")) return;
   if (performance.now() < ignoreThreadScrollUntil) return;
-  threadUserScrolled = true;
+  const nearBottom = target.scrollHeight - target.scrollTop - target.clientHeight <= 120;
+  // Pause auto-scroll while the user is reading older messages; resume at the bottom.
+  threadUserScrolled = !nearBottom;
 }, true);
 
 app.addEventListener("pointerdown", (event) => {
@@ -1061,6 +1069,8 @@ async function submitField() {
     await submitIelts(text);
     return;
   }
+  // The user is sending a new message, so they want to see the reply.
+  threadUserScrolled = false;
   const bubble = { role: "learner", text, pending: true };
   state.daily.bubbles.push(bubble);
   clearDraft();
@@ -1137,7 +1147,10 @@ async function postTurn(history) {
   if (state.daily.goal === "met" || state.daily.cap_reached) saveHistoryRow();
   render();
   const last = state.daily.bubbles[state.daily.bubbles.length - 1];
-  if (last?.role === "character" && state.settings.autoplay) speakLine(last);
+  if (last?.role === "character") {
+    scrollThread(true);
+    if (state.settings.autoplay) speakLine(last);
+  }
 }
 
 function markLearnerError(message) {
@@ -1537,21 +1550,41 @@ function isCantoneseVoice(voice) {
   return code.startsWith("zh-hk") || code.startsWith("yue");
 }
 
+function isNamedFemaleVoice(name) {
+  return /female|woman|samantha|victoria|karen|moira|fiona|serena|kate|libby|sonia|aria|jenny|tessa|zira|hazel|susan|allison|ava|emma|emily|joanna|salli|kimberly|kendra|nicole|natasha|veena|xiaoxiao|huihui|yaoyao|sinji|tingting|meijia/i.test(name || "");
+}
+
+function isNamedMaleVoice(name) {
+  return /\bmale\b|daniel|alex|rishi|\btom\b|david|mark|james|george|fred|bruce|aaron|guy|matthew|justin|joey|brian|eric|oliver|thomas/i.test(name || "");
+}
+
+/** Prefer sweet, younger-sounding female names (Chloe / women) over generic or older voices. */
+function youngSweetFemaleBonus(name) {
+  const n = name || "";
+  // Explicit young/sweet English female voices (Chrome, macOS, Edge, etc.)
+  if (/google uk english female|uk english female|microsoft zira|zira|samantha|karen|victoria|tessa|fiona|aria|jenny|moira|serena|kate|libby|sonia|hazel|susan|allison|ava|emma|emily|joanna|salli|kimberly|kendra|nicole|natasha/i.test(n)) {
+    return 3;
+  }
+  if (/female|woman/i.test(n)) return 2;
+  if (isNamedFemaleVoice(n)) return 1;
+  return 0;
+}
+
 function byGender(list, person) {
   const wantMale = person?.gender === "man";
-  const female = /female|woman|samantha|victoria|karen|moira|fiona|serena|kate|libby|sonia|aria|xiaoxiao|huihui|yaoyao|sinji|tingting|meijia/i;
-  const male = /\bmale\b|daniel|alex|rishi|\btom\b/i;
   const score = (voice) => {
     const name = voice?.name || "";
-    const isFemale = female.test(name);
-    const isMale = !isFemale && male.test(name);
-    if (wantMale && isMale) return 2;
-    if (!wantMale && isFemale) return 2;
-    if (wantMale && isFemale) return 0;
-    if (!wantMale && isMale) return 0;
-    return 1;
+    const isFemale = isNamedFemaleVoice(name);
+    const isMale = !isFemale && isNamedMaleVoice(name);
+    let base = 1;
+    if (wantMale && isMale) base = 2;
+    else if (!wantMale && isFemale) base = 2;
+    else if (wantMale && isFemale) base = 0;
+    else if (!wantMale && isMale) base = 0;
+    if (!wantMale) base += youngSweetFemaleBonus(name);
+    return base;
   };
-  return [...list].sort((a, b) => score(b) - score(a));
+  return [...list].sort((a, b) => score(b) - score(a) || String(a.name || "").localeCompare(String(b.name || "")));
 }
 
 function voiceFor(lineLang, who) {
@@ -1571,15 +1604,38 @@ function voiceFor(lineLang, who) {
     if (pool.length) return byGender(pool, person)[0];
     return list.find((voice) => voice.default) || list[0] || null;
   }
-  const prefer = state.settings.accent === "en-US" ? "en-us" : "en-gb";
-  const exact = list.filter((voice) => voiceCode(voice).startsWith(prefer));
-  if (exact.length) return byGender(exact, person)[0];
   const english = list.filter((voice) => {
     const code = voiceCode(voice);
     return code === "en" || code.startsWith("en-");
   });
-  if (english.length) return byGender(english, person)[0];
+  // Chloe is a London teacher: prefer a sweet en-GB female voice when one exists.
+  const preferGb = person?.id === "chloe" || state.settings.accent !== "en-US";
+  const prefer = preferGb ? "en-gb" : "en-us";
+  const exact = english.filter((voice) => voiceCode(voice).startsWith(prefer));
+  if (exact.length) {
+    const ranked = byGender(exact, person);
+    if (person?.id === "chloe") {
+      const sweetGb = ranked.find((voice) => youngSweetFemaleBonus(voice.name) > 0);
+      if (sweetGb) return sweetGb;
+    } else {
+      return ranked[0];
+    }
+  }
+  if (english.length) {
+    const ranked = byGender(english, person);
+    if (person?.id === "chloe" || person?.gender === "woman") {
+      const sweet = ranked.find((voice) => youngSweetFemaleBonus(voice.name) > 0);
+      if (sweet) return sweet;
+    }
+    return ranked[0];
+  }
   return list.find((voice) => voice.default) || list[0] || null;
+}
+
+function utterancePitch(person) {
+  if (person?.gender === "man") return 1;
+  // Slightly brighter for women / Chloe without going cartoonish.
+  return person?.id === "chloe" ? 1.12 : 1.08;
 }
 
 function utteranceLang(lineLang, voice) {
@@ -1768,6 +1824,7 @@ function speakText(text, lineLang, who, visemes, mood) {
       try { utterance.voice = voice; } catch (err) { /* lang is already set; still speak */ }
     }
     utterance.rate = rate;
+    utterance.pitch = utterancePitch(person);
     utterance.onend = finishWhenReady;
     utterance.onerror = finishWhenReady;
     utterance.onboundary = (event) => {

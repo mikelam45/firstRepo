@@ -301,7 +301,8 @@ export class Portrait {
       if (age < 150) blink = Math.sin((age / 150) * Math.PI);
       else this.blinkStart = -1;
     }
-    const smile = speaking ? Math.min(mood.smile, 0.26) : mood.smile;
+    // Speak mode is mouth-only: no smile/brow/cheek/chin so the brow mesh stays sharp.
+    const smile = speaking ? 0 : mood.smile;
     const target = {
       open: shape.open,
       round: shape.round,
@@ -351,29 +352,39 @@ export class Portrait {
       const y = p[1];
       const hx = smoothstep(1 - Math.abs(dx) / 1.35);
       const lip = isLip(i);
+      // During speech, never move points above the upper-lip edge (keeps brows sharp).
+      const aboveLip = speaking && y < lipTop - 1e-4;
       let dy = 0;
-      if (!speaking || lip) {
+      if ((!speaking || lip) && !aboveLip) {
         if (!onLowerLip(i, y, cy)) {
-          const fade = y >= lipTop ? 1 : smoothstep((y - nose) / Math.max(0.02, lipTop - nose));
+          // Idle can fade toward the nose; speak mode only moves the lip sheet itself.
+          const fade = speaking
+            ? 1
+            : (y >= lipTop ? 1 : smoothstep((y - nose) / Math.max(0.02, lipTop - nose)));
           dy = -U * fade * hx;
         } else if (y <= lowerY) {
           dy = D * hx;
-        } else {
+        } else if (!speaking) {
           const span = Math.max(0.02, chinY - lowerY);
           const jawT = Math.min(1, (y - lowerY) / span);
           let mag = D * (1 - jawT) + chinDrop * jawT;
           if (y > chinY) mag *= Math.max(0, 1 - (y - chinY) / limits.clearance);
           dy = mag * hx;
+        } else {
+          // Speak: lower lip only — no chin drop that pulls cheek/jaw mesh.
+          dy = D * hx;
         }
       }
       const side = dx >= 0 ? 1 : -1;
       const corner = smoothstep(Math.max(0, Math.abs(dx) - 0.2) / 0.45);
       let dxPx = 0;
       let smileDy = 0;
-      if (!speaking || lip) {
+      if ((!speaking || lip) && !aboveLip) {
         dxPx = side * s.wide * mw * 0.05 * corner - side * s.round * mw * 0.2 * corner;
-        smileDy = s.smile * mw * 0.05 * corner;
-        dxPx += side * s.smile * mw * 0.02 * corner;
+        if (!speaking) {
+          smileDy = s.smile * mw * 0.05 * corner;
+          dxPx += side * s.smile * mw * 0.02 * corner;
+        }
       }
       dy -= smileDy;
       pts[i][0] = p[0] + dxPx;
@@ -658,8 +669,8 @@ export class IllustratedPortrait {
       if (age < 150) blink = Math.sin((age / 150) * Math.PI);
       else this.blinkStart = -1;
     }
-    const nod = this.reduceMotion ? 0 : this.mode === "listen" ? Math.sin(now / 620) * 0.045 : 0;
-    const smile = speaking ? Math.min(mood.smile, 0.26) : mood.smile;
+    const nod = this.reduceMotion || speaking ? 0 : this.mode === "listen" ? Math.sin(now / 620) * 0.045 : 0;
+    const smile = speaking ? 0 : mood.smile;
     const target = {
       open: shape.open,
       round: shape.round,
