@@ -28,6 +28,12 @@ const I18N = {
     noMic: "No microphone found.",
     noCantoneseMic: "Cantonese recognition isn’t available in this browser. Type in Cantonese.",
     noVoice: "No matching voice is installed on this device.",
+    noCantoneseVoice: "No Cantonese voice is installed, so this line stays silent instead of using Mandarin. The mouth can still move.",
+    noSynth: "This browser has no speech synthesis. Typing still works.",
+    micInsecure: "Voice input is blocked on this address because it is not a secure localhost page. Open",
+    micUnsupported: "This browser has no speech recognition. You can type instead.",
+    micError: "Voice input failed ({code}). You can type instead.",
+    noSpeech: "No speech heard. Hold the microphone while you speak. The text stays in the box; Enter sends it.",
     adult: "LingoCoach is for adult learners.",
     privacy: "Transcripts stay on this device and are sent as text for each turn. Browser recognition may send audio to the browser vendor. This server does not keep audio.",
     historyLoss: "Clearing this browser’s data deletes history. There is no account.",
@@ -108,6 +114,12 @@ const I18N = {
     noMic: "没有找到麦克风。",
     noCantoneseMic: "这个浏览器不能识别粤语。请用粤语打字。",
     noVoice: "这台设备没有对应的语音。",
+    noCantoneseVoice: "这台设备没有粤语语音，所以这句不会用普通话读出来。嘴仍然可以动。",
+    noSynth: "这个浏览器不能朗读。打字仍然可以用。",
+    micInsecure: "这个地址不能用语音输入，因为它不是本机的安全页面。请打开",
+    micUnsupported: "这个浏览器没有语音识别。你可以打字。",
+    micError: "语音输入失败（{code}）。你可以打字。",
+    noSpeech: "没有听到说话。请按住麦克风再说。文字会留在框里，按回车送出。",
     adult: "LingoCoach 面向成年学习者。",
     privacy: "对话留在这台设备上，每次只把文字发给模型。浏览器识别可能会把声音发给浏览器厂商。这个服务器不保存录音。",
     historyLoss: "清除浏览器数据会丢掉历史。没有账号。",
@@ -188,6 +200,12 @@ const I18N = {
     noMic: "搵唔到咪。",
     noCantoneseMic: "呢個瀏覽器認唔到廣東話。請打廣東話。",
     noVoice: "呢部機冇對應嘅語音。",
+    noCantoneseVoice: "呢部機冇廣東話語音，所以呢句唔會用普通話讀出嚟。個嘴仍然可以郁。",
+    noSynth: "呢個瀏覽器唔識朗讀。打字仍然用到。",
+    micInsecure: "呢個地址用唔到語音輸入，因為佢唔係本機安全頁面。請打開",
+    micUnsupported: "呢個瀏覽器冇語音識別。你可以打字。",
+    micError: "語音輸入失敗（{code}）。你可以打字。",
+    noSpeech: "聽唔到你講。撳住個咪再講。文字會留喺格入面，撳 Enter 送出。",
     adult: "LingoCoach 係俾成年學習者用。",
     privacy: "對話留喺呢部機。每次只係將文字送去模型。瀏覽器識別可能會將聲音交俾瀏覽器公司。呢個伺服器唔會留低錄音。",
     historyLoss: "清咗瀏覽器資料就冇紀錄。冇帳戶。",
@@ -257,6 +275,7 @@ const state = {
   history: [],
   micHidden: false,
   cantoneseMicHidden: false,
+  micMessage: "",
   lastBody: null,
   speaking: null,
 };
@@ -270,6 +289,16 @@ let recognizer = null;
 let listening = false;
 let draftBeforeMic = "";
 let cantoneseRetried = false;
+let composerDraft = "";
+let speakToken = 0;
+let speakTimer = 0;
+let mouthTimer = 0;
+let activeUtterance = null;
+let micPointerId = null;
+let micEngineStarted = false;
+let micStopRequested = false;
+let micHeard = false;
+let acceptMicText = false;
 
 function t(key) {
   const pack = I18N[state.settings.support] || I18N.en;
@@ -448,7 +477,7 @@ function dailyView() {
 
 function bubbleHtml(bubble, index) {
   if (bubble.role === "learner") {
-    return `<article class="bubble learner"><div class="said"><div class="text">${esc(bubble.text)}</div></div>${coachHtml(bubble, index)}</article>`;
+    return `<article class="bubble learner"><div class="said"><div class="row"><p class="text grow">${esc(bubble.text)}</p><button class="icon-btn speak" type="button" data-act="speak" data-index="${index}" aria-label="${esc(t("play"))}">▶</button></div></div>${coachHtml(bubble, index)}</article>`;
   }
   const who = (state.catalogue.partners || []).find((item) => item.id === bubble.partner_id);
   const showTranslation = state.settings.support !== state.settings.target && bubble.translation;
@@ -491,13 +520,17 @@ function coachHtml(bubble) {
 }
 
 function composerHtml() {
-  const mic = speechAvailable() ? `<button class="mic ${listening ? "live" : ""}" id="mic" type="button" aria-label="${esc(t("placeholder"))}">${listening ? esc(t("listening")) : "🎤"}</button>` : "";
+  const block = micBlock();
+  const mic = block === "" || block === "insecure"
+    ? `<button class="mic ${listening ? "live" : ""}" id="mic" type="button" aria-label="${esc(t("placeholder"))}">${listening ? esc(t("listening")) : "🎤"}</button>`
+    : "";
   return `<form class="composer" id="composer">
     ${mic}
-    <textarea id="field" rows="1" placeholder="${esc(t("placeholder"))}" aria-label="${esc(t("placeholder"))}"></textarea>
+    <textarea id="field" rows="1" placeholder="${esc(t("placeholder"))}" aria-label="${esc(t("placeholder"))}">${esc(composerDraft)}</textarea>
+    <button class="icon-btn speak" type="button" data-act="speak-draft" aria-label="${esc(t("play"))}">▶</button>
     <button class="send" type="submit">${esc(t("send"))}</button>
   </form>
-  ${state.cantoneseMicHidden ? `<p class="banner">${esc(t("noCantoneseMic"))}</p>` : ""}`;
+  ${statusHtml()}`;
 }
 
 function ieltsView() {
@@ -516,8 +549,8 @@ function ieltsView() {
     <div class="row" style="padding:0 16px"><strong>${esc(who.name)}</strong><span class="muted">${esc(who.city)} · 27</span><button class="ghost" type="button" data-act="partners" ${session.kind === "mock" && (session.phase === "part2_prep" || session.phase === "part2_speak") ? "disabled" : ""}>${esc(t("change"))}</button></div>
     <div class="thread">
       ${cue}
-      ${session.question ? `<article class="card"><p class="text">${esc(session.question)}</p>${gloss ? `<details><summary>${esc(t("whatAsking"))}</summary><p>${esc(gloss)}</p></details>` : ""}</article>` : ""}
-      ${(session.answers || []).map((item) => `<article class="bubble learner"><div class="said">${esc(item.text)}</div></article>`).join("")}
+      ${session.question ? `<article class="card"><div class="row"><p class="text grow">${esc(session.question)}</p><button class="icon-btn speak" type="button" data-act="speak-question" aria-label="${esc(t("play"))}">▶</button></div>${gloss ? `<details><summary>${esc(t("whatAsking"))}</summary><p>${esc(gloss)}</p></details>` : ""}</article>` : ""}
+      ${(session.answers || []).map((item, index) => `<article class="bubble learner"><div class="said"><div class="row"><p class="text grow">${esc(item.text)}</p><button class="icon-btn speak" type="button" data-act="speak-answer" data-index="${index}" aria-label="${esc(t("play"))}">▶</button></div></div></article>`).join("")}
       ${review}
       ${state.notice ? `<p class="error">${esc(state.notice)}</p>` : ""}
     </div>
@@ -633,6 +666,10 @@ app.addEventListener("submit", (event) => {
   submitField();
 });
 
+app.addEventListener("input", (event) => {
+  if (event.target.id === "field") composerDraft = event.target.value;
+});
+
 app.addEventListener("keydown", (event) => {
   if (event.key === "Enter" && event.target.id === "field" && !event.shiftKey) {
     event.preventDefault();
@@ -645,15 +682,14 @@ app.addEventListener("keydown", (event) => {
   }
 });
 
-window.addEventListener("pointerup", (event) => {
-  if (listening && event.target?.id !== "field") stopMic();
-});
-window.addEventListener("pointercancel", () => { if (listening) stopMic(); });
+window.addEventListener("pointerup", releaseMic);
+window.addEventListener("pointercancel", releaseMic);
 
 app.addEventListener("pointerdown", (event) => {
   const mic = event.target.closest("#mic");
   if (!mic) return;
   event.preventDefault();
+  try { mic.setPointerCapture(event.pointerId); } catch (err) { /* pointer already gone */ }
   startMic(event);
 });
 
@@ -662,7 +698,7 @@ function onAct(act, data) {
   if (act === "close-sheet") { state.sheet = null; render(); return; }
   if (act === "partners") { state.sheet = "partners"; render(); return; }
   if (act === "history") { state.screen = "history"; state.sheet = null; render(); return; }
-  if (act === "home") { state.screen = "home"; state.sheet = null; state.ielts = null; render(); return; }
+  if (act === "home") { stopMic(); state.screen = "home"; state.sheet = null; state.ielts = null; render(); return; }
   if (act === "save-settings") { applySettings(); return; }
   if (act === "confirm-no") { state.confirm = null; render(); return; }
   if (act === "confirm-yes") { const pending = state.confirm; state.confirm = null; pending?.run(); return; }
@@ -673,6 +709,13 @@ function onAct(act, data) {
   if (act === "drill") { startIelts(loadPlan().next ? "drill" : "diagnostic"); return; }
   if (act === "mock") { startIelts("mock"); return; }
   if (act === "speak") { speakBubble(Number(data.index)); return; }
+  if (act === "speak-draft") { speakDraft(); return; }
+  if (act === "speak-question") { speakExaminer(state.ielts?.question, "question"); return; }
+  if (act === "speak-answer") {
+    const text = state.ielts?.answers?.[Number(data.index)]?.text;
+    if (text) speakText(text, "en", partner(), null, "encourage");
+    return;
+  }
   if (act === "speak-suggest") { speakSuggestion(); return; }
   if (act === "speak-practice") { speakPractice(); return; }
   if (act === "translate") {
@@ -734,6 +777,7 @@ async function openDaily(scenarioId, force) {
   state.screen = "daily";
   state.sheet = null;
   state.notice = "";
+  composerDraft = "";
   if (saved && saved.scenario_id === scenarioId) {
     state.daily = saved;
     render();
@@ -766,15 +810,17 @@ function saveOpen() {
 
 async function submitField() {
   const field = document.querySelector("#field");
-  const text = (field?.value || "").trim();
+  const text = (field?.value || composerDraft || "").trim();
   if (!text || state.daily?.loading || state.ielts?.loading) return;
+  stopMic();
   if (state.screen === "ielts") {
+    clearDraft();
     await submitIelts(text);
     return;
   }
   const bubble = { role: "learner", text, pending: true };
   state.daily.bubbles.push(bubble);
-  if (field) field.value = "";
+  clearDraft();
   render();
   const history = state.daily.bubbles.filter((item) => item.role === "learner" || item.role === "character").slice(-12).map((item) => ({ role: item.role, text: item.text }));
   await postTurn(history);
@@ -883,90 +929,253 @@ function pickPartner(id) {
   const live = document.querySelector("#live");
   if (live) live.textContent = `${t("nowTalking")} ${name}`;
   if (state.speaking) {
-    const line = state.speaking;
-    window.speechSynthesis?.cancel();
+    const line = { ...state.speaking };
     render();
-    speakLine(line);
+    speakText(line.text, line.lineLang, partner(), line.visemes, line.mood);
     return;
   }
   render();
 }
 
+function localhostHref() {
+  const port = location.port ? `:${location.port}` : "";
+  return `http://127.0.0.1${port}${location.pathname || "/"}${location.search || ""}`;
+}
+
+function micBlock() {
+  if (!window.isSecureContext) return "insecure";
+  if (!(window.SpeechRecognition || window.webkitSpeechRecognition)) return "unsupported";
+  if (state.micHidden) return "hidden";
+  if (state.settings.target === "yue" && state.cantoneseMicHidden) return "cantonese";
+  return "";
+}
+
 function speechAvailable() {
-  if (state.micHidden || (state.settings.target === "yue" && state.cantoneseMicHidden)) return false;
-  return Boolean(window.SpeechRecognition || window.webkitSpeechRecognition);
+  return micBlock() === "";
+}
+
+function statusHtml() {
+  const block = micBlock();
+  if (block === "insecure") {
+    const url = localhostHref();
+    return `<p id="status" class="banner error" role="status">${esc(t("micInsecure"))} <a class="inline" href="${esc(url)}">${esc(url)}</a></p>`;
+  }
+  const text = listening
+    ? t("listening")
+    : state.micMessage || (block === "unsupported" ? t("micUnsupported") : block === "cantonese" ? t("noCantoneseMic") : "");
+  if (!text) return `<p id="status" class="banner" role="status" hidden></p>`;
+  const error = Boolean(state.micMessage) || block === "unsupported" || block === "cantonese";
+  return `<p id="status" class="banner${error ? " error" : ""}" role="status">${esc(text)}</p>`;
+}
+
+function showStatus(text, isError) {
+  state.micMessage = text || "";
+  announce(text || "");
+  const node = document.querySelector("#status");
+  if (!node) return;
+  node.hidden = !text;
+  node.className = isError ? "banner error" : "banner";
+  node.textContent = text || "";
+}
+
+function clearDraft() {
+  acceptMicText = false;
+  composerDraft = "";
+  const field = document.querySelector("#field");
+  if (field) field.value = "";
+}
+
+function paintMic(live) {
+  const mic = document.querySelector("#mic");
+  if (!mic) return;
+  mic.classList.toggle("live", Boolean(live));
+  mic.textContent = live ? t("listening") : "🎤";
+}
+
+function recognitionResults(ev) {
+  const results = ev?.results;
+  if (!results || typeof results.length !== "number") return "";
+  let text = "";
+  for (let i = 0; i < results.length; i += 1) {
+    const piece = results[i]?.[0]?.transcript || results[i]?.item?.(0)?.transcript || "";
+    text += piece;
+  }
+  return text.trim();
+}
+
+function writeRecognition(text) {
+  const heard = String(text || "").trim();
+  if (!heard) return;
+  micHeard = true;
+  composerDraft = heard;
+  const field = document.querySelector("#field");
+  if (field && field.value !== heard) field.value = heard;
+}
+
+function micErrorText(code) {
+  if (!window.isSecureContext) return `${t("micInsecure")} ${localhostHref()}`;
+  if (code === "not-allowed" || code === "service-not-allowed") return `${t("micBlocked")} (${code})`;
+  if (code === "network") return t("recNetwork");
+  if (code === "audio-capture") return t("noMic");
+  if (code === "no-speech") return t("noSpeech");
+  return t("micError").replace("{code}", code || "unknown");
+}
+
+function releaseMic(event) {
+  if (micPointerId == null) return;
+  if (event && event.pointerId != null && event.pointerId !== micPointerId) return;
+  stopMic();
 }
 
 function startMic(event) {
+  const block = micBlock();
+  if (block === "insecure") {
+    showStatus(`${t("micInsecure")} ${localhostHref()}`, true);
+    return;
+  }
+  if (block === "unsupported" || block === "hidden") {
+    showStatus(t("micUnsupported"), true);
+    return;
+  }
+  if (block === "cantonese") {
+    showStatus(t("noCantoneseMic"), true);
+    return;
+  }
   const Ctor = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!Ctor || listening) return;
-  window.speechSynthesis?.cancel();
+  stopSpeaking();
   if (face) {
     face.setMode("listen");
     face.setViseme("sil");
   }
   const field = document.querySelector("#field");
-  draftBeforeMic = field ? field.value : "";
+  draftBeforeMic = field ? field.value : composerDraft;
+  composerDraft = draftBeforeMic;
+  micHeard = false;
+  acceptMicText = true;
+  micEngineStarted = false;
+  micStopRequested = false;
+  micPointerId = event && typeof event.pointerId === "number" ? event.pointerId : null;
+  state.micMessage = "";
   recognizer = new Ctor();
   recognizer.interimResults = true;
-  recognizer.continuous = false;
+  recognizer.continuous = true;
   recognizer.maxAlternatives = 1;
   recognizer.lang = recognitionLang();
   if (state.ielts && !state.ielts.speechStarted && state.ielts.phase === "part2_speak") state.ielts.speechStarted = Date.now();
   state.micStarted = state.micStarted || Date.now();
+  recognizer.onstart = () => {
+    micEngineStarted = true;
+    if (micStopRequested) {
+      try { recognizer.stop(); } catch (err) { /* ending */ }
+    }
+  };
   recognizer.onresult = (ev) => {
-    let text = "";
-    for (const result of ev.results) text += result[0].transcript;
-    if (field) field.value = text || draftBeforeMic;
+    if (!acceptMicText) return;
+    try {
+      const text = recognitionResults(ev);
+      if (text) writeRecognition(text);
+    } catch (err) {
+      showStatus(micErrorText(err?.name || "result"), true);
+    }
   };
   recognizer.onerror = (ev) => {
-    if (ev.error === "language-not-supported" && state.settings.target === "yue" && !cantoneseRetried) {
+    const code = ev?.error || "unknown";
+    if (code === "language-not-supported" && state.settings.target === "yue" && !cantoneseRetried) {
       cantoneseRetried = true;
       recognizer.lang = "zh-HK";
-      try { recognizer.start(); } catch (err) { state.cantoneseMicHidden = true; }
+      micEngineStarted = false;
+      micStopRequested = false;
+      try {
+        recognizer.start();
+        return;
+      } catch (err) {
+        state.cantoneseMicHidden = true;
+      }
+    }
+    if (code === "language-not-supported" && state.settings.target === "yue") {
+      state.cantoneseMicHidden = true;
+      listening = false;
+      micPointerId = null;
+      showStatus(t("noCantoneseMic"), true);
+      render();
       return;
     }
-    if (ev.error === "language-not-supported" && state.settings.target === "yue") state.cantoneseMicHidden = true;
-    if (ev.error === "not-allowed") state.notice = t("micBlocked");
-    if (ev.error === "network") state.notice = t("recNetwork");
-    if (ev.error === "audio-capture") state.notice = t("noMic");
-    if (ev.error === "no-speech" && field) field.value = draftBeforeMic;
+    if (code === "aborted" && micStopRequested) {
+      listening = false;
+      micPointerId = null;
+      paintMic(false);
+      if (face && !state.speaking) face.setMode("idle");
+      return;
+    }
+    if (code === "no-speech" && !micHeard) {
+      composerDraft = draftBeforeMic;
+      const live = document.querySelector("#field");
+      if (live) live.value = composerDraft;
+    }
     listening = false;
-    announce(t("stopped"));
-    render();
+    micPointerId = null;
+    showStatus(micErrorText(code), code !== "no-speech");
+    paintMic(false);
+    if (face && !state.speaking) face.setMode("idle");
   };
   recognizer.onend = () => {
     listening = false;
-    announce(t("stopped"));
-    const mic = document.querySelector("#mic");
-    if (mic) {
-      mic.classList.remove("live");
-      mic.textContent = "🎤";
+    micPointerId = null;
+    paintMic(false);
+    const fieldNow = document.querySelector("#field");
+    if (fieldNow && micHeard && composerDraft && fieldNow.value !== composerDraft) fieldNow.value = composerDraft;
+    if (!state.micMessage) {
+      const node = document.querySelector("#status");
+      if (node && !node.querySelector("a")) {
+        node.hidden = true;
+        node.textContent = "";
+      }
+      announce(t("stopped"));
     }
-    if (face) face.setMode("idle");
+    if (face && !state.speaking) face.setMode("idle");
+  };
+  const started = () => {
+    listening = true;
+    state.micMessage = "";
+    announce(t("listening"));
+    const node = document.querySelector("#status");
+    if (node && !node.querySelector("a")) {
+      node.hidden = false;
+      node.className = "banner";
+      node.textContent = t("listening");
+    }
+    paintMic(true);
   };
   try {
     recognizer.start();
-    listening = true;
-    announce(t("listening"));
-    const mic = document.querySelector("#mic");
-    if (mic) {
-      mic.classList.add("live");
-      mic.textContent = t("listening");
-    }
+    started();
   } catch (err) {
-    state.notice = t("noMic");
+    try {
+      recognizer.continuous = false;
+      recognizer.start();
+      started();
+    } catch (err2) {
+      listening = false;
+      showStatus(micErrorText(err2?.name || err?.name || "start"), true);
+    }
   }
   if (event) event.preventDefault();
 }
 
 function stopMic() {
+  const wasListening = listening || micEngineStarted;
+  micStopRequested = true;
+  micPointerId = null;
   listening = false;
-  try { recognizer?.stop(); } catch (err) { /* already stopped */ }
-  announce(t("stopped"));
+  paintMic(false);
+  if (wasListening && !state.micMessage) announce(t("stopped"));
+  if (!recognizer || !micEngineStarted) return;
+  try { recognizer.stop(); } catch (err) { /* already stopped */ }
 }
 
 function recognitionLang() {
+  if (state.screen === "ielts") return state.settings.accent === "en-US" ? "en-US" : "en-GB";
   if (state.settings.target === "cmn") return "zh-CN";
   if (state.settings.target === "yue") return cantoneseRetried ? "zh-HK" : "yue-Hant-HK";
   return state.settings.accent === "en-US" ? "en-US" : "en-GB";
@@ -986,33 +1195,82 @@ if (window.speechSynthesis) {
   setTimeout(refreshVoices, 400);
 }
 
-function voiceFor(lineLang, who) {
-  const person = who || partner();
-  let langs = [];
-  const forbid = [];
-  if (lineLang === "yue") {
-    langs = ["zh-HK", "yue"];
-    forbid.push("zh-CN", "zh-TW");
-  } else if (lineLang === "cmn") langs = ["zh-CN"];
-  else langs = [person.region === "UK" ? "en-GB" : state.settings.accent];
+function voiceCode(voice) {
+  return String(voice?.lang || "").toLowerCase().replaceAll("_", "-");
+}
+
+function isCantoneseVoice(voice) {
+  const code = voiceCode(voice);
+  if (!code || code.startsWith("zh-cn") || code.startsWith("zh-tw") || code.startsWith("zh-hans")) return false;
+  return code.startsWith("zh-hk") || code.startsWith("yue");
+}
+
+function byGender(list, person) {
+  const wantMale = person?.gender === "man";
   const female = /female|woman|samantha|victoria|karen|moira|fiona|serena|kate|libby|sonia|aria|xiaoxiao|huihui|yaoyao|sinji|tingting|meijia/i;
-  const male = /male|daniel|alex|rishi|tom\b/i;
-  const wantMale = person.gender === "man";
-  for (const lang of langs) {
-    const ranked = voices.filter((voice) => {
-      const code = voice.lang.toLowerCase().replaceAll("_", "-");
-      if (!code.startsWith(lang.toLowerCase())) return false;
-      return !forbid.some((blocked) => code.startsWith(blocked.toLowerCase()));
-    });
-    if (!ranked.length) continue;
-    return ranked.find((voice) => (wantMale ? male : female).test(voice.name)) || ranked[0];
+  const male = /\bmale\b|daniel|alex|rishi|\btom\b/i;
+  const score = (voice) => {
+    const name = voice?.name || "";
+    const isFemale = female.test(name);
+    const isMale = !isFemale && male.test(name);
+    if (wantMale && isMale) return 2;
+    if (!wantMale && isFemale) return 2;
+    if (wantMale && isFemale) return 0;
+    if (!wantMale && isMale) return 0;
+    return 1;
+  };
+  return [...list].sort((a, b) => score(b) - score(a));
+}
+
+function voiceFor(lineLang, who) {
+  const person = who || partner() || {};
+  const list = (window.speechSynthesis?.getVoices?.() || voices || []).filter((voice) => voice && voice.lang);
+  if (list.length) voices = list;
+  const lang = lineLang || "en";
+  if (lang === "yue") {
+    const pool = list.filter((voice) => isCantoneseVoice(voice));
+    return pool.length ? byGender(pool, person)[0] : null;
   }
-  return null;
+  if (lang === "cmn") {
+    const pool = list.filter((voice) => {
+      const code = voiceCode(voice);
+      return code.startsWith("zh-cn") || code.startsWith("cmn");
+    });
+    if (pool.length) return byGender(pool, person)[0];
+    return list.find((voice) => voice.default) || list[0] || null;
+  }
+  const prefer = state.settings.accent === "en-US" ? "en-us" : "en-gb";
+  const exact = list.filter((voice) => voiceCode(voice).startsWith(prefer));
+  if (exact.length) return byGender(exact, person)[0];
+  const english = list.filter((voice) => {
+    const code = voiceCode(voice);
+    return code === "en" || code.startsWith("en-");
+  });
+  if (english.length) return byGender(english, person)[0];
+  return list.find((voice) => voice.default) || list[0] || null;
+}
+
+function utteranceLang(lineLang, voice) {
+  if (lineLang === "yue") return isCantoneseVoice(voice) ? voice.lang : "zh-HK";
+  if (lineLang === "cmn") return voiceCode(voice).startsWith("zh-cn") || voiceCode(voice).startsWith("cmn") ? voice.lang : "zh-CN";
+  if (voice && (voiceCode(voice) === "en" || voiceCode(voice).startsWith("en-"))) return voice.lang;
+  return state.settings.accent === "en-US" ? "en-US" : "en-GB";
+}
+
+function shapesFor(text, lineLang, visemes) {
+  try {
+    if (Array.isArray(visemes) && visemes.length) return visemes;
+    if ((lineLang || "en") === "en") return englishVisemes(String(text || ""));
+    return pinyinVisemes(String(text || ""));
+  } catch (err) {
+    return ["sil"];
+  }
 }
 
 function speakLine(bubble) {
   const who = (state.catalogue.partners || []).find((item) => item.id === bubble.partner_id) || partner();
-  speakText(bubble.text, state.settings.target, who, bubble.visemes, bubble.mood || "happy");
+  const lang = state.screen === "ielts" ? "en" : (state.settings.target || "en");
+  speakText(bubble.text, lang, who, bubble.visemes, bubble.mood || "happy");
 }
 
 function speakBubble(index) {
@@ -1020,10 +1278,19 @@ function speakBubble(index) {
   if (bubble) speakLine(bubble);
 }
 
+function speakDraft() {
+  const field = document.querySelector("#field");
+  const text = (field?.value || composerDraft || "").trim();
+  if (!text) return;
+  const lang = state.screen === "ielts" || state.settings.target === "en" ? "en" : (state.settings.target || "en");
+  speakText(text, lang, partner(), null, "encourage");
+}
+
 function speakSuggestion() {
   const learner = [...(state.daily?.bubbles || [])].reverse().find((item) => item.coaching?.suggested_reply);
   if (!learner) return;
-  speakText(learner.coaching.suggested_reply, state.settings.target, partner(), learner.coaching.suggested_reply_visemes, "encourage");
+  const lang = state.settings.target || "en";
+  speakText(learner.coaching.suggested_reply, lang, partner(), learner.coaching.suggested_reply_visemes, "encourage");
 }
 
 function speakPractice() {
@@ -1032,44 +1299,126 @@ function speakPractice() {
   speakText(text, "en", partner(), state.ielts.review.practice_answer.visemes, "encourage");
 }
 
-function speakText(text, lineLang, who, visemes, mood) {
-  window.speechSynthesis?.cancel();
-  state.speaking = { text, lineLang, partner_id: who.id, visemes, mood };
-  const shapes = visemes?.length ? visemes : lineLang === "en" ? englishVisemes(text) : pinyinVisemes(text);
+function finishMouth() {
+  window.clearInterval(mouthTimer);
+  state.speaking = null;
+  if (!face) return;
+  try {
+    face.setViseme("sil");
+    face.setMode(listening ? "listen" : "idle");
+  } catch (err) {
+    /* portrait must not block the page */
+  }
+}
+
+function stopSpeaking() {
+  speakToken += 1;
+  window.clearTimeout(speakTimer);
+  window.clearInterval(mouthTimer);
+  activeUtterance = null;
+  const synth = window.speechSynthesis;
+  if (synth) {
+    try { synth.cancel(); } catch (err) { /* already idle */ }
+    try { if (synth.paused) synth.resume(); } catch (err) { /* Chrome leaves the engine paused */ }
+  }
+  finishMouth();
+}
+
+function runMouth(shapes, mood, token, lineLang) {
   const step = lineLang === "en" ? 90 : 125;
   if (face) {
-    face.setMode("speak", mood || "happy");
-    face.setViseme(shapes[0] || "sil");
+    try {
+      face.setMode("speak", mood || "happy");
+      face.setViseme(shapes[0] || "sil");
+    } catch (err) {
+      /* keep going to speechSynthesis */
+    }
   }
   let cursor = 0;
-  const timer = window.setInterval(() => {
+  mouthTimer = window.setInterval(() => {
+    if (token !== speakToken) {
+      window.clearInterval(mouthTimer);
+      return;
+    }
     cursor += 1;
-    if (!face) return;
-    if (cursor >= shapes.length) return;
-    face.setViseme(shapes[cursor]);
+    if (!face || cursor >= shapes.length) return;
+    try { face.setViseme(shapes[cursor]); } catch (err) { /* audio still plays */ }
   }, step);
-  const finish = () => {
-    window.clearInterval(timer);
-    window.setTimeout(() => {
-      if (face) face.setViseme("sil");
-      if (face) face.setMode("idle");
-      state.speaking = null;
-    }, 180);
-  };
-  const voice = voiceFor(lineLang, who);
-  if (!voice || !window.speechSynthesis) {
-    window.setTimeout(finish, shapes.length * step + 200);
-    const button = document.querySelector(".speak");
-    if (button && !voice) button.title = t("noVoice");
-    return;
+  return step;
+}
+
+function speakText(text, lineLang, who, visemes, mood) {
+  const spoken = String(text || "").trim();
+  if (!spoken) return;
+  const token = ++speakToken;
+  window.clearTimeout(speakTimer);
+  window.clearInterval(mouthTimer);
+  const synth = window.speechSynthesis;
+  if (synth) {
+    try { synth.cancel(); } catch (err) { /* idle */ }
+    try { if (synth.paused) synth.resume(); } catch (err) { /* Chrome pause bug */ }
   }
-  const utterance = new SpeechSynthesisUtterance(text);
-  utterance.voice = voice;
-  utterance.lang = voice.lang;
-  utterance.rate = sessionRate || (state.settings.level === "beginner" ? 0.85 : 1);
-  utterance.onend = finish;
-  utterance.onerror = finish;
-  window.speechSynthesis.speak(utterance);
+  const person = who || partner() || { id: state.settings.partner, gender: "woman" };
+  const lang = lineLang || "en";
+  const shapes = shapesFor(spoken, lang, visemes);
+  state.speaking = { text: spoken, lineLang: lang, partner_id: person.id, visemes: shapes, mood: mood || "happy" };
+  const step = runMouth(shapes, mood, token, lang);
+  let said = false;
+  const say = () => {
+    if (token !== speakToken || said) return;
+    said = true;
+    const synthNow = window.speechSynthesis;
+    if (synthNow) {
+      try { voices = synthNow.getVoices() || voices; } catch (err) { /* keep the last list */ }
+    }
+    const voice = voiceFor(lang, person);
+    if (lang === "yue" && !isCantoneseVoice(voice)) {
+      const message = t("noCantoneseVoice");
+      state.notice = message;
+      showStatus(message, true);
+      document.querySelectorAll("button.speak").forEach((button) => { button.title = message; });
+      window.setTimeout(() => { if (token === speakToken) finishMouth(); }, shapes.length * step + 200);
+      return;
+    }
+    if (!synthNow) {
+      announce(t("noSynth"));
+      window.setTimeout(() => { if (token === speakToken) finishMouth(); }, shapes.length * step + 200);
+      return;
+    }
+    const utterance = new SpeechSynthesisUtterance(spoken);
+    activeUtterance = utterance;
+    utterance.lang = utteranceLang(lang, voice);
+    if (voice && (lang !== "yue" || isCantoneseVoice(voice))) {
+      try { utterance.voice = voice; } catch (err) { /* lang is already set; still speak */ }
+    }
+    utterance.rate = sessionRate || (state.settings.level === "beginner" ? 0.85 : 1);
+    const done = () => { if (token === speakToken) finishMouth(); };
+    utterance.onend = done;
+    utterance.onerror = done;
+    try {
+      if (synthNow.paused) synthNow.resume();
+      synthNow.speak(utterance);
+      if (synthNow.paused) synthNow.resume();
+    } catch (err) {
+      announce(t("noSynth"));
+      done();
+    }
+  };
+  const listed = synth?.getVoices?.() || [];
+  const delay = listed.length ? 60 : 300;
+  speakTimer = window.setTimeout(say, delay);
+  if (synth && !listed.length) {
+    try {
+      synth.addEventListener("voiceschanged", () => {
+        if (token !== speakToken || said) return;
+        if (!(synth.getVoices() || []).length) return;
+        window.clearTimeout(speakTimer);
+        speakTimer = window.setTimeout(say, 60);
+      }, { once: true });
+    } catch (err) {
+      /* the timeout still speaks */
+    }
+  }
 }
 
 async function mountFace() {
@@ -1220,6 +1569,8 @@ function beginPart2() {
 async function submitIelts(text) {
   const session = state.ielts;
   if (session.phase === "part2_prep") return;
+  stopMic();
+  clearDraft();
   if (session.phase === "part2_speak") {
     const speechMs = Date.now() - (session.speechStarted || Date.now());
     const hard = session.hardStopped;
@@ -1228,8 +1579,7 @@ async function submitIelts(text) {
       session.continued = true;
       session.take = `${session.take} ${text}`.trim();
       session.question = "Can you tell me anything else?";
-      const field = document.querySelector("#field");
-      if (field) field.value = "";
+      clearDraft();
       render();
       speakExaminer(session.question, "examiner");
       return;
@@ -1452,7 +1802,7 @@ function tickIelts() {
   if (session.phase === "part2_speak") {
     session.hardStopped = true;
     const field = document.querySelector("#field");
-    const text = (field?.value || "").trim();
+    const text = (field?.value || composerDraft || "").trim();
     session.deadline = null;
     submitIelts(text || session.take || "...");
     return;
@@ -1467,8 +1817,7 @@ function tickIelts() {
 
 function speakExaminer(text, mood) {
   if (!text) return;
-  const visemes = englishVisemes(text);
-  speakText(text, "en", partner(), visemes, mood);
+  speakText(text, "en", partner(), null, mood);
 }
 
 async function saveHistoryRow(review) {
