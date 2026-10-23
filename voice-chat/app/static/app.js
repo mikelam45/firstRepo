@@ -43,6 +43,8 @@ const I18N = {
     historyLoss: "Clearing this browser’s data deletes history. There is no account.",
     tooMany: "Too many turns. Wait a moment.",
     retry: "Retry",
+    coachUnavailable: "The coach is unavailable.",
+    network: "Network error.",
     showTranslation: "Show translation",
     whatAsking: "What is this asking?",
     goalMet: "Goal met",
@@ -145,6 +147,8 @@ const I18N = {
     historyLoss: "清除浏览器数据会丢掉历史。没有账号。",
     tooMany: "轮次太密了，等一会儿。",
     retry: "重试",
+    coachUnavailable: "教练暂时不可用。",
+    network: "网络错误。",
     showTranslation: "显示翻译",
     whatAsking: "这题在问什么？",
     goalMet: "目标完成",
@@ -247,6 +251,8 @@ const I18N = {
     historyLoss: "清咗瀏覽器資料就冇紀錄。冇帳戶。",
     tooMany: "轉得太密，等一陣。",
     retry: "再試",
+    coachUnavailable: "教練暫時用唔到。",
+    network: "網絡錯誤。",
     showTranslation: "顯示翻譯",
     whatAsking: "呢題問咩？",
     goalMet: "目標完成",
@@ -1054,7 +1060,7 @@ async function postTurn(history) {
       body: JSON.stringify(body),
     });
   } catch (err) {
-    markLearnerError(t("retry"));
+    markLearnerError(t("network"));
     return;
   }
   if (response.status === 429) {
@@ -1062,7 +1068,7 @@ async function postTurn(history) {
     return;
   }
   if (!response.ok) {
-    markLearnerError(t("retry"));
+    markLearnerError(response.status === 502 ? t("coachUnavailable") : t("retry"));
     return;
   }
   const data = await response.json();

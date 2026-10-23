@@ -3,7 +3,7 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
-from app.coach import normalize_turn, resolve_provider
+from app.coach import OpenRouterProvider, build_messages, normalize_turn, resolve_provider
 from app.fixtures import DAILY_DENY
 from app.main import app
 from app.models import ROUTES
@@ -186,6 +186,46 @@ def test_bad_quote_and_same_suggestion_are_dropped():
     assert "m4" in result["character"]["phonetic"] or result["character"]["phonetic"]
     assert result["goal"]["fired"] == ["ordered_drink"]
     assert result["goal"]["status"] == "open"
+
+
+def test_openrouter_timeout_covers_a_short_greeting():
+    assert OpenRouterProvider.timeout >= 60
+
+
+def test_prompt_includes_the_response_schema():
+    scenario = get_scenario("english-teacher")
+    from app.partners import get_partner
+
+    payload = {
+        "settings": _settings(target="en", support="en", partner="chloe"),
+        "history": [],
+    }
+    system = build_messages(payload, scenario, get_partner("chloe"))[0]["content"]
+    assert '"contract": "1"' in system
+    assert '"translation": null' in system
+    assert "you pronounced" in system
+
+
+def test_greeting_json_without_contract_still_replies(monkeypatch):
+    raw = {
+        "character": {
+            "text": "Hello, I am Chloe. Send me a sentence and I will help with the English.",
+        },
+        "coaching": {"corrections": [], "reading_hints": [], "suggested_reply": None},
+    }
+    monkeypatch.setattr("app.coach.resolve_provider", lambda: _Scripted([json.dumps(raw)]))
+    response = _turn(
+        [{"role": "learner", "text": "Hello"}],
+        scenario="english-teacher",
+        settings=_settings(target="en", support="en", partner="chloe"),
+        client_id="omit-contract",
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["contract"] == "1"
+    assert body["character"]["text"].startswith("Hello, I am Chloe.")
+    assert body["meta"]["provider"] == "openrouter"
+    assert "you pronounced" not in json.dumps(body).lower()
 
 
 def test_repair_then_success(monkeypatch):

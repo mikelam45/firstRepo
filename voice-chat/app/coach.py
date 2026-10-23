@@ -63,6 +63,8 @@ class FixtureProvider:
 
 class OpenRouterProvider:
     name = "openrouter"
+    # A short greeting has taken about 30s, past the old 20s budget.
+    timeout = 60.0
 
     def __init__(self, api_key: str, client: httpx.Client | None = None) -> None:
         self.api_key = api_key
@@ -95,7 +97,7 @@ class OpenRouterProvider:
             "Content-Type": "application/json",
             "X-Title": "LingoCoach",
         }
-        client = self._client or httpx.Client(timeout=20.0)
+        client = self._client or httpx.Client(timeout=self.timeout)
         close = self._client is None
         try:
             response = client.post(
@@ -199,8 +201,14 @@ def build_messages(payload: dict, scenario: dict, partner: dict) -> list[dict]:
             'already hit every success signal, set goal.status to "met" and close in',
             "character.",
             "",
-            "Return a single JSON object matching the schema. No markdown fence.",
+            "Return a single JSON object matching RESPONSE_SCHEMA. No markdown fence.",
+            'contract must be the string "1". Include every key in the example.',
+            "character.translation is required: null when support equals target,",
+            "otherwise the support language. When history is empty, coaching is null.",
             "Do not include phonetic transcriptions; the server adds them.",
+            "",
+            "RESPONSE_SCHEMA:",
+            _response_schema(),
             "Do not claim the learner’s pronunciation was good or bad. You cannot hear them.",
             "If their wording already works, return an empty corrections array and",
             "suggested_reply null.",
@@ -270,6 +278,42 @@ def _language_rules(target: str) -> str:
     return "British spelling in London scenes. Could you / Excuse me. Do not switch into American slang."
 
 
+def _response_schema() -> str:
+    return json.dumps(
+        {
+            "contract": "1",
+            "character": {"text": "Short line in the target language.", "translation": None},
+            "coaching": {
+                "praise": None,
+                "corrections": [{"type": "grammar", "quote": "exact learner substring", "why": "support language"}],
+                "suggested_reply": None,
+                "reading_hints": [],
+            },
+            "goal": {"status": "open", "fired": []},
+            "safety": {"refused": False},
+        },
+        ensure_ascii=False,
+    )
+
+
+def _fill_missing_contract(raw: dict) -> None:
+    """Models often return the line and omit contract. Keep the line."""
+    character = raw.get("character")
+    if not isinstance(character, dict):
+        return
+    text = character.get("text")
+    if not isinstance(text, str) or not text.strip():
+        return
+    if "translation" not in character:
+        character["translation"] = None
+    contract = raw.get("contract")
+    if isinstance(contract, str) and contract.strip() == "1":
+        raw["contract"] = "1"
+        return
+    if contract is None or type(contract) is int and contract == 1:
+        raw["contract"] = "1"
+
+
 def parse_json(text: str | None) -> dict | None:
     if not text:
         return None
@@ -287,6 +331,7 @@ def parse_json(text: str | None) -> dict | None:
 
 
 def normalize_turn(raw: dict, payload: dict, scenario: dict) -> dict:
+    _fill_missing_contract(raw)
     if raw.get("contract") != "1":
         raise CoachUnavailable()
     character = raw.get("character")
