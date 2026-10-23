@@ -514,10 +514,10 @@ def _translate(text: str, support: str) -> str:
             "这个短语不是英语这里的说法。",
             "呢個短語唔係英文呢度嘅講法。",
         ),
-        "That sentence works. Send another when you are ready.": (
-            "That sentence works. Send another when you are ready.",
-            "这句可以。准备好了再发一句。",
-            "呢句得。準備好再傳一句。",
+        "I have not checked that sentence with the model yet.": (
+            "I have not checked that sentence with the model yet.",
+            "我还没有把这句发给模型。",
+            "我未將呢句交俾模型。",
         ),
         "Send that sentence in English and I will help.": (
             "Send that sentence in English and I will help.",
@@ -564,7 +564,7 @@ _TEACHER_SAY = {
     "vocabulary": "One word in that sentence does not match the meaning.",
     "phrase": "That phrase is not the one English uses here.",
     "mismatch": "Send that sentence in English and I will help.",
-    "fine": "That sentence works. Send another when you are ready.",
+    "fine": "I have not checked that sentence with the model yet.",
 }
 
 _PHRASE_FIXES = (
@@ -688,7 +688,12 @@ def _teacher_coaching(learner: str, support: str) -> dict:
     if patterned is not None:
         return patterned
     return {
-        "praise": _t(support, "That sentence works.", "这句可以。", "呢句得。"),
+        "praise": _t(
+            support,
+            "Offline examples did not send this sentence to the model. Restart with the OpenRouter key and send it again.",
+            "离线例句没有把这句发给模型。用 OpenRouter 密钥重新启动后再发一次。",
+            "離線例句冇將呢句交俾模型。用 OpenRouter 金鑰重新開一次再傳。",
+        ),
         "corrections": [],
         "suggested_reply": None,
         "reading_hints": [],

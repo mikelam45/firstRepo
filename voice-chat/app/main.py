@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import logging
+import os
+import sys
 import time
 from pathlib import Path
 
@@ -11,6 +13,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.coach import ServiceError, handle_turn, validate_request
+from app.keyfile import ensure_openrouter_key
 from app.ielts_prompts import DIAGNOSTIC, gloss_for, public_bank
 from app.ielts_review import handle_review, validate_review_request
 from app.ielts_writing import PROMPTS as WRITING_PROMPTS
@@ -25,6 +28,15 @@ logger = logging.getLogger("lingocoach")
 STATIC = Path(__file__).resolve().parent / "static"
 
 app = FastAPI(title="LingoCoach", docs_url=None, redoc_url=None)
+
+if "pytest" not in sys.modules:
+    if ensure_openrouter_key():
+        logger.info(
+            "OpenRouter key is available (%s characters).",
+            len(os.environ.get("OPENROUTER_API_KEY", "").strip()),
+        )
+    else:
+        logger.info("No OpenRouter key. Replies use offline examples.")
 
 
 @app.get("/health")
@@ -43,7 +55,7 @@ def catalogue() -> dict:
             key: {"task": value["task"], "module": value["module"], "prompt": value["prompt"]}
             for key, value in WRITING_PROMPTS.items()
         },
-        "key_loaded": bool((__import__("os").environ.get("OPENROUTER_API_KEY") or "").strip()),
+        "key_loaded": ensure_openrouter_key(),
     }
 
 

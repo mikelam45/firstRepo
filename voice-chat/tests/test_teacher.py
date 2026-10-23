@@ -89,6 +89,17 @@ def test_teacher_fixes_a_wrong_phrase_and_translates_the_explanation():
     _clean(body)
 
 
+def test_offline_teacher_does_not_pretend_the_sentence_was_checked():
+    body = _turn("I went to the market yesterday.")
+    blob = json.dumps(body, ensure_ascii=False).lower()
+    assert body["meta"]["provider"] == "fixture"
+    assert "that sentence works" not in blob
+    assert "model" in body["character"]["text"].lower()
+    assert body["coaching"]["corrections"] == []
+    assert "openrouter" in body["coaching"]["praise"].lower()
+    _clean(body)
+
+
 def test_teacher_page_offers_chloe_and_celine():
     page = client.get("/").text
     script = client.get("/static/app.js").text
