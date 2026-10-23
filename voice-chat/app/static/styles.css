@@ -204,21 +204,21 @@ label.field span { display: block; margin-bottom: 4px; color: var(--muted); }
 .llm-status {
   flex: 0 0 auto;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 8px;
   margin-top: auto;
-  padding: 6px 12px calc(6px + env(safe-area-inset-bottom));
+  padding: 8px 12px calc(8px + env(safe-area-inset-bottom));
   border-top: 1px solid var(--line);
   background: #0e1624;
   color: var(--muted);
   font-size: 0.78rem;
   line-height: 1.35;
 }
-.llm-status .llm-copy { flex: 1; min-width: 0; margin: 0; }
+.llm-status .llm-copy { flex: 1; min-width: 0; margin: 0; overflow-wrap: anywhere; }
 .llm-status .llm-result.wait { color: var(--ink); }
 .llm-status .llm-result.ok { color: #9ddec0; }
 .llm-status .llm-result.bad { color: #ffb4b4; }
-.llm-status .ghost { flex: 0 0 auto; min-height: 36px; padding: 0 12px; font-size: 0.85rem; }
+.llm-status .ghost { flex: 0 0 auto; align-self: center; min-height: 36px; padding: 0 12px; font-size: 0.85rem; }
 .error { color: #ffb4b4; }
 a.inline { color: #b9d0ff; }
 @media (max-width: 360px) {

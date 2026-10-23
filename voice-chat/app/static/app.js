@@ -99,10 +99,9 @@ const I18N = {
     orCheck: "OpenRouter LLM connectivity check",
     orChecking: "Checking…",
     orConnected: "Connected",
-    orNotConnected: "Not connected",
-    orNoKey: "no key",
-    orRejected: "rejected",
-    orUnreachable: "unreachable",
+    orNoKey: "Not connected. No OpenRouter key. Put it in /Users/mikelam/firstRepo/openrouter_key/.env_voice_chat and restart ./run-local.sh from voice-chat.",
+    orRejected: "Not connected. Wrong key. OpenRouter rejected it. The key is not shown.",
+    orUnreachable: "Not connected. Connection error. This server cannot reach OpenRouter. Check the network, then press Check again.",
     orRecheck: "Check",
   },
   cmn: {
@@ -202,10 +201,9 @@ const I18N = {
     orCheck: "OpenRouter 大模型连通检查",
     orChecking: "正在检查…",
     orConnected: "已连接",
-    orNotConnected: "未连接",
-    orNoKey: "没有密钥",
-    orRejected: "被拒绝",
-    orUnreachable: "无法连接",
+    orNoKey: "未连接。没有 OpenRouter 密钥。请把它放在 /Users/mikelam/firstRepo/openrouter_key/.env_voice_chat，然后在 voice-chat 里重新运行 ./run-local.sh。",
+    orRejected: "未连接。密钥不对。OpenRouter 拒绝了它。密钥不会显示。",
+    orUnreachable: "未连接。连接错误。这台服务器连不上 OpenRouter。请检查网络，然后再按检查。",
     orRecheck: "检查",
   },
   yue: {
@@ -305,10 +303,9 @@ const I18N = {
     orCheck: "OpenRouter 大模型連線檢查",
     orChecking: "檢查緊…",
     orConnected: "已連線",
-    orNotConnected: "未連線",
-    orNoKey: "冇金鑰",
-    orRejected: "被拒絕",
-    orUnreachable: "連唔到",
+    orNoKey: "未連線。冇 OpenRouter 金鑰。請放喺 /Users/mikelam/firstRepo/openrouter_key/.env_voice_chat，然後喺 voice-chat 重新行 ./run-local.sh。",
+    orRejected: "未連線。金鑰唔啱。OpenRouter 拒絕咗。金鑰唔會顯示。",
+    orUnreachable: "未連線。連線錯誤。呢部伺服器連唔到 OpenRouter。請檢查網絡，然後再撳檢查。",
     orRecheck: "檢查",
   },
 };
@@ -2209,7 +2206,7 @@ function openRouterStatusText() {
   const llm = state.llm || { phase: "checking" };
   if (llm.phase !== "done") return t("orChecking");
   if (llm.connected) return t("orConnected");
-  return `${t("orNotConnected")} (${openRouterReason(llm.reason)})`;
+  return openRouterReason(llm.reason);
 }
 
 function openRouterBar() {

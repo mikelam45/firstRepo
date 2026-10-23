@@ -175,8 +175,17 @@ def test_openrouter_status_without_key_skips_the_network(monkeypatch):
     assert "OPENROUTER_API_KEY=" not in blob
     page = (STATIC / "index.html").read_text(encoding="utf-8")
     script = (STATIC / "app.js").read_text(encoding="utf-8")
-    assert 'src="/static/app.js?v=20261023-or"' in page
+    assert 'src="/static/app.js?v=20261023-orhelp"' in page
     assert "OpenRouter LLM connectivity check" in script
+    assert "Not connected. No OpenRouter key. Put it in /Users/mikelam/firstRepo/openrouter_key/.env_voice_chat and restart ./run-local.sh from voice-chat." in script
+    assert "Not connected. Wrong key. OpenRouter rejected it. The key is not shown." in script
+    assert "Not connected. Connection error. This server cannot reach OpenRouter. Check the network, then press Check again." in script
+    nokeys = [line for line in script.splitlines() if line.strip().startswith("orNoKey:")]
+    assert len(nokeys) == 3
+    for line in nokeys:
+        assert "Connection error" not in line
+        assert "连接错误" not in line
+        assert "連線錯誤" not in line
     assert 'data-act="or-status"' in script
     assert "/api/openrouter/status" in script
 
