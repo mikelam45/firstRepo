@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 480" role="img" aria-label="Illustrated portrait of Wing, 27, Hong Kong">
+  <rect width="360" height="480" fill="#f3d6cf"/>
+  <ellipse cx="180" cy="430" rx="120" ry="90" fill="#8f3d4b"/>
+  <ellipse cx="180" cy="210" rx="108" ry="128" fill="#241816"/>
+  <ellipse cx="180" cy="220" rx="92" ry="108" fill="#efc2a4"/>
+  <ellipse cx="146" cy="210" rx="8" ry="10" fill="#1d2430"/>
+  <ellipse cx="214" cy="210" rx="8" ry="10" fill="#1d2430"/>
+  <path d="M150 270c12 16 48 16 60 0" fill="none" stroke="#a85a68" stroke-width="6" stroke-linecap="round"/>
+  <text x="180" y="40" text-anchor="middle" font-family="sans-serif" font-size="18" fill="#1c2430">Illustrated</text>
+</svg>

@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 480" role="img" aria-label="Illustrated portrait of Lok, 27, Hong Kong">
+  <rect width="360" height="480" fill="#d7ebe4"/>
+  <ellipse cx="180" cy="430" rx="120" ry="90" fill="#1f6f78"/>
+  <ellipse cx="180" cy="198" rx="104" ry="116" fill="#201814"/>
+  <ellipse cx="180" cy="220" rx="92" ry="108" fill="#e7b898"/>
+  <ellipse cx="146" cy="210" rx="8" ry="10" fill="#1d2430"/>
+  <ellipse cx="214" cy="210" rx="8" ry="10" fill="#1d2430"/>
+  <path d="M152 272c12 12 44 12 56 0" fill="none" stroke="#a85a68" stroke-width="6" stroke-linecap="round"/>
+  <text x="180" y="40" text-anchor="middle" font-family="sans-serif" font-size="18" fill="#1c2430">Illustrated</text>
+</svg>

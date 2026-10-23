@@ -1,737 +1,1534 @@
-import { Portrait } from "/static/face.js";
+import { IllustratedPortrait, Portrait, englishVisemes, pinyinVisemes } from "./face.js";
+
+const I18N = {
+  en: {
+    drill: "Today's IELTS drill",
+    mock: "Full speaking mock",
+    daily: "Daily talk",
+    history: "History",
+    settings: "Settings",
+    back: "Back",
+    change: "Change partner",
+    placeholder: "Type, or hold the mic",
+    send: "Send",
+    play: "Play line",
+    listening: "Listening",
+    stopped: "Stopped",
+    trySaying: "Try saying",
+    howRead: "How it is read",
+    why: "Why",
+    praise: "Praise",
+    practiceAgain: "Practice again",
+    notAssessed: "Not assessed",
+    disclaimer: "Practice estimate only. This is not an IELTS result, and this app is not an IELTS test center.",
+    noBand: "Pronunciation was not assessed, so there is no speaking band.",
+    nowTalking: "Now talking with",
+    micBlocked: "Microphone is blocked. You can type instead.",
+    recNetwork: "Recognition needs a connection.",
+    noMic: "No microphone found.",
+    noCantoneseMic: "Cantonese recognition isn’t available in this browser. Type in Cantonese.",
+    noVoice: "No matching voice is installed on this device.",
+    adult: "LingoCoach is for adult learners.",
+    privacy: "Transcripts stay on this device and are sent as text for each turn. Browser recognition may send audio to the browser vendor. This server does not keep audio.",
+    historyLoss: "Clearing this browser’s data deletes history. There is no account.",
+    tooMany: "Too many turns. Wait a moment.",
+    retry: "Retry",
+    showTranslation: "Show translation",
+    whatAsking: "What is this asking?",
+    goalMet: "Goal met",
+    fixture: "Offline examples — this server has no OpenRouter key.",
+    notes: "Notes",
+    next: "Next",
+    covered: "Covered",
+    notYet: "Not yet",
+    startNew: "Start a new practice? This chat stays in History.",
+    yes: "Start new",
+    cancel: "Cancel",
+    close: "Close",
+    womenMen: "Three women, then three men. All 27.",
+    illustrated: "Illustrated portrait. The mouth still moves with the line.",
+    mesh: "Photo portrait.",
+    examSoon: "Your date is close. A full mock is the better first tap. The drill stays available.",
+    mockReady: "You have finished three drills. A full mock is one tap away.",
+    weak: "This is your weakest part, not an examiner’s overall mark.",
+    prep: "60 seconds to prepare. The microphone stays off.",
+    speaking: "Speaking",
+    part: "Part",
+    diagnostic: "Diagnostic",
+    review: "Review",
+    practiceEstimate: "Practice estimate",
+    target: "Target language",
+    support: "Support language",
+    level: "Level",
+    script: "Han script",
+    accent: "English accent",
+    autoplay: "Play lines automatically",
+    pinyin: "Pinyin tones",
+    marks: "Tone marks",
+    numbers: "Numbers",
+    module: "IELTS module",
+    band: "Target band",
+    exam: "Exam date (optional)",
+    track: "Track",
+    save: "Save",
+    emptyHistory: "No saved sessions yet.",
+    again: "Practice again",
+    begin: "Beginner",
+    intermediate: "Intermediate",
+    advanced: "Advanced",
+    waiting: "Thinking…",
+    goal: "Goal",
+    partner: "Partner",
+    age: "27",
+  },
+  cmn: {
+    drill: "今天的雅思口语练习",
+    mock: "完整口语模拟",
+    daily: "日常对话",
+    history: "历史",
+    settings: "设置",
+    back: "返回",
+    change: "换一个人",
+    placeholder: "打字，或按住麦克风",
+    send: "发送",
+    play: "播放这句",
+    listening: "正在听",
+    stopped: "已停止",
+    trySaying: "可以这样说",
+    howRead: "这样读",
+    why: "为什么",
+    praise: "做得好",
+    practiceAgain: "再练一次",
+    notAssessed: "未评估",
+    disclaimer: "仅为练习估计。这不是雅思成绩，本应用也不是雅思考试中心。",
+    noBand: "发音未作评估，所以没有口语总分。",
+    nowTalking: "现在和",
+    micBlocked: "麦克风被阻止了。你可以打字。",
+    recNetwork: "语音识别需要网络。",
+    noMic: "没有找到麦克风。",
+    noCantoneseMic: "这个浏览器不能识别粤语。请用粤语打字。",
+    noVoice: "这台设备没有对应的语音。",
+    adult: "LingoCoach 面向成年学习者。",
+    privacy: "对话留在这台设备上，每次只把文字发给模型。浏览器识别可能会把声音发给浏览器厂商。这个服务器不保存录音。",
+    historyLoss: "清除浏览器数据会丢掉历史。没有账号。",
+    tooMany: "轮次太密了，等一会儿。",
+    retry: "重试",
+    showTranslation: "显示翻译",
+    whatAsking: "这题在问什么？",
+    goalMet: "目标完成",
+    fixture: "离线例句——这台服务器没有 OpenRouter 密钥。",
+    notes: "笔记",
+    next: "下一题",
+    covered: "已覆盖",
+    notYet: "还没有",
+    startNew: "开始一次新的练习？这段对话会留在历史里。",
+    yes: "开始新的",
+    cancel: "取消",
+    close: "关闭",
+    womenMen: "三位女性，然后三位男性。都是 27 岁。",
+    illustrated: "插画肖像。说话时嘴会动。",
+    mesh: "照片肖像。",
+    examSoon: "考试日期很近。可以先做完整模拟，练习仍然可以点。",
+    mockReady: "你已经完成三次练习。完整模拟就在旁边。",
+    weak: "这是你最弱的一部分，不是考官的总分。",
+    prep: "准备 60 秒。麦克风先关掉。",
+    speaking: "正在说",
+    part: "第",
+    diagnostic: "诊断",
+    review: "复习",
+    practiceEstimate: "练习估计",
+    target: "目标语言",
+    support: "辅助语言",
+    level: "程度",
+    script: "汉字",
+    accent: "英语口音",
+    autoplay: "自动播放",
+    pinyin: "拼音声调",
+    marks: "声调符号",
+    numbers: "数字",
+    module: "雅思类别",
+    band: "目标分数",
+    exam: "考试日期（可选）",
+    track: "路线",
+    save: "保存",
+    emptyHistory: "还没有保存的练习。",
+    again: "再练一次",
+    begin: "初级",
+    intermediate: "中级",
+    advanced: "高级",
+    waiting: "想一下…",
+    goal: "目标",
+    partner: "练习伙伴",
+    age: "27",
+  },
+  yue: {
+    drill: "今日嘅雅思口試練習",
+    mock: "全套口試模擬",
+    daily: "日常對話",
+    history: "紀錄",
+    settings: "設定",
+    back: "返回",
+    change: "轉人",
+    placeholder: "打字，或者撳住個咪",
+    send: "送出",
+    play: "播呢句",
+    listening: "聽緊",
+    stopped: "停咗",
+    trySaying: "可以咁講",
+    howRead: "點讀",
+    why: "點解",
+    praise: "做得好",
+    practiceAgain: "再練一次",
+    notAssessed: "未評估",
+    disclaimer: "只係練習估計。呢個唔係雅思成績，呢個 app 亦都唔係雅思考試中心。",
+    noBand: "發音未評估，所以冇口語總分。",
+    nowTalking: "而家同",
+    micBlocked: "個咪被擋咗。你可以打字。",
+    recNetwork: "語音識別要有網絡。",
+    noMic: "搵唔到咪。",
+    noCantoneseMic: "呢個瀏覽器認唔到廣東話。請打廣東話。",
+    noVoice: "呢部機冇對應嘅語音。",
+    adult: "LingoCoach 係俾成年學習者用。",
+    privacy: "對話留喺呢部機。每次只係將文字送去模型。瀏覽器識別可能會將聲音交俾瀏覽器公司。呢個伺服器唔會留低錄音。",
+    historyLoss: "清咗瀏覽器資料就冇紀錄。冇帳戶。",
+    tooMany: "轉得太密，等一陣。",
+    retry: "再試",
+    showTranslation: "顯示翻譯",
+    whatAsking: "呢題問咩？",
+    goalMet: "目標完成",
+    fixture: "離線例句——呢部伺服器冇 OpenRouter 金鑰。",
+    notes: "筆記",
+    next: "下一題",
+    covered: "覆蓋到",
+    notYet: "未覆蓋",
+    startNew: "開始一次新練習？呢段對話會留喺紀錄。",
+    yes: "開始新嘅",
+    cancel: "取消",
+    close: "關閉",
+    womenMen: "三個女，然後三個男。全部 27 歲。",
+    illustrated: "插畫肖像。講嘢嗰陣個嘴會郁。",
+    mesh: "相片肖像。",
+    examSoon: "考試日子近。可以先做全套模擬，練習仍然撳到。",
+    mockReady: "你完成咗三次練習。全套模擬喺隔離。",
+    weak: "呢個係你最弱嘅部分，唔係考官嘅總分。",
+    prep: "準備 60 秒。個咪暫時關掉。",
+    speaking: "講緊",
+    part: "第",
+    diagnostic: "診斷",
+    review: "溫習",
+    practiceEstimate: "練習估計",
+    target: "目標語言",
+    support: "輔助語言",
+    level: "程度",
+    script: "漢字",
+    accent: "英語口音",
+    autoplay: "自動播放",
+    pinyin: "拼音聲調",
+    marks: "聲調符號",
+    numbers: "數字",
+    module: "雅思類別",
+    band: "目標分數",
+    exam: "考試日期（可選）",
+    track: "路線",
+    save: "儲存",
+    emptyHistory: "未有儲存嘅練習。",
+    again: "再練一次",
+    begin: "初級",
+    intermediate: "中級",
+    advanced: "高級",
+    waiting: "諗緊…",
+    goal: "目標",
+    partner: "練習夥伴",
+    age: "27",
+  },
+};
 
 const app = document.querySelector("#app");
-const clientId = localStorage.getItem("lingocoach.client") || crypto.randomUUID();
-localStorage.setItem("lingocoach.client", clientId);
+const state = {
+  screen: "home",
+  catalogue: null,
+  settings: loadSettings(),
+  sheet: null,
+  confirm: null,
+  notice: "",
+  provider: null,
+  daily: null,
+  ielts: null,
+  history: [],
+  micHidden: false,
+  cantoneseMicHidden: false,
+  lastBody: null,
+  speaking: null,
+};
 
-const saved = JSON.parse(localStorage.getItem("lingocoach.settings.v3") || "null");
-const settings = Object.assign({
-  track: "ielts",
-  partner: "amelia",
-  target: "yue",
-  support: "en",
-  level: "beginner",
-  script: "Hant",
-  accent: "en-GB",
-  pinyin_tone: "mark",
-  autoplay: true,
-  target_band: 6.5,
-  module: "academic",
-}, saved);
+let face = null;
+let mountToken = 0;
+let lastFrame = performance.now();
+let voices = [];
+let sessionRate = null;
+let recognizer = null;
+let listening = false;
+let draftBeforeMic = "";
+let cantoneseRetried = false;
 
-let boot = null;
-let portrait = null;
-let mode = "idle";
-let visemeTimer = 0;
-let session = null;
+function t(key) {
+  const pack = I18N[state.settings.support] || I18N.en;
+  return pack[key] || I18N.en[key] || key;
+}
 
-function save() {
-  localStorage.setItem("lingocoach.settings.v3", JSON.stringify(settings));
+function defaults() {
+  return {
+    track: "ielts",
+    partner: "amelia",
+    target: "en",
+    support: "yue",
+    level: "beginner",
+    script: "Hant",
+    accent: "en-GB",
+    autoplay: true,
+    pinyin_tone: "mark",
+    module: "academic",
+    target_band: 6.5,
+    exam_date: "",
+  };
+}
+
+function loadSettings() {
+  const base = defaults();
+  try {
+    const v3 = localStorage.getItem("lingocoach.settings.v3");
+    if (v3) return { ...base, ...JSON.parse(v3) };
+    const v2 = localStorage.getItem("lingocoach.settings.v2");
+    if (v2) {
+      const data = { ...base, ...JSON.parse(v2), partner: "amelia" };
+      localStorage.setItem("lingocoach.settings.v3", JSON.stringify(data));
+      return data;
+    }
+    const v1 = localStorage.getItem("lingocoach.settings.v1");
+    if (v1) {
+      const data = { ...base, ...JSON.parse(v1), partner: "amelia", track: "ielts", target_band: 6.5 };
+      localStorage.setItem("lingocoach.settings.v3", JSON.stringify(data));
+      return data;
+    }
+  } catch (err) {
+    /* keep defaults */
+  }
+  return base;
+}
+
+function saveSettings() {
+  localStorage.setItem("lingocoach.settings.v3", JSON.stringify(state.settings));
+}
+
+function clientId() {
+  let id = localStorage.getItem("lingocoach.client");
+  if (!id) {
+    id = crypto.randomUUID ? crypto.randomUUID() : `c-${Date.now()}`;
+    localStorage.setItem("lingocoach.client", id);
+  }
+  return id;
+}
+
+function uuid() {
+  return crypto.randomUUID ? crypto.randomUUID() : `s-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
 function partner() {
-  return boot.partners.find((row) => row.id === settings.partner) || boot.partners[0];
+  const list = state.catalogue?.partners || [];
+  return list.find((item) => item.id === state.settings.partner) || list[0];
 }
 
-function title(row) {
-  return row.title[settings.support] || row.title.en;
+function scenario() {
+  const list = state.catalogue?.scenarios || [];
+  return list.find((item) => item.id === state.daily?.scenario_id) || list[0];
 }
 
-async function api(path, body) {
-  const response = await fetch(path, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "X-Client-Id": clientId },
-    body: JSON.stringify(body),
-  });
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    const error = new Error(data.error || "coach_unavailable");
-    error.status = response.status;
-    throw error;
-  }
-  return data;
+function promptById(id) {
+  return (state.catalogue?.ielts || []).find((item) => item.id === id);
 }
 
-function voiceFor(lang, gender) {
-  const voices = window.speechSynthesis ? speechSynthesis.getVoices() : [];
-  const want = lang === "yue" ? ["zh-HK", "yue"] : lang === "cmn" ? ["zh-CN"] : [settings.accent];
-  if (lang === "yue") {
-    const bad = (voice) => /zh-CN|zh-TW|cmn/i.test(`${voice.lang} ${voice.name}`);
-    const pool = voices.filter((voice) => !bad(voice) && want.some((code) => voice.lang.toLowerCase().includes(code.toLowerCase().slice(0, 5))));
-    const gendered = pool.find((voice) => gender === "woman" ? /female|woman|samantha|ting/i.test(voice.name) : /male|man|daniel/i.test(voice.name));
-    return gendered || pool[0] || null;
-  }
-  const pool = voices.filter((voice) => want.some((code) => voice.lang.toLowerCase().startsWith(code.toLowerCase().slice(0, 2)) || voice.lang.toLowerCase().includes(code.toLowerCase())));
-  const gendered = pool.find((voice) => gender === "woman" ? /female|woman|samantha|karen/i.test(voice.name) : /male|man|daniel|rishi/i.test(voice.name));
-  return gendered || pool[0] || voices.find((voice) => voice.lang.toLowerCase().startsWith(want[0].slice(0, 2))) || null;
+function esc(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
 }
 
-function speak(text, lang, visemes) {
-  window.speechSynthesis?.cancel();
-  clearInterval(visemeTimer);
-  const person = partner();
-  const voice = voiceFor(lang, person.gender);
-  if (lang === "yue" && (!voice || /zh-CN|zh-TW/i.test(voice.lang))) {
-    setStatus(settings.support === "yue" ? "呢部機未有廣東話聲" : "No Cantonese voice is installed. The mouth still moves.");
-    playVisemes(visemes, lang);
+function render() {
+  app.innerHTML = `<div class="phone">${view()}${sheet()}</div><p id="live" class="sr" aria-live="polite"></p>`;
+  mountFace();
+  scrollThread();
+}
+
+function scrollThread() {
+  const thread = document.querySelector("#thread");
+  if (!thread) return;
+  const coach = thread.querySelector(".coach");
+  if (!coach) {
+    thread.scrollTop = thread.scrollHeight;
     return;
   }
-  playVisemes(visemes, lang);
-  if (!text || !window.speechSynthesis || !voice) return;
-  const utter = new SpeechSynthesisUtterance(text);
-  utter.voice = voice;
-  utter.lang = voice.lang;
-  utter.onend = () => setFace("idle", "neutral");
-  speechSynthesis.speak(utter);
+  const threadRect = thread.getBoundingClientRect();
+  const coachRect = coach.getBoundingClientRect();
+  const below = coachRect.bottom - threadRect.bottom;
+  if (below > 0) thread.scrollTop += below + 12;
+  else if (coachRect.top < threadRect.top) thread.scrollTop -= threadRect.top - coachRect.top - 8;
 }
 
-function playVisemes(names, lang) {
-  const list = names && names.length ? names : ["sil"];
-  const step = lang === "en" ? 90 : 125;
-  let index = 0;
-  setFace("speak", session?.track === "ielts" && session.kind === "mock" ? "examiner" : "question");
-  if (portrait) portrait.setViseme(list[0]);
-  visemeTimer = setInterval(() => {
-    index += 1;
-    if (index >= list.length) {
-      clearInterval(visemeTimer);
-      if (portrait) portrait.setViseme("sil");
-      setFace("idle", "neutral");
-      return;
-    }
-    if (portrait) portrait.setViseme(list[index]);
-    drawMouth(list[index]);
-  }, step);
+function view() {
+  if (!state.catalogue) return `<main class="home"><p>${esc(t("waiting"))}</p></main>`;
+  if (state.screen === "history") return historyView();
+  if (state.screen === "daily") return dailyView();
+  if (state.screen === "ielts") return ieltsView();
+  return homeView();
 }
 
-function setFace(next, mood) {
-  mode = next;
-  if (portrait) portrait.setMode(next, mood);
-}
-
-function setStatus(text) {
-  const node = document.querySelector("#status");
-  if (node) node.textContent = text;
-}
-
-let frameHandle = 0;
-let last = 0;
-function loop(now) {
-  frameHandle = requestAnimationFrame(loop);
-  if (portrait) portrait.frame(now, Math.min(0.05, (now - last) / 1000 || 0.016));
-  last = now;
-  if (!portrait) drawMouth(mode === "listen" ? "sil" : undefined);
-}
-
-async function mountFace(canvas) {
-  if (portrait) {
-    cancelAnimationFrame(frameHandle);
-    portrait = null;
-  }
-  const person = partner();
-  if (person.mesh) {
-    try {
-      portrait = new Portrait(canvas);
-      await portrait.load(person.portrait, person.mesh_url);
-      portrait.setMode("idle", "neutral");
-      last = performance.now();
-      frameHandle = requestAnimationFrame(loop);
-      return;
-    } catch (error) {
-      portrait = null;
-    }
-  }
-  drawCard(canvas);
-  last = performance.now();
-  frameHandle = requestAnimationFrame(loop);
-}
-
-function drawCard(canvas) {
-  const ctx = canvas.getContext("2d");
-  const person = partner();
-  const palette = {
-    amelia: ["#f2d7c4", "#6b3a2a"],
-    mei: ["#f3d2c2", "#2c2420"],
-    wing: ["#f0cbb8", "#1d1a17"],
-    oliver: ["#e7c2a8", "#3a2a22"],
-    hao: ["#efd0b8", "#241c16"],
-    lok: ["#e8c3aa", "#141210"],
-  };
-  const [skin, hair] = palette[person.id] || palette.amelia;
-  canvas._palette = { skin, hair, ctx };
-  drawMouth("sil");
-}
-
-function drawMouth(shape) {
-  const canvas = document.querySelector("#face");
-  if (!canvas || portrait) return;
-  const ctx = canvas.getContext("2d");
-  const { skin, hair } = canvas._palette || { skin: "#f2d7c4", hair: "#333" };
-  const w = canvas.width;
-  const h = canvas.height;
-  ctx.clearRect(0, 0, w, h);
-  ctx.fillStyle = "#efe6da";
-  ctx.fillRect(0, 0, w, h);
-  ctx.fillStyle = hair;
-  ctx.beginPath();
-  ctx.ellipse(w / 2, h * 0.34, w * 0.28, h * 0.22, 0, Math.PI, 0);
-  ctx.fill();
-  ctx.fillStyle = skin;
-  ctx.beginPath();
-  ctx.ellipse(w / 2, h * 0.48, w * 0.24, h * 0.28, 0, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.fillStyle = "#2b241e";
-  ctx.beginPath();
-  ctx.arc(w * 0.42, h * 0.46, 3, 0, Math.PI * 2);
-  ctx.arc(w * 0.58, h * 0.46, 3, 0, Math.PI * 2);
-  ctx.fill();
-  const open = { aa: 16, E: 8, I: 5, O: 12, U: 8, sil: 2, PP: 1, FF: 4, TH: 6, DD: 6, kk: 7, CH: 6, SS: 3, nn: 4, RR: 6 }[shape || "sil"] || 2;
-  ctx.fillStyle = "#6a3030";
-  ctx.beginPath();
-  ctx.ellipse(w / 2, h * 0.6, 14, Math.max(1, open), 0, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.fillStyle = hair;
-  ctx.font = "12px sans-serif";
-  ctx.fillText(partner().name, 8, h - 10);
-}
-
-function renderHome() {
-  app.innerHTML = `
-    <main class="screen">
-      <p class="brand">LingoCoach</p>
-      <h1>IELTS-style practice</h1>
-      <p class="lede">A practice partner, not an official score. Talk on this phone. The key stays on the server.</p>
-      <div class="stack">
-        <button class="choice" id="drill"><strong>Today’s IELTS drill</strong><span>Part 1, food at home. Amelia asks. You answer.</span></button>
-        <button class="choice" id="mock"><strong>Full speaking mock</strong><span>Scripted questions. No coaching until the end.</span></button>
-        <button class="choice" id="daily"><strong>Daily talk</strong><span>A cha chaan teng, a London street, or a Beijing hotel.</span></button>
-        <button class="ghost" id="settings">Settings</button>
+function homeView() {
+  const who = partner();
+  const plan = loadPlan();
+  const soon = examSoon();
+  return `
+    <header class="top">
+      <div class="mark">LingoCoach</div>
+      <div class="grow"></div>
+      <button class="icon-btn" type="button" data-act="history">${esc(t("history"))}</button>
+      <button class="icon-btn" type="button" data-act="settings" aria-label="${esc(t("settings"))}">⚙</button>
+    </header>
+    <main class="home">
+      <div class="stage">
+        <canvas id="face" class="face" width="480" height="640" aria-label="${esc(who.name)}, ${esc(who.city)}, 27"></canvas>
+        <div>
+          <strong>${esc(who.name)}</strong>
+          <div class="muted">${esc(who.city)} · ${esc(t("age"))}</div>
+          <button class="ghost" type="button" data-act="partners">${esc(t("change"))}</button>
+        </div>
       </div>
-      <p class="disclaimer">${boot.key_loaded ? "OpenRouter is on for live lines." : "No OpenRouter key on this machine, so turns use the built-in coach."}</p>
+      ${soon ? `<p class="banner">${esc(t("examSoon"))}</p>` : ""}
+      ${plan.drillsSince >= 3 ? `<p class="banner">${esc(t("mockReady"))}</p>` : ""}
+      ${state.provider === "fixture" ? `<p class="banner">${esc(t("fixture"))}</p>` : ""}
+      <div class="choices">
+        <button class="choice" type="button" data-act="drill"><strong>${esc(t("drill"))}</strong><span class="muted">${esc(plan.label || t("diagnostic"))}</span></button>
+        <button class="choice" type="button" data-act="mock"><strong>${esc(t("mock"))}</strong><span class="muted">Part 1 · Part 2 · Part 3</span></button>
+        <button class="choice" type="button" data-act="daily"><strong>${esc(t("daily"))}</strong></button>
+      </div>
+      <p class="small muted">${esc(t("disclaimer"))}</p>
+      <p class="small muted">${esc(t("adult"))}</p>
     </main>`;
-  document.querySelector("#drill").onclick = () => startIelts("drill");
-  document.querySelector("#mock").onclick = () => startIelts("mock");
-  document.querySelector("#daily").onclick = () => startDaily();
-  document.querySelector("#settings").onclick = openSettings;
 }
 
-function startDaily() {
-  settings.track = "daily";
-  if (!["en", "cmn", "yue"].includes(settings.target)) settings.target = "yue";
-  save();
-  session = {
-    track: "daily",
-    scenario: "hk-cha-chaan-teng",
-    id: crypto.randomUUID(),
+function dailyView() {
+  const sc = scenario();
+  const who = partner();
+  const support = state.settings.support;
+  const title = sc.title[support] || sc.title.en;
+  const goal = sc.goal[support] || sc.goal.en;
+  const ended = state.daily.goal === "met" || state.daily.cap_reached;
+  return `
+    <header class="top">
+      <button class="icon-btn" type="button" data-act="home">${esc(t("back"))}</button>
+      <div class="grow"><h1>${esc(who.name)}</h1><div class="small muted">${esc(title)}</div></div>
+      <button class="icon-btn" type="button" data-act="settings">⚙</button>
+    </header>
+    <div class="chips" role="tablist">
+      ${(state.catalogue.scenarios || []).map((item) => `<button class="chip" type="button" data-act="scenario" data-id="${esc(item.id)}" aria-pressed="${item.id === sc.id}">${esc(item.title[support] || item.title.en)}</button>`).join("")}
+    </div>
+    <p class="goal">${esc(t("goal"))}: ${esc(goal)}${state.daily.goal === "met" ? ` · ${esc(t("goalMet"))}` : ""}</p>
+    ${state.provider === "fixture" ? `<p class="banner">${esc(t("fixture"))}</p>` : ""}
+    <div class="stage large"><canvas id="face" class="face" width="480" height="640" aria-label="${esc(who.name)}, ${esc(who.city)}, 27"></canvas></div>
+    <div class="row" style="padding:0 16px 8px">
+      <strong>${esc(who.name)}</strong>
+      <span class="muted">${esc(who.city)} · 27</span>
+      <button class="ghost" type="button" data-act="partners">${esc(t("change"))}</button>
+    </div>
+    <div class="thread" id="thread">${(state.daily.bubbles || []).map(bubbleHtml).join("")}</div>
+    ${ended ? `<div class="composer"><button class="primary" type="button" data-act="again">${esc(t("practiceAgain"))}</button></div>` : composerHtml()}
+    ${state.notice ? `<p class="banner error">${esc(state.notice)}</p>` : ""}`;
+}
+
+function bubbleHtml(bubble, index) {
+  if (bubble.role === "learner") {
+    return `<article class="bubble learner"><div class="said"><div class="text">${esc(bubble.text)}</div></div>${coachHtml(bubble, index)}</article>`;
+  }
+  const who = (state.catalogue.partners || []).find((item) => item.id === bubble.partner_id);
+  const showTranslation = state.settings.support !== state.settings.target && bubble.translation;
+  let translation = "";
+  if (showTranslation && state.settings.level === "beginner") translation = `<p>${esc(bubble.translation)}</p>`;
+  else if (showTranslation && state.settings.level === "intermediate") translation = `<details><summary>${esc(t("showTranslation"))}</summary><p>${esc(bubble.translation)}</p></details>`;
+  else if (showTranslation) translation = bubble.showTranslation ? `<p>${esc(bubble.translation)}</p>` : `<button class="ghost" type="button" data-act="translate" data-index="${index}">${esc(t("showTranslation"))}</button>`;
+  const phonetic = phoneticHtml(bubble);
+  return `<article class="bubble character"><div class="who">${esc(who?.name || "")}</div><div class="panel"><div class="row"><p class="text grow">${esc(bubble.text)}</p><button class="icon-btn speak" type="button" data-act="speak" data-index="${index}" aria-label="${esc(t("play"))}">▶</button></div>${phonetic}${translation}</div></article>`;
+}
+
+function phoneticHtml(bubble) {
+  if (!bubble.phonetic) return "";
+  const label = bubble.phonetic_system === "jyutping" ? "Jyutping" : bubble.phonetic_system === "pinyin" ? "Pinyin" : bubble.phonetic_system === "ipa-ga" ? "IPA · GA" : "IPA · RP";
+  const amb = new Set((bubble.syllables || []).filter((item) => item.ambiguous).map((item) => item.reading));
+  const html = esc(bubble.phonetic).split(" ").map((token) => amb.has(token.replace(/^\/|\/$/g, "")) ? `<span class="amb" title="${esc(token)}">${token}</span>` : token).join(" ");
+  return `<p class="phonetic"><span class="muted">${esc(label)}</span> ${html}</p>`;
+}
+
+function coachHtml(bubble) {
+  if (bubble.pending) return `<div class="coach">${esc(t("waiting"))}</div>`;
+  if (bubble.error) return `<div class="coach"><p class="error">${esc(bubble.error)}</p><button class="ghost" type="button" data-act="retry">${esc(t("retry"))}</button></div>`;
+  const coaching = bubble.coaching;
+  if (!coaching) return "";
+  const bits = [];
+  if (coaching.praise) bits.push(`<p><strong>${esc(t("praise"))}.</strong> ${esc(coaching.praise)}</p>`);
+  if (coaching.reading_hints?.length) {
+    bits.push(`<p><strong>${esc(t("howRead"))}</strong></p>`);
+    for (const hint of coaching.reading_hints) bits.push(`<p>${esc(hint.term)} — ${esc(hint.note)}</p>`);
+  }
+  if (coaching.suggested_reply) {
+    bits.push(`<p><strong>${esc(t("trySaying"))}</strong></p><p>${esc(coaching.suggested_reply)}</p>`);
+    if (coaching.suggested_reply_phonetic) bits.push(`<p class="phonetic">${esc(coaching.suggested_reply_phonetic)}</p>`);
+    bits.push(`<button class="ghost" type="button" data-act="speak-suggest" aria-label="${esc(t("play"))}">▶</button>`);
+  }
+  const whys = (coaching.corrections || []).map((item) => item.why).filter(Boolean);
+  if (whys.length) bits.push(`<p><strong>${esc(t("why"))}</strong> ${esc(whys.join(" "))}</p>`);
+  if (!bits.length) return "";
+  return `<div class="coach">${bits.join("")}</div>`;
+}
+
+function composerHtml() {
+  const mic = speechAvailable() ? `<button class="mic ${listening ? "live" : ""}" id="mic" type="button" aria-label="${esc(t("placeholder"))}">${listening ? esc(t("listening")) : "🎤"}</button>` : "";
+  return `<form class="composer" id="composer">
+    ${mic}
+    <textarea id="field" rows="1" placeholder="${esc(t("placeholder"))}" aria-label="${esc(t("placeholder"))}"></textarea>
+    <button class="send" type="submit">${esc(t("send"))}</button>
+  </form>
+  ${state.cantoneseMicHidden ? `<p class="banner">${esc(t("noCantoneseMic"))}</p>` : ""}`;
+}
+
+function ieltsView() {
+  const session = state.ielts;
+  const who = partner();
+  const gloss = session.kind === "mock" ? "" : session.gloss || "";
+  const review = session.phase === "review" || session.phase === "done" ? reviewHtml(session.review) : "";
+  const cue = cueHtml(session);
+  return `
+    <header class="top">
+      <button class="icon-btn" type="button" data-act="home">${esc(t("back"))}</button>
+      <div class="grow"><h1>${esc(who.name)}</h1><div class="small muted">${esc(t("part"))} ${esc(session.part)} · ${esc(session.kind)}</div></div>
+      <div class="clock" id="clock">${esc(clockText())}</div>
+    </header>
+    <div class="stage large"><canvas id="face" class="face" width="480" height="640" aria-label="${esc(who.name)}, 27"></canvas></div>
+    <div class="row" style="padding:0 16px"><strong>${esc(who.name)}</strong><span class="muted">${esc(who.city)} · 27</span><button class="ghost" type="button" data-act="partners" ${session.kind === "mock" && (session.phase === "part2_prep" || session.phase === "part2_speak") ? "disabled" : ""}>${esc(t("change"))}</button></div>
+    <div class="thread">
+      ${cue}
+      ${session.question ? `<article class="card"><p class="text">${esc(session.question)}</p>${gloss ? `<details><summary>${esc(t("whatAsking"))}</summary><p>${esc(gloss)}</p></details>` : ""}</article>` : ""}
+      ${(session.answers || []).map((item) => `<article class="bubble learner"><div class="said">${esc(item.text)}</div></article>`).join("")}
+      ${review}
+      ${state.notice ? `<p class="error">${esc(state.notice)}</p>` : ""}
+    </div>
+    ${session.phase === "ask" || session.phase === "part2_speak" || session.phase === "rounding" ? composerHtml() : ""}
+    ${session.phase === "part2_prep" ? `<div class="composer"><p class="muted">${esc(t("prep"))}</p><textarea id="notes" placeholder="${esc(t("notes"))}">${esc(session.notes || "")}</textarea></div>` : ""}
+    ${session.phase === "between" ? `<div class="composer"><button class="primary" type="button" data-act="ielts-next">${esc(t("next"))}</button></div>` : ""}
+    ${session.phase === "done" ? `<div class="composer"><button class="primary" type="button" data-act="home">${esc(t("back"))}</button></div>` : ""}`;
+}
+
+function cueHtml(session) {
+  if (session.part !== 2 || !session.cue) return "";
+  if (session.kind === "mock") {
+    return `<article class="card cue"><strong>${esc(session.cue.title)}</strong><ul>${session.cue.say.map((line) => `<li>${esc(line)}</li>`).join("")}</ul></article>`;
+  }
+  return `<article class="card cue"><strong>${esc(session.cue.title)}</strong><ul>${session.cue.say.map((line) => `<li>☐ ${esc(line)}</li>`).join("")}</ul></article>`;
+}
+
+function reviewHtml(review) {
+  if (!review) return "";
+  const criteria = (review.criteria || []).map((item) => {
+    const band = item.status === "unscored" ? t("notAssessed") : `${t("practiceEstimate")} ${item.band}`;
+    return `<p><strong>${esc(item.id)}</strong> — ${esc(band)}${item.evidence ? ` · ${esc(item.evidence)}` : ""}</p>`;
+  }).join("");
+  const bullets = (review.bullets || []).map((item) => `<li>${esc(item.id)}: ${item.covered ? esc(t("covered")) : esc(t("notYet"))}${item.quote ? ` “${esc(item.quote)}”` : ""}</li>`).join("");
+  const length = review.length?.wpm ? `<p>about ${esc(review.length.words)} words in ${esc(Math.round(review.length.speech_ms / 1000))} seconds</p>` : "";
+  return `<article class="card">
+    <h2>${esc(t("review"))}</h2>
+    <p>${esc(review.disclaimer?.estimate || t("disclaimer"))}</p>
+    <p>${esc(review.disclaimer?.pronunciation || t("noBand"))}</p>
+    ${criteria}
+    ${bullets ? `<ul>${bullets}</ul>` : ""}
+    ${length}
+    <p><strong>${esc(t("trySaying"))}</strong></p>
+    <p>${esc(review.practice_answer?.text || "")}</p>
+    <p class="phonetic">${esc(review.practice_answer?.phonetic || "")}</p>
+    <p>${esc(review.practice_answer?.why || "")}</p>
+    <p class="small muted">${esc(t("weak"))}</p>
+    <button class="ghost" type="button" data-act="speak-practice">${esc(t("play"))}</button>
+  </article>`;
+}
+
+function sheet() {
+  if (state.confirm) {
+    return `<div class="backdrop" data-act="confirm-no"></div><section class="sheet"><p>${esc(state.confirm.text)}</p><div class="row"><button class="primary" type="button" data-act="confirm-yes">${esc(t("yes"))}</button><button class="ghost" type="button" data-act="confirm-no">${esc(t("cancel"))}</button></div></section>`;
+  }
+  if (state.sheet === "partners") return partnerSheet();
+  if (state.sheet === "settings") return settingsSheet();
+  return "";
+}
+
+function partnerSheet() {
+  const rows = state.catalogue.partners.map((item) => `
+    <button class="partner-row" type="button" data-act="pick-partner" data-id="${esc(item.id)}" aria-pressed="${item.id === state.settings.partner}">
+      <img alt="" src="${esc(item.portrait)}">
+      <span><strong>${esc(item.name)}</strong><br><span class="muted">${esc(item.city)} · 27 · ${esc(item.gender === "woman" ? "woman" : "man")}</span><br><span class="small muted">${item.display === "mesh" ? esc(t("mesh")) : esc(t("illustrated"))}</span></span>
+    </button>`).join("");
+  return `<div class="backdrop" data-act="close-sheet"></div><section class="sheet"><div class="row"><h2 class="grow">${esc(t("change"))}</h2><button class="icon-btn" type="button" data-act="close-sheet">${esc(t("close"))}</button></div><p class="muted">${esc(t("womenMen"))}</p>${rows}</section>`;
+}
+
+function settingsSheet() {
+  const s = state.settings;
+  const hideScript = s.target === "en" && s.support === "en";
+  const bands = [];
+  for (let band = 5; band <= 8.01; band += 0.5) bands.push(band.toFixed(1));
+  return `<div class="backdrop" data-act="close-sheet"></div><section class="sheet">
+    <div class="row"><h2 class="grow">${esc(t("settings"))}</h2><button class="icon-btn" type="button" data-act="close-sheet">${esc(t("close"))}</button></div>
+    ${selectField("support", t("support"), ["en", "cmn", "yue"], s.support)}
+    ${selectField("target", t("target"), ["en", "cmn", "yue"], s.target)}
+    ${selectField("level", t("level"), ["beginner", "intermediate", "advanced"], s.level, { beginner: t("begin"), intermediate: t("intermediate"), advanced: t("advanced") })}
+    ${hideScript ? "" : selectField("script", t("script"), ["Hant", "Hans"], s.script)}
+    ${selectField("accent", t("accent"), ["en-GB", "en-US"], s.accent)}
+    ${selectField("pinyin_tone", t("pinyin"), ["mark", "number"], s.pinyin_tone, { mark: t("marks"), number: t("numbers") })}
+    ${selectField("module", t("module"), ["academic", "general"], s.module)}
+    ${selectField("target_band", t("band"), bands, Number(s.target_band).toFixed(1))}
+    <label class="field"><span>${esc(t("exam"))}</span><input id="exam_date" type="date" value="${esc(s.exam_date || "")}"></label>
+    <label class="field"><input id="autoplay" type="checkbox" ${s.autoplay ? "checked" : ""}> ${esc(t("autoplay"))}</label>
+    <p class="small muted">${esc(t("privacy"))}</p>
+    <p class="small muted">${esc(t("historyLoss"))}</p>
+    <p class="small muted">${esc(t("adult"))}</p>
+    <button class="primary" type="button" data-act="save-settings">${esc(t("save"))}</button>
+  </section>`;
+}
+
+function selectField(name, label, values, current, names) {
+  const options = values.map((value) => `<option value="${esc(value)}" ${String(value) === String(current) ? "selected" : ""}>${esc(names?.[value] || value)}</option>`).join("");
+  return `<label class="field"><span>${esc(label)}</span><select id="set-${name}">${options}</select></label>`;
+}
+
+function historyView() {
+  const rows = state.history.length ? state.history.map((item) => `<article class="card"><strong>${esc(item.task || item.track)}</strong><div class="muted">${esc(item.partner || "")} · ${esc(item.date || "")}</div><div>${esc(item.summary || "")}</div></article>`).join("") : `<p>${esc(t("emptyHistory"))}</p>`;
+  return `<header class="top"><button class="icon-btn" type="button" data-act="home">${esc(t("back"))}</button><h1>${esc(t("history"))}</h1></header><main class="history">${rows}<p class="small muted">${esc(t("weak"))}</p></main>`;
+}
+
+function clockText() {
+  const session = state.ielts;
+  if (!session?.deadline) return "";
+  const left = Math.max(0, session.deadline - Date.now());
+  const total = Math.ceil(left / 1000);
+  const minutes = String(Math.floor(total / 60)).padStart(2, "0");
+  const seconds = String(total % 60).padStart(2, "0");
+  return `${minutes}:${seconds}`;
+}
+
+app.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-act]");
+  if (!button) return;
+  onAct(button.dataset.act, button.dataset);
+});
+
+app.addEventListener("submit", (event) => {
+  if (event.target.id !== "composer") return;
+  event.preventDefault();
+  submitField();
+});
+
+app.addEventListener("keydown", (event) => {
+  if (event.key === "Enter" && event.target.id === "field" && !event.shiftKey) {
+    event.preventDefault();
+    submitField();
+  }
+  if (event.key === " " && event.target.id === "mic") {
+    event.preventDefault();
+    if (listening) stopMic();
+    else startMic(event);
+  }
+});
+
+window.addEventListener("pointerup", (event) => {
+  if (listening && event.target?.id !== "field") stopMic();
+});
+window.addEventListener("pointercancel", () => { if (listening) stopMic(); });
+
+app.addEventListener("pointerdown", (event) => {
+  const mic = event.target.closest("#mic");
+  if (!mic) return;
+  event.preventDefault();
+  startMic(event);
+});
+
+function onAct(act, data) {
+  if (act === "settings") { state.sheet = "settings"; render(); return; }
+  if (act === "close-sheet") { state.sheet = null; render(); return; }
+  if (act === "partners") { state.sheet = "partners"; render(); return; }
+  if (act === "history") { state.screen = "history"; state.sheet = null; render(); return; }
+  if (act === "home") { state.screen = "home"; state.sheet = null; state.ielts = null; render(); return; }
+  if (act === "save-settings") { applySettings(); return; }
+  if (act === "confirm-no") { state.confirm = null; render(); return; }
+  if (act === "confirm-yes") { const pending = state.confirm; state.confirm = null; pending?.run(); return; }
+  if (act === "pick-partner") { pickPartner(data.id); return; }
+  if (act === "daily") { openDaily(state.catalogue.scenarios[0].id); return; }
+  if (act === "scenario") { changeScenario(data.id); return; }
+  if (act === "again") { openDaily(state.daily.scenario_id, true); return; }
+  if (act === "drill") { startIelts(loadPlan().next ? "drill" : "diagnostic"); return; }
+  if (act === "mock") { startIelts("mock"); return; }
+  if (act === "speak") { speakBubble(Number(data.index)); return; }
+  if (act === "speak-suggest") { speakSuggestion(); return; }
+  if (act === "speak-practice") { speakPractice(); return; }
+  if (act === "translate") {
+    state.daily.bubbles[Number(data.index)].showTranslation = true;
+    render();
+    return;
+  }
+  if (act === "retry") { retryTurn(); return; }
+  if (act === "ielts-next") { advanceAfterReview(); return; }
+}
+
+function applySettings() {
+  const next = { ...state.settings };
+  for (const key of ["support", "target", "level", "script", "accent", "pinyin_tone", "module", "target_band"]) {
+    const node = document.querySelector(`#set-${key}`);
+    if (node) next[key] = key === "target_band" ? Number(node.value) : node.value;
+  }
+  const exam = document.querySelector("#exam_date");
+  const auto = document.querySelector("#autoplay");
+  if (exam) next.exam_date = exam.value;
+  if (auto) next.autoplay = auto.checked;
+  const changed = ["target", "support", "script", "accent", "level"].some((key) => next[key] !== state.settings.target && key === "target" ? next.target !== state.settings.target : next[key] !== state.settings[key]);
+  const resetKeys = ["target", "support", "level", "script", "accent"];
+  const mustReset = resetKeys.some((key) => next[key] !== state.settings[key]) && learnerLines().length;
+  const commit = () => {
+    state.settings = next;
+    saveSettings();
+    state.sheet = null;
+    if (mustReset && state.screen === "daily") openDaily(state.daily.scenario_id, true);
+    else render();
+  };
+  if (mustReset) {
+    state.sheet = null;
+    state.confirm = { text: t("startNew"), run: commit };
+    render();
+    return;
+  }
+  commit();
+  if (changed) state.notice = "";
+}
+
+function learnerLines() {
+  return (state.daily?.bubbles || []).filter((bubble) => bubble.role === "learner" && bubble.text.trim());
+}
+
+function changeScenario(id) {
+  if (!state.daily || id === state.daily.scenario_id) return;
+  const run = () => openDaily(id, true);
+  if (learnerLines().length) {
+    state.confirm = { text: t("startNew"), run };
+    render();
+    return;
+  }
+  run();
+}
+
+async function openDaily(scenarioId, force) {
+  const saved = !force && loadOpen();
+  state.screen = "daily";
+  state.sheet = null;
+  state.notice = "";
+  if (saved && saved.scenario_id === scenarioId) {
+    state.daily = saved;
+    render();
+    return;
+  }
+  state.daily = {
+    session_id: uuid(),
+    scenario_id: scenarioId,
     bubbles: [],
     fired: [],
     goal: "open",
+    cap_reached: false,
   };
-  renderDaily();
-  void sendDaily(true);
+  render();
+  await postTurn([]);
+}
+
+function loadOpen() {
+  try {
+    return JSON.parse(localStorage.getItem("lingocoach.open.v1") || "null");
+  } catch (err) {
+    return null;
+  }
+}
+
+function saveOpen() {
+  if (!state.daily) return;
+  localStorage.setItem("lingocoach.open.v1", JSON.stringify(state.daily));
+}
+
+async function submitField() {
+  const field = document.querySelector("#field");
+  const text = (field?.value || "").trim();
+  if (!text || state.daily?.loading || state.ielts?.loading) return;
+  if (state.screen === "ielts") {
+    await submitIelts(text);
+    return;
+  }
+  const bubble = { role: "learner", text, pending: true };
+  state.daily.bubbles.push(bubble);
+  if (field) field.value = "";
+  render();
+  const history = state.daily.bubbles.filter((item) => item.role === "learner" || item.role === "character").slice(-12).map((item) => ({ role: item.role, text: item.text }));
+  await postTurn(history);
+}
+
+async function postTurn(history) {
+  state.daily.loading = true;
+  const body = {
+    session_id: state.daily.session_id,
+    scenario_id: state.daily.scenario_id,
+    partner_id: state.settings.partner,
+    settings: {
+      target: state.settings.target,
+      support: state.settings.support,
+      level: state.settings.level,
+      script: state.settings.script,
+      accent: state.settings.accent,
+      pinyin_tone: state.settings.pinyin_tone,
+      partner: state.settings.partner,
+    },
+    history,
+    fired_signals: state.daily.fired || [],
+  };
+  state.lastBody = body;
+  let response;
+  try {
+    response = await fetch("/api/turn", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Client-Id": clientId() },
+      body: JSON.stringify(body),
+    });
+  } catch (err) {
+    markLearnerError(t("retry"));
+    return;
+  }
+  if (response.status === 429) {
+    markLearnerError(t("tooMany"));
+    return;
+  }
+  if (!response.ok) {
+    markLearnerError(t("retry"));
+    return;
+  }
+  const data = await response.json();
+  state.provider = data.meta?.provider || state.provider;
+  const learner = [...state.daily.bubbles].reverse().find((item) => item.role === "learner");
+  if (learner) {
+    learner.pending = false;
+    learner.error = "";
+    learner.coaching = data.coaching;
+  }
+  if (data.character?.text) {
+    state.daily.bubbles.push({
+      role: "character",
+      text: data.character.text,
+      translation: data.character.translation,
+      phonetic: data.character.phonetic,
+      phonetic_system: data.character.phonetic_system,
+      syllables: data.character.syllables,
+      visemes: data.character.visemes,
+      mood: data.character.mood,
+      partner_id: data.partner_id || state.settings.partner,
+    });
+  }
+  state.daily.fired = data.session?.fired_signals || [];
+  state.daily.goal = data.session?.goal_status || "open";
+  state.daily.cap_reached = Boolean(data.session?.cap_reached);
+  state.daily.loading = false;
+  saveOpen();
+  if (state.daily.goal === "met" || state.daily.cap_reached) saveHistoryRow();
+  render();
+  const last = state.daily.bubbles[state.daily.bubbles.length - 1];
+  if (last?.role === "character" && state.settings.autoplay) speakLine(last);
+}
+
+function markLearnerError(message) {
+  const learner = [...state.daily.bubbles].reverse().find((item) => item.role === "learner");
+  if (learner) {
+    learner.pending = false;
+    learner.error = message;
+  }
+  state.daily.loading = false;
+  state.notice = message;
+  render();
+}
+
+async function retryTurn() {
+  if (!state.lastBody) return;
+  const learner = [...state.daily.bubbles].reverse().find((item) => item.role === "learner");
+  if (learner) {
+    learner.pending = true;
+    learner.error = "";
+  }
+  render();
+  await postTurn(state.lastBody.history);
+}
+
+function pickPartner(id) {
+  const session = state.ielts;
+  if (session && session.kind === "mock" && (session.phase === "part2_prep" || session.phase === "part2_speak")) return;
+  if (listening) return;
+  state.settings.partner = id;
+  saveSettings();
+  state.sheet = null;
+  const name = partner()?.name || id;
+  const live = document.querySelector("#live");
+  if (live) live.textContent = `${t("nowTalking")} ${name}`;
+  if (state.speaking) {
+    const line = state.speaking;
+    window.speechSynthesis?.cancel();
+    render();
+    speakLine(line);
+    return;
+  }
+  render();
+}
+
+function speechAvailable() {
+  if (state.micHidden || (state.settings.target === "yue" && state.cantoneseMicHidden)) return false;
+  return Boolean(window.SpeechRecognition || window.webkitSpeechRecognition);
+}
+
+function startMic(event) {
+  const Ctor = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!Ctor || listening) return;
+  window.speechSynthesis?.cancel();
+  if (face) {
+    face.setMode("listen");
+    face.setViseme("sil");
+  }
+  const field = document.querySelector("#field");
+  draftBeforeMic = field ? field.value : "";
+  recognizer = new Ctor();
+  recognizer.interimResults = true;
+  recognizer.continuous = false;
+  recognizer.maxAlternatives = 1;
+  recognizer.lang = recognitionLang();
+  if (state.ielts && !state.ielts.speechStarted && state.ielts.phase === "part2_speak") state.ielts.speechStarted = Date.now();
+  state.micStarted = state.micStarted || Date.now();
+  recognizer.onresult = (ev) => {
+    let text = "";
+    for (const result of ev.results) text += result[0].transcript;
+    if (field) field.value = text || draftBeforeMic;
+  };
+  recognizer.onerror = (ev) => {
+    if (ev.error === "language-not-supported" && state.settings.target === "yue" && !cantoneseRetried) {
+      cantoneseRetried = true;
+      recognizer.lang = "zh-HK";
+      try { recognizer.start(); } catch (err) { state.cantoneseMicHidden = true; }
+      return;
+    }
+    if (ev.error === "language-not-supported" && state.settings.target === "yue") state.cantoneseMicHidden = true;
+    if (ev.error === "not-allowed") state.notice = t("micBlocked");
+    if (ev.error === "network") state.notice = t("recNetwork");
+    if (ev.error === "audio-capture") state.notice = t("noMic");
+    if (ev.error === "no-speech" && field) field.value = draftBeforeMic;
+    listening = false;
+    announce(t("stopped"));
+    render();
+  };
+  recognizer.onend = () => {
+    listening = false;
+    announce(t("stopped"));
+    const mic = document.querySelector("#mic");
+    if (mic) {
+      mic.classList.remove("live");
+      mic.textContent = "🎤";
+    }
+    if (face) face.setMode("idle");
+  };
+  try {
+    recognizer.start();
+    listening = true;
+    announce(t("listening"));
+    const mic = document.querySelector("#mic");
+    if (mic) {
+      mic.classList.add("live");
+      mic.textContent = t("listening");
+    }
+  } catch (err) {
+    state.notice = t("noMic");
+  }
+  if (event) event.preventDefault();
+}
+
+function stopMic() {
+  listening = false;
+  try { recognizer?.stop(); } catch (err) { /* already stopped */ }
+  announce(t("stopped"));
+}
+
+function recognitionLang() {
+  if (state.settings.target === "cmn") return "zh-CN";
+  if (state.settings.target === "yue") return cantoneseRetried ? "zh-HK" : "yue-Hant-HK";
+  return state.settings.accent === "en-US" ? "en-US" : "en-GB";
+}
+
+function announce(text) {
+  const live = document.querySelector("#live");
+  if (live) live.textContent = text;
+}
+
+function refreshVoices() {
+  voices = window.speechSynthesis ? window.speechSynthesis.getVoices() : [];
+}
+if (window.speechSynthesis) {
+  window.speechSynthesis.addEventListener("voiceschanged", refreshVoices);
+  refreshVoices();
+  setTimeout(refreshVoices, 400);
+}
+
+function voiceFor(lineLang, who) {
+  const person = who || partner();
+  let langs = [];
+  const forbid = [];
+  if (lineLang === "yue") {
+    langs = ["zh-HK", "yue"];
+    forbid.push("zh-CN", "zh-TW");
+  } else if (lineLang === "cmn") langs = ["zh-CN"];
+  else langs = [person.region === "UK" ? "en-GB" : state.settings.accent];
+  const female = /female|woman|samantha|victoria|karen|moira|fiona|serena|kate|libby|sonia|aria|xiaoxiao|huihui|yaoyao|sinji|tingting|meijia/i;
+  const male = /male|daniel|alex|rishi|tom\b/i;
+  const wantMale = person.gender === "man";
+  for (const lang of langs) {
+    const ranked = voices.filter((voice) => {
+      const code = voice.lang.toLowerCase().replaceAll("_", "-");
+      if (!code.startsWith(lang.toLowerCase())) return false;
+      return !forbid.some((blocked) => code.startsWith(blocked.toLowerCase()));
+    });
+    if (!ranked.length) continue;
+    return ranked.find((voice) => (wantMale ? male : female).test(voice.name)) || ranked[0];
+  }
+  return null;
+}
+
+function speakLine(bubble) {
+  const who = (state.catalogue.partners || []).find((item) => item.id === bubble.partner_id) || partner();
+  speakText(bubble.text, state.settings.target, who, bubble.visemes, bubble.mood || "happy");
+}
+
+function speakBubble(index) {
+  const bubble = state.daily?.bubbles?.[index];
+  if (bubble) speakLine(bubble);
+}
+
+function speakSuggestion() {
+  const learner = [...(state.daily?.bubbles || [])].reverse().find((item) => item.coaching?.suggested_reply);
+  if (!learner) return;
+  speakText(learner.coaching.suggested_reply, state.settings.target, partner(), learner.coaching.suggested_reply_visemes, "encourage");
+}
+
+function speakPractice() {
+  const text = state.ielts?.review?.practice_answer?.text;
+  if (!text) return;
+  speakText(text, "en", partner(), state.ielts.review.practice_answer.visemes, "encourage");
+}
+
+function speakText(text, lineLang, who, visemes, mood) {
+  window.speechSynthesis?.cancel();
+  state.speaking = { text, lineLang, partner_id: who.id, visemes, mood };
+  const shapes = visemes?.length ? visemes : lineLang === "en" ? englishVisemes(text) : pinyinVisemes(text);
+  const step = lineLang === "en" ? 90 : 125;
+  if (face) {
+    face.setMode("speak", mood || "happy");
+    face.setViseme(shapes[0] || "sil");
+  }
+  let cursor = 0;
+  const timer = window.setInterval(() => {
+    cursor += 1;
+    if (!face) return;
+    if (cursor >= shapes.length) return;
+    face.setViseme(shapes[cursor]);
+  }, step);
+  const finish = () => {
+    window.clearInterval(timer);
+    window.setTimeout(() => {
+      if (face) face.setViseme("sil");
+      if (face) face.setMode("idle");
+      state.speaking = null;
+    }, 180);
+  };
+  const voice = voiceFor(lineLang, who);
+  if (!voice || !window.speechSynthesis) {
+    window.setTimeout(finish, shapes.length * step + 200);
+    const button = document.querySelector(".speak");
+    if (button && !voice) button.title = t("noVoice");
+    return;
+  }
+  const utterance = new SpeechSynthesisUtterance(text);
+  utterance.voice = voice;
+  utterance.lang = voice.lang;
+  utterance.rate = sessionRate || (state.settings.level === "beginner" ? 0.85 : 1);
+  utterance.onend = finish;
+  utterance.onerror = finish;
+  window.speechSynthesis.speak(utterance);
+}
+
+async function mountFace() {
+  const token = ++mountToken;
+  const canvas = document.querySelector("#face");
+  if (!canvas) {
+    face = null;
+    return;
+  }
+  const who = partner();
+  if (!who) return;
+  if (who.mesh && who.mesh_url) {
+    try {
+      const portrait = new Portrait(canvas);
+      portrait.ready = false;
+      face = portrait;
+      await portrait.load(who.portrait, who.mesh_url);
+      if (token !== mountToken) return;
+      portrait.ready = true;
+      portrait.setMode(listening ? "listen" : "idle");
+      return;
+    } catch (err) {
+      /* fall through to the illustrated card */
+    }
+  }
+  if (token !== mountToken) return;
+  const illustrated = new IllustratedPortrait(canvas, who);
+  illustrated.ready = true;
+  face = illustrated;
+  illustrated.setMode(listening ? "listen" : "idle");
+}
+
+function loop(now) {
+  const dt = Math.min(0.05, (now - lastFrame) / 1000);
+  lastFrame = now;
+  if (face && face.ready !== false) {
+    try {
+      face.resize();
+      face.frame(now, dt);
+    } catch (err) {
+      /* one bad frame must not stop the portrait loop */
+    }
+  }
+  const clock = document.querySelector("#clock");
+  if (clock && state.ielts) clock.textContent = clockText();
+  tickIelts();
+  requestAnimationFrame(loop);
+}
+
+function loadPlan() {
+  const rows = JSON.parse(localStorage.getItem("lingocoach.ielts.v1") || "[]");
+  const last = rows[rows.length - 1];
+  let drillsSince = 0;
+  for (let i = rows.length - 1; i >= 0; i -= 1) {
+    if (rows[i].kind === "mock" || rows[i].kind === "diagnostic") break;
+    drillsSince += 1;
+  }
+  return { next: last?.next_drill || null, drillsSince, label: last?.next_drill ? `${last.next_drill.focus}` : "" };
+}
+
+function examSoon() {
+  if (!state.settings.exam_date) return false;
+  const when = new Date(state.settings.exam_date);
+  const days = (when.getTime() - Date.now()) / 86400000;
+  return days >= 0 && days <= 14;
 }
 
 function startIelts(kind) {
-  settings.track = "ielts";
-  settings.target = "en";
-  save();
-  session = {
-    track: "ielts",
-    kind,
-    id: crypto.randomUUID(),
-    part: 1,
-    q: 0,
-    bubbles: [],
-    pendingReview: null,
-    prep: 0,
-    speak: 0,
-    phase: "question",
-  };
-  renderIelts();
-}
-
-function scenarioRow() {
-  return boot.scenarios.find((row) => row.id === session.scenario);
-}
-
-function renderDaily() {
-  const row = scenarioRow();
-  const person = partner();
-  app.innerHTML = `
-    <main class="screen">
-      <div class="top">
-        <button class="ghost" id="home">Home</button>
-        <div class="grow"><h2>${person.name}</h2><div class="fine">${person.city} · 27</div></div>
-        <button class="ghost" id="change">Change</button>
-      </div>
-      <div class="chips" id="chips"></div>
-      <div class="stage">
-        <canvas id="face" width="336" height="448" aria-label="${person.name}, 27, ${person.city}"></canvas>
-        <div>
-          <p class="goal" id="goal">${row.goal[settings.support] || row.goal.en}</p>
-          <p class="fine" id="status">Ready</p>
-        </div>
-      </div>
-      <div class="thread" id="thread"></div>
-      <div class="composer">
-        <button class="icon-btn" id="mic" aria-label="Hold to talk">Mic</button>
-        <textarea id="field" placeholder="Type, or hold the mic"></textarea>
-        <button class="send" id="send">Send</button>
-      </div>
-    </main>`;
-  const chips = document.querySelector("#chips");
-  for (const item of boot.scenarios) {
-    const button = document.createElement("button");
-    button.className = "chip";
-    button.textContent = title(item);
-    button.setAttribute("aria-pressed", String(item.id === session.scenario));
-    button.onclick = () => {
-      if (session.bubbles.some((bubble) => bubble.role === "learner") && !confirm("Start a new practice? This chat stays on this page until you leave.")) return;
-      session.scenario = item.id;
-      session.bubbles = [];
-      session.fired = [];
-      settings.target = item.id === "london-directions" ? "en" : item.id === "beijing-hotel-checkin" ? "cmn" : "yue";
-      save();
-      renderDaily();
-      void sendDaily(true);
-    };
-    chips.append(button);
-  }
-  document.querySelector("#home").onclick = () => { speechSynthesis?.cancel(); renderHome(); };
-  document.querySelector("#change").onclick = openPartners;
-  document.querySelector("#send").onclick = () => sendDaily(false);
-  wireMic();
-  paintThread();
-  void mountFace(document.querySelector("#face"));
-}
-
-function paintThread() {
-  const thread = document.querySelector("#thread");
-  if (!thread) return;
-  thread.innerHTML = "";
-  for (const bubble of session.bubbles) {
-    const node = document.createElement("article");
-    node.className = `bubble ${bubble.role}`;
-    const who = bubble.role === "character" ? (bubble.partnerName || partner().name) : "You";
-    node.innerHTML = `<div class="who">${who}</div><div></div>`;
-    node.querySelector("div:last-child").textContent = bubble.text;
-    if (bubble.phonetic) {
-      const phone = document.createElement("div");
-      phone.className = "phonetic";
-      phone.textContent = bubble.phonetic;
-      node.append(phone);
-    }
-    if (bubble.translation && settings.level !== "advanced") {
-      const tr = document.createElement("p");
-      tr.className = "fine";
-      tr.textContent = bubble.translation;
-      node.append(tr);
-    }
-    if (bubble.coaching) node.append(coachingCard(bubble.coaching));
-    if (bubble.review) node.append(reviewCard(bubble.review));
-    thread.append(node);
-  }
-  thread.scrollTop = thread.scrollHeight;
-}
-
-function coachingCard(coaching) {
-  const card = document.createElement("div");
-  card.className = "coach-card";
-  if (coaching.praise) {
-    const p = document.createElement("p");
-    p.textContent = coaching.praise;
-    card.append(p);
-  }
-  for (const hint of coaching.reading_hints || []) {
-    const p = document.createElement("p");
-    p.textContent = `How it is read: ${hint.term} — ${hint.note}`;
-    card.append(p);
-  }
-  if (coaching.suggested_reply) {
-    const p = document.createElement("p");
-    p.textContent = `Try saying: ${coaching.suggested_reply}`;
-    card.append(p);
-    if (coaching.suggested_reply_phonetic) {
-      const phone = document.createElement("div");
-      phone.className = "phonetic";
-      phone.textContent = coaching.suggested_reply_phonetic;
-      card.append(phone);
-    }
-  }
-  for (const item of coaching.corrections || []) {
-    const p = document.createElement("p");
-    p.textContent = `Why: ${item.why}`;
-    card.append(p);
-  }
-  return card;
-}
-
-function reviewCard(data) {
-  const card = document.createElement("div");
-  card.className = "coach-card";
-  const note = document.createElement("p");
-  note.textContent = "Practice estimate. Pronunciation was not assessed, so there is no overall speaking band.";
-  card.append(note);
-  for (const row of data.criteria || []) {
-    const p = document.createElement("p");
-    const band = row.band == null ? "not scored" : `band ${row.band}`;
-    p.textContent = `${row.id.replaceAll("_", " ")}: ${band}. ${row.evidence || ""}`;
-    card.append(p);
-  }
-  if (data.practice_answer) {
-    const p = document.createElement("p");
-    p.textContent = `Practice answer (${data.practice_answer.aim_band}): ${data.practice_answer.text}`;
-    card.append(p);
-    const why = document.createElement("p");
-    why.textContent = data.practice_answer.why;
-    card.append(why);
-  }
-  return card;
-}
-
-async function sendDaily(opening) {
-  const field = document.querySelector("#field");
-  const text = opening ? "" : (field?.value || "").trim();
-  if (!opening && !text) return;
-  if (!opening) {
-    session.bubbles.push({ role: "learner", text });
-    field.value = "";
-    paintThread();
-  }
-  const send = document.querySelector("#send");
-  if (send) send.disabled = true;
-  setStatus("Thinking");
-  try {
-    const data = await api("/api/turn", {
-      session_id: session.id,
-      scenario_id: session.scenario,
-      partner_id: settings.partner,
-      settings,
-      history: session.bubbles.filter((bubble) => bubble.role === "learner" || bubble.role === "character").slice(-12).map((bubble) => ({ role: bubble.role, text: bubble.text })),
-      fired_signals: session.fired,
-    });
-    session.fired = data.session?.fired_signals || data.goal.fired;
-    session.goal = data.session?.goal_status || data.goal.status;
-    const person = partner();
-    session.bubbles.push({
-      role: "character",
-      text: data.character.text,
-      phonetic: data.character.phonetic,
-      translation: data.character.translation,
-      visemes: data.character.visemes,
-      partnerName: person.name,
-      partnerId: person.id,
-    });
-    const lastLearner = [...session.bubbles].reverse().find((bubble) => bubble.role === "learner");
-    if (lastLearner && data.coaching) lastLearner.coaching = data.coaching;
-    paintThread();
-    setStatus(data.provider === "fixture" ? "Built-in coach" : data.provider);
-    if (settings.autoplay) speak(data.character.text, settings.target, data.character.visemes);
-    if (session.goal === "met") setStatus("Goal met");
-  } catch (error) {
-    setStatus(error.status === 429 ? "Too many turns. Wait a moment." : "The coach is unavailable. You can retry.");
-  } finally {
-    if (send) send.disabled = false;
-  }
-}
-
-function renderIelts() {
-  const person = partner();
-  const question = currentQuestion();
-  app.innerHTML = `
-    <main class="screen">
-      <div class="top">
-        <button class="ghost" id="home">Home</button>
-        <div class="grow"><h2>${person.name}</h2><div class="fine">IELTS-style ${session.kind} · ${person.city} · 27</div></div>
-        <div class="timer" id="clock"></div>
-        <button class="ghost" id="change">Change</button>
-      </div>
-      <div class="stage">
-        <canvas id="face" width="336" height="448" aria-label="${person.name}"></canvas>
-        <div>
-          <p class="goal">Practice estimate only. Not an official score.</p>
-          <p class="fine" id="status">${session.kind === "mock" ? "No coaching until the end." : "Drill"}</p>
-        </div>
-      </div>
-      <div class="cue" id="cue"></div>
-      <div class="thread" id="thread"></div>
-      <div class="composer">
-        <button class="icon-btn" id="mic">Mic</button>
-        <textarea id="field" placeholder="Type your answer"></textarea>
-        <button class="send" id="send">Send</button>
-      </div>
-    </main>`;
-  document.querySelector("#home").onclick = () => { speechSynthesis?.cancel(); clearInterval(session.ticker); renderHome(); };
-  document.querySelector("#change").onclick = openPartners;
-  document.querySelector("#send").onclick = () => submitIelts();
-  wireMic();
-  paintCue();
-  paintThread();
-  void mountFace(document.querySelector("#face"));
-  if (settings.autoplay) speak(question, "en", null);
-}
-
-function currentQuestion() {
-  if (session.part === 1) return boot.ielts.part1.questions[session.q] || boot.ielts.part1.questions[0];
-  if (session.part === 2) return boot.ielts.part2.cue.title;
-  return boot.ielts.part3.questions[session.q] || boot.ielts.part3.questions[0];
-}
-
-function paintCue() {
-  const cue = document.querySelector("#cue");
-  if (!cue) return;
-  if (session.part === 2) {
-    const card = boot.ielts.part2;
-    cue.innerHTML = `<strong>${card.cue.title}</strong><ul>${card.cue.say.map((line) => `<li>${line}</li>`).join("")}</ul>`;
-    if (session.kind !== "mock") {
-      const gloss = document.createElement("p");
-      gloss.className = "fine";
-      gloss.textContent = card.gloss[settings.support] || card.gloss.en;
-      cue.append(gloss);
-    }
+  const plan = loadPlan();
+  const bank = state.catalogue.ielts;
+  let prompt;
+  let part = 1;
+  if (kind === "mock") {
+    prompt = promptById("food-at-home");
+    part = 1;
+  } else if (kind === "drill" && plan.next) {
+    prompt = promptById(plan.next.prompt_id) || promptById("food-at-home");
+    part = plan.next.part || prompt.part;
+    kind = "drill";
   } else {
-    cue.textContent = currentQuestion();
-    if (session.kind !== "mock" && session.part === 1) {
-      const gloss = document.createElement("p");
-      gloss.className = "fine";
-      gloss.textContent = boot.ielts.part1.gloss[settings.support] || boot.ielts.part1.gloss.en;
-      cue.append(gloss);
-    }
+    kind = "diagnostic";
+    prompt = promptById("food-at-home");
+    part = 1;
   }
-}
-
-async function submitIelts() {
-  const field = document.querySelector("#field");
-  const text = (field.value || "").trim();
-  if (!text) return;
-  field.value = "";
-  session.bubbles.push({ role: "learner", text, part: session.part });
-  paintThread();
-  const hide = session.kind === "mock";
-  if (!hide) {
-    setStatus("Reviewing");
-    try {
-      const data = await api("/api/ielts/review", {
-        session_id: session.id,
-        kind: "drill",
-        part: session.part,
-        prompt_id: session.part === 1 ? "food-at-home" : "skill-you-taught",
-        target_band: settings.target_band,
-        support: settings.support,
-        script: settings.script,
-        accent: settings.accent,
-        speech_ms: session.speechMs || 45000,
-        learner_text: text,
-      });
-      session.bubbles[session.bubbles.length - 1].review = data;
-      paintThread();
-      setStatus("Practice estimate");
-    } catch (error) {
-      setStatus("The review is unavailable.");
-    }
-  }
-  advanceIelts();
-}
-
-function advanceIelts() {
-  if (session.part === 1 && session.q < boot.ielts.part1.questions.length - 1) {
-    session.q += 1;
-    paintCue();
-    if (settings.autoplay) speak(currentQuestion(), "en", null);
-    return;
-  }
-  if (session.part === 1) {
-    session.part = 2;
-    session.q = 0;
-    session.phase = "prep";
-    paintCue();
-    runPrep();
-    return;
-  }
-  if (session.part === 2) {
-    session.part = 3;
-    session.q = 0;
-    paintCue();
-    if (settings.autoplay) speak(currentQuestion(), "en", null);
-    return;
-  }
-  if (session.q < boot.ielts.part3.questions.length - 1) {
-    session.q += 1;
-    paintCue();
-    if (settings.autoplay) speak(currentQuestion(), "en", null);
-    return;
-  }
-  setStatus(session.kind === "mock" ? "Mock finished. Reviews stay off until you ask on the last answer in a later build; this mock kept coaching hidden." : "Drill finished.");
-}
-
-function runPrep() {
-  let left = 60;
-  const clock = document.querySelector("#clock");
-  const field = document.querySelector("#field");
-  const send = document.querySelector("#send");
-  const mic = document.querySelector("#mic");
-  if (send) send.disabled = true;
-  if (mic) mic.disabled = true;
-  session.ticker = setInterval(() => {
-    left -= 1;
-    if (clock) clock.textContent = `Prep ${left}s`;
-    if (left <= 0) {
-      clearInterval(session.ticker);
-      if (send) send.disabled = false;
-      if (mic) mic.disabled = false;
-      if (clock) clock.textContent = "Speak 120s";
-      setStatus("Part 2. Speak now.");
-      let speak = 120;
-      session.speechStart = Date.now();
-      session.ticker = setInterval(() => {
-        speak -= 1;
-        if (clock) clock.textContent = `Speak ${speak}s`;
-        if (speak <= 0) {
-          clearInterval(session.ticker);
-          if (field && field.value.trim()) submitIelts();
-        }
-      }, 1000);
-    }
-  }, 1000);
-}
-
-function wireMic() {
-  const mic = document.querySelector("#mic");
-  const field = document.querySelector("#field");
-  const Rec = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!Rec) {
-    mic.title = "This browser has no speech recognition. Type instead.";
-    return;
-  }
-  let rec = null;
-  let draft = "";
-  const start = () => {
-    draft = field.value;
-    rec = new Rec();
-    const lang = settings.target === "yue" ? "zh-HK" : settings.target === "cmn" ? "zh-CN" : settings.accent;
-    rec.lang = lang;
-    rec.interimResults = true;
-    rec.onresult = (event) => {
-      let said = "";
-      for (let i = 0; i < event.results.length; i++) said += event.results[i][0].transcript;
-      field.value = said;
-    };
-    rec.onend = () => { mic.classList.remove("listening"); setFace("idle", "neutral"); };
-    rec.onerror = () => { field.value = draft; mic.classList.remove("listening"); };
-    setFace("listen", "listen");
-    mic.classList.add("listening");
-    setStatus("Listening");
-    speechSynthesis?.cancel();
-    rec.start();
+  state.screen = "ielts";
+  state.sheet = null;
+  state.notice = "";
+  state.ielts = {
+    kind,
+    phase: "ask",
+    part,
+    prompt,
+    frameIds: kind === "mock" ? bank.filter((item) => item.part === 1).slice(0, 3).map((item) => item.id) : [prompt.id],
+    frameIndex: 0,
+    qIndex: 0,
+    question: "",
+    gloss: "",
+    cue: prompt.cue || null,
+    answers: [],
+    review: null,
+    reviews: [],
+    continued: false,
+    speechStarted: null,
+    deadline: null,
+    notes: "",
+    take: "",
+    part3Index: 0,
+    loading: false,
+    hardStopped: false,
   };
-  const stop = () => { rec?.stop(); mic.classList.remove("listening"); setStatus("Stopped"); };
-  mic.addEventListener("pointerdown", (event) => { event.preventDefault(); start(); });
-  mic.addEventListener("pointerup", stop);
-  mic.addEventListener("pointercancel", stop);
-  field.addEventListener("keydown", (event) => {
-    if (event.key === "Enter" && !event.shiftKey) {
-      event.preventDefault();
-      document.querySelector("#send")?.click();
+  if (part === 2) beginPart2();
+  else askCurrent();
+  render();
+  speakExaminer(state.ielts.question, state.ielts.kind === "mock" ? "examiner" : "question");
+}
+
+function askCurrent() {
+  const session = state.ielts;
+  const prompt = session.part === 3 ? promptById("skill-you-taught") : promptById(session.frameIds[session.frameIndex]) || session.prompt;
+  session.prompt = prompt;
+  let question = "";
+  if (session.part === 1) question = prompt.questions[session.qIndex];
+  else if (session.part === 3) question = prompt.part3[session.part3Index];
+  else question = prompt.rounding_off?.[0] || "";
+  session.question = question;
+  session.gloss = session.kind === "mock" ? "" : (prompt.gloss?.[state.settings.support] || prompt.gloss?.en || "");
+  session.cue = session.part === 2 ? prompt.cue : null;
+  if (session.kind === "mock" && session.part === 1 && !session.deadline) session.deadline = Date.now() + 5 * 60 * 1000;
+  if (session.kind === "mock" && session.part === 3 && !session.deadline) session.deadline = Date.now() + 5 * 60 * 1000;
+}
+
+function beginPart2() {
+  const session = state.ielts;
+  const prompt = promptById(session.kind === "diagnostic" || session.kind === "mock" ? "skill-you-taught" : session.prompt.id);
+  session.part = 2;
+  session.prompt = prompt;
+  session.phase = "part2_prep";
+  session.cue = prompt.cue;
+  session.question = "";
+  session.gloss = session.kind === "mock" ? "" : (prompt.gloss?.[state.settings.support] || "");
+  session.deadline = Date.now() + 60 * 1000;
+  session.continued = false;
+  session.speechStarted = null;
+  session.take = "";
+  session.hardStopped = false;
+}
+
+async function submitIelts(text) {
+  const session = state.ielts;
+  if (session.phase === "part2_prep") return;
+  if (session.phase === "part2_speak") {
+    const speechMs = Date.now() - (session.speechStarted || Date.now());
+    const hard = session.hardStopped;
+    session.hardStopped = false;
+    if (!hard && speechMs < 60000 && !session.continued) {
+      session.continued = true;
+      session.take = `${session.take} ${text}`.trim();
+      session.question = "Can you tell me anything else?";
+      const field = document.querySelector("#field");
+      if (field) field.value = "";
+      render();
+      speakExaminer(session.question, "examiner");
+      return;
     }
+    session.take = `${session.take} ${text}`.trim();
+    session.answers.push({ part: 2, prompt_id: session.prompt.id, text: session.take, speech_ms: speechMs });
+    session.phase = "rounding";
+    session.question = session.prompt.rounding_off[0];
+    session.deadline = null;
+    render();
+    speakExaminer(session.question, session.kind === "mock" ? "examiner" : "question");
+    return;
+  }
+  if (session.phase === "rounding") {
+    session.answers.push({ part: 2, prompt_id: session.prompt.id, text, speech_ms: null, rounding: true });
+    if (session.kind === "mock") {
+      session.part = 3;
+      session.part3Index = 0;
+      session.phase = "ask";
+      session.deadline = Date.now() + 5 * 60 * 1000;
+      askCurrent();
+      render();
+      speakExaminer(session.question, "examiner");
+      return;
+    }
+    await reviewLatest(2, session.prompt.id, session.take);
+    return;
+  }
+  const speechMs = state.micStarted ? Date.now() - state.micStarted : null;
+  state.micStarted = null;
+  session.answers.push({ part: session.part, prompt_id: session.prompt.id, text, speech_ms: speechMs });
+  if (session.kind === "mock") {
+    nextMockQuestion();
+    return;
+  }
+  await reviewLatest(session.part, session.prompt.id, text, speechMs);
+}
+
+function nextMockQuestion() {
+  const session = state.ielts;
+  if (session.part === 1) {
+    const prompt = promptById(session.frameIds[session.frameIndex]);
+    if (session.qIndex + 1 < prompt.questions.length) session.qIndex += 1;
+    else if (session.frameIndex + 1 < session.frameIds.length) {
+      session.frameIndex += 1;
+      session.qIndex = 0;
+    } else {
+      beginPart2();
+      render();
+      return;
+    }
+    askCurrent();
+    render();
+    speakExaminer(session.question, "examiner");
+    return;
+  }
+  if (session.part === 3) {
+    const prompt = promptById("skill-you-taught");
+    if (session.part3Index + 1 < prompt.part3.length) {
+      session.part3Index += 1;
+      askCurrent();
+      render();
+      speakExaminer(session.question, "examiner");
+      return;
+    }
+    finishMock();
+  }
+}
+
+async function reviewLatest(part, promptId, text, speechMs) {
+  const session = state.ielts;
+  session.loading = true;
+  session.phase = "review";
+  render();
+  const response = await fetch("/api/ielts/review", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-Client-Id": clientId() },
+    body: JSON.stringify({
+      session_id: uuid(),
+      kind: session.kind === "mock" ? "mock_part" : session.kind === "diagnostic" ? "diagnostic" : "drill",
+      part,
+      prompt_id: promptId,
+      target_band: state.settings.target_band,
+      support: state.settings.support,
+      script: state.settings.script,
+      accent: state.settings.accent,
+      speech_ms: speechMs ?? null,
+      notes: session.notes || null,
+      learner_text: text,
+    }),
+  });
+  if (!response.ok) {
+    state.notice = t("retry");
+    session.loading = false;
+    session.phase = "between";
+    render();
+    return;
+  }
+  const review = await response.json();
+  session.review = review;
+  session.reviews.push(review);
+  session.loading = false;
+  session.phase = session.kind === "mock" ? "done" : "between";
+  rememberReview(review, part);
+  if (session.kind !== "mock") render();
+  else render();
+}
+
+function advanceAfterReview() {
+  const session = state.ielts;
+  session.review = null;
+  if (session.part === 1) {
+    const prompt = session.prompt;
+    if (session.qIndex + 1 < (prompt.questions || []).length) {
+      session.qIndex += 1;
+      session.phase = "ask";
+      askCurrent();
+      render();
+      speakExaminer(session.question, "question");
+      return;
+    }
+    if (session.kind === "diagnostic") {
+      beginPart2();
+      render();
+      return;
+    }
+    session.phase = "done";
+    render();
+    return;
+  }
+  if (session.part === 2 && session.kind === "diagnostic") {
+    session.part = 3;
+    session.part3Index = 0;
+    session.phase = "ask";
+    session.prompt = promptById("skill-you-taught");
+    askCurrent();
+    render();
+    speakExaminer(session.question, "question");
+    return;
+  }
+  if (session.part === 3 && session.kind === "diagnostic" && session.part3Index < 1) {
+    session.part3Index += 1;
+    session.phase = "ask";
+    askCurrent();
+    render();
+    speakExaminer(session.question, "question");
+    return;
+  }
+  session.phase = "done";
+  render();
+}
+
+async function finishMock() {
+  const session = state.ielts;
+  session.phase = "review";
+  session.kind = "mock";
+  const groups = [1, 2, 3].map((part) => {
+    const rows = session.answers.filter((item) => item.part === part && !item.rounding);
+    return { part, text: rows.map((item) => item.text).join("\n\n"), prompt: part === 1 ? "food-at-home" : "skill-you-taught" };
+  });
+  for (const group of groups) {
+    if (!group.text.trim()) continue;
+    const response = await fetch("/api/ielts/review", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Client-Id": clientId() },
+      body: JSON.stringify({
+        session_id: uuid(),
+        kind: "mock_part",
+        part: group.part,
+        prompt_id: group.prompt,
+        target_band: state.settings.target_band,
+        support: state.settings.support,
+        script: state.settings.script,
+        accent: state.settings.accent,
+        speech_ms: null,
+        learner_text: group.text,
+      }),
+    });
+    if (response.ok) {
+      const review = await response.json();
+      session.reviews.push(review);
+      session.review = review;
+      rememberReview(review, group.part, "mock");
+    }
+  }
+  session.phase = "done";
+  render();
+}
+
+function rememberReview(review, part, kind) {
+  const rows = JSON.parse(localStorage.getItem("lingocoach.ielts.v1") || "[]");
+  rows.push({
+    at: new Date().toISOString(),
+    kind: kind || state.ielts.kind,
+    part,
+    next_drill: review.next_drill,
+    bands: Object.fromEntries((review.criteria || []).map((item) => [item.id, item.band])),
+  });
+  localStorage.setItem("lingocoach.ielts.v1", JSON.stringify(rows.slice(-40)));
+  saveHistoryRow(review);
+}
+
+function tickIelts() {
+  const session = state.ielts;
+  if (!session?.deadline || session.hardStopped) return;
+  if (Date.now() < session.deadline) return;
+  if (session.phase === "part2_prep") {
+    session.phase = "part2_speak";
+    session.deadline = Date.now() + 120 * 1000;
+    session.speechStarted = Date.now();
+    const notes = document.querySelector("#notes");
+    if (notes) session.notes = notes.value;
+    render();
+    if (speechAvailable()) {
+      const mic = document.querySelector("#mic");
+      if (mic) startMic({ preventDefault() {} });
+    }
+    return;
+  }
+  if (session.phase === "part2_speak") {
+    session.hardStopped = true;
+    const field = document.querySelector("#field");
+    const text = (field?.value || "").trim();
+    session.deadline = null;
+    submitIelts(text || session.take || "...");
+    return;
+  }
+  if (session.kind === "mock" && (session.part === 1 || session.part === 3)) {
+    session.deadline = null;
+    if (session.part === 1) beginPart2();
+    else finishMock();
+    render();
+  }
+}
+
+function speakExaminer(text, mood) {
+  if (!text) return;
+  const visemes = englishVisemes(text);
+  speakText(text, "en", partner(), visemes, mood);
+}
+
+async function saveHistoryRow(review) {
+  const row = {
+    session_id: state.daily?.session_id || uuid(),
+    track: state.screen === "ielts" ? "ielts" : "daily",
+    partner: partner()?.name,
+    task: state.screen === "ielts" ? state.ielts?.prompt?.id : scenario()?.title?.en,
+    date: new Date().toISOString(),
+    summary: state.screen === "ielts" ? (review ? "criteria assessed, pronunciation not assessed" : "") : (state.daily?.goal || ""),
+    bubbles: state.daily?.bubbles || [],
+  };
+  state.history = [row, ...state.history].slice(0, 50);
+  try {
+    const db = await openDb();
+    const tx = db.transaction("sessions", "readwrite");
+    tx.objectStore("sessions").put(row);
+    const all = await reqAsPromise(tx.objectStore("sessions").getAll());
+    if (all.length > 50) {
+      all.sort((a, b) => String(a.date).localeCompare(String(b.date)));
+      for (const old of all.slice(0, all.length - 50)) tx.objectStore("sessions").delete(old.session_id);
+    }
+  } catch (err) {
+    /* history still sits in memory for this visit */
+  }
+}
+
+function openDb() {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open("lingocoach", 1);
+    request.onupgradeneeded = () => request.result.createObjectStore("sessions", { keyPath: "session_id" });
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
   });
 }
 
-function openPartners() {
-  const sheet = document.createElement("div");
-  sheet.className = "sheet";
-  const people = boot.partners.map((person) => `
-    <button class="person ${person.id === settings.partner ? "on" : ""}" data-id="${person.id}">
-      <strong>${person.name}</strong>
-      <div class="fine">${person.gender === "woman" ? "Woman" : "Man"} · 27 · ${person.city}</div>
-    </button>`).join("");
-  sheet.innerHTML = `<article><h2>Change partner</h2><div class="people">${people}</div><button class="ghost" id="close">Close</button></article>`;
-  document.body.append(sheet);
-  sheet.querySelector("#close").onclick = () => sheet.remove();
-  sheet.onclick = (event) => { if (event.target === sheet) sheet.remove(); };
-  for (const button of sheet.querySelectorAll(".person")) {
-    button.onclick = () => {
-      settings.partner = button.dataset.id;
-      save();
-      sheet.remove();
-      const label = document.querySelector(".top h2");
-      if (label) label.textContent = partner().name;
-      const live = document.createElement("div");
-      live.className = "fine";
-      live.setAttribute("aria-live", "polite");
-      live.textContent = `Now talking with ${partner().name}`;
-      document.querySelector(".stage")?.append(live);
-      speechSynthesis?.cancel();
-      void mountFace(document.querySelector("#face"));
-    };
+function reqAsPromise(request) {
+  return new Promise((resolve, reject) => {
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+async function boot() {
+  const response = await fetch("/api/catalogue");
+  state.catalogue = await response.json();
+  try {
+    const db = await openDb();
+    state.history = await reqAsPromise(db.transaction("sessions").objectStore("sessions").getAll());
+    state.history.sort((a, b) => String(b.date).localeCompare(String(a.date)));
+  } catch (err) {
+    state.history = [];
   }
+  const open = loadOpen();
+  if (open?.bubbles?.length) {
+    state.daily = open;
+    state.screen = "daily";
+  }
+  render();
+  requestAnimationFrame(loop);
 }
 
-function openSettings() {
-  const sheet = document.createElement("div");
-  sheet.className = "sheet";
-  sheet.innerHTML = `
-    <article>
-      <h2>Settings</h2>
-      <label>Support language
-        <select id="support">
-          <option value="en">English</option>
-          <option value="cmn">Putonghua</option>
-          <option value="yue">Cantonese</option>
-        </select>
-      </label>
-      <label>Daily target
-        <select id="target">
-          <option value="en">English</option>
-          <option value="cmn">Putonghua</option>
-          <option value="yue">Cantonese</option>
-        </select>
-      </label>
-      <label>Level
-        <select id="level">
-          <option value="beginner">Beginner</option>
-          <option value="intermediate">Intermediate</option>
-          <option value="advanced">Advanced</option>
-        </select>
-      </label>
-      <label>English accent
-        <select id="accent">
-          <option value="en-GB">British</option>
-          <option value="en-US">American</option>
-        </select>
-      </label>
-      <label>Target band
-        <select id="band">${[5, 5.5, 6, 6.5, 7, 7.5, 8].map((n) => `<option value="${n}">${n}</option>`).join("")}</select>
-      </label>
-      <p class="disclaimer">Transcripts stay in this browser. A turn’s text is sent to the coach. Losing browser data loses history.</p>
-      <button class="send" id="done">Done</button>
-    </article>`;
-  document.body.append(sheet);
-  for (const id of ["support", "target", "level", "accent"]) sheet.querySelector("#" + id).value = settings[id];
-  sheet.querySelector("#band").value = String(settings.target_band);
-  sheet.querySelector("#done").onclick = () => {
-    settings.support = sheet.querySelector("#support").value;
-    settings.target = sheet.querySelector("#target").value;
-    settings.level = sheet.querySelector("#level").value;
-    settings.accent = sheet.querySelector("#accent").value;
-    settings.target_band = Number(sheet.querySelector("#band").value);
-    save();
-    sheet.remove();
-    renderHome();
-  };
-}
-
-const catalogue = await fetch("/api/catalogue").then((response) => response.json());
-const part1 = catalogue.ielts.find((item) => item.id === "food-at-home");
-const part2 = catalogue.ielts.find((item) => item.id === "skill-you-taught");
-boot = {
-  partners: catalogue.partners,
-  scenarios: catalogue.scenarios,
-  key_loaded: catalogue.key_loaded,
-  ielts: {
-    part1,
-    part2,
-    part3: { questions: part2.part3 || [], gloss: part2.gloss },
-  },
-};
-if (window.speechSynthesis) speechSynthesis.onvoiceschanged = () => speechSynthesis.getVoices();
-renderHome();
+boot();

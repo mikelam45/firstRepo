@@ -38,12 +38,13 @@ const SHAPES = {
   RR: { open: 0.32, round: 0.38, wide: 0, jaw: 0.22, press: 0 },
 };
 
-const MOODS = {
+export const MOODS = {
   neutral: { smile: 0.08, brow: 0 },
   happy: { smile: 0.7, brow: 0.16 },
   question: { smile: 0.14, brow: 0.9 },
   encourage: { smile: 0.82, brow: 0.2 },
   listen: { smile: 0.34, brow: 0.06 },
+  examiner: { smile: 0.12, brow: 0.05 },
 };
 
 function lerp(a, b, t) {
@@ -119,11 +120,17 @@ function shapeOf(name) {
 export class Portrait {
   constructor(canvas) {
     this.canvas = canvas;
-    this.gl = canvas.getContext("webgl", { alpha: false, antialias: true, premultipliedAlpha: false });
+    this.gl = canvas.getContext("webgl", {
+      alpha: false,
+      antialias: true,
+      premultipliedAlpha: false,
+      preserveDrawingBuffer: true,
+    });
     if (!this.gl) throw new Error("WebGL is not available");
     this.mode = "idle";
     this.mood = "neutral";
     this.viseme = "sil";
+    this.reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     this.lookTarget = 0;
     this.shown = { open: 0, round: 0, wide: 0, jaw: 0, press: 0, smile: 0.08, brow: 0, look: 0, nod: 0, blink: 0 };
     this.nextBlink = performance.now() + 800;
@@ -205,7 +212,11 @@ export class Portrait {
     const ease = 1 - Math.exp(-dt * 16);
     const mood = MOODS[this.mode === "listen" ? "listen" : this.mood] || MOODS.neutral;
     const shape = shapeOf(this.viseme);
-    const nodTarget = this.mode === "listen" ? Math.sin(now / 620) * 0.045 : Math.sin(now / 900) * 0.012;
+    const nodTarget = this.reduceMotion
+      ? 0
+      : this.mode === "listen"
+        ? Math.sin(now / 620) * 0.045
+        : Math.sin(now / 900) * 0.012;
     if (this.blinkStart < 0 && now >= this.nextBlink) {
       this.blinkStart = now;
       this.nextBlink = now + 2400 + Math.random() * 2800;
@@ -332,7 +343,9 @@ export class Portrait {
     const open = this.shown.open;
     if (open < 0.18) return;
     const gl = this.gl;
-    const ctx = this.overlay;
+    const canvas = this.overlay;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
     const w = this.canvas.width;
     const h = this.canvas.height;
     ctx.clearRect(0, 0, w, h);
@@ -361,7 +374,7 @@ export class Portrait {
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
     gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
     gl.bindTexture(gl.TEXTURE_2D, this.teethTex);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, this.overlay);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, canvas);
     // Draw the mouth opening as a fan on top of the portrait.
     const fan = new Float32Array((loop.length + 2) * 2);
     const uvs = new Float32Array((loop.length + 2) * 2);
@@ -441,6 +454,130 @@ function compile(gl, type, source) {
   gl.shaderSource(shader, source);
   gl.compileShader(shader);
   return shader;
+}
+
+export class IllustratedPortrait {
+  constructor(canvas, partner) {
+    this.canvas = canvas;
+    this.ctx = canvas.getContext("2d");
+    this.partner = partner;
+    this.palette = partner.palette || { bg: "#d7dee8", hair: "#2a211c", skin: "#f0c7b0", shirt: "#355070" };
+    this.mode = "idle";
+    this.mood = "neutral";
+    this.viseme = "sil";
+    this.lookTarget = 0;
+    this.reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    this.shown = { open: 0, round: 0, wide: 0, smile: 0.08, brow: 0, blink: 0, nod: 0 };
+    this.nextBlink = performance.now() + 800;
+    this.blinkStart = -1;
+  }
+
+  async load() {}
+
+  resize() {
+    const rect = this.canvas.getBoundingClientRect();
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const w = Math.max(2, Math.round(rect.width * dpr));
+    const h = Math.max(2, Math.round(rect.height * dpr));
+    if (this.canvas.width !== w || this.canvas.height !== h) {
+      this.canvas.width = w;
+      this.canvas.height = h;
+    }
+  }
+
+  setMode(mode, mood) {
+    this.mode = mode;
+    if (mood) this.mood = mood;
+  }
+
+  setViseme(name) {
+    this.viseme = name;
+  }
+
+  setLook(x) {
+    this.lookTarget = x;
+  }
+
+  frame(now, dt) {
+    const ease = 1 - Math.exp(-dt * 16);
+    const mood = MOODS[this.mode === "listen" ? "listen" : this.mood] || MOODS.neutral;
+    const shape = SHAPES[this.viseme] || SHAPES.sil;
+    if (this.blinkStart < 0 && now >= this.nextBlink) {
+      this.blinkStart = now;
+      this.nextBlink = now + 2400 + Math.random() * 2800;
+    }
+    let blink = 0;
+    if (this.blinkStart >= 0) {
+      const age = now - this.blinkStart;
+      if (age < 150) blink = Math.sin((age / 150) * Math.PI);
+      else this.blinkStart = -1;
+    }
+    const nod = this.reduceMotion ? 0 : this.mode === "listen" ? Math.sin(now / 620) * 0.045 : 0;
+    const target = { open: shape.open, round: shape.round, wide: shape.wide, smile: mood.smile, brow: mood.brow, blink, nod };
+    for (const key of Object.keys(target)) this.shown[key] = lerp(this.shown[key], target[key], ease);
+    this._draw();
+  }
+
+  _draw() {
+    const ctx = this.ctx;
+    const w = this.canvas.width;
+    const h = this.canvas.height;
+    if (!ctx || !w || !h) return;
+    const p = this.palette;
+    const s = this.shown;
+    ctx.clearRect(0, 0, w, h);
+    ctx.fillStyle = p.bg;
+    ctx.fillRect(0, 0, w, h);
+    const cx = w * 0.5;
+    const cy = h * (0.46 + s.nod);
+    const head = Math.min(w, h) * 0.34;
+    ctx.fillStyle = p.shirt || "#355070";
+    ctx.beginPath();
+    ctx.ellipse(cx, h * 0.92, head * 1.15, head * 0.85, 0, Math.PI, 0);
+    ctx.fill();
+    ctx.fillStyle = p.hair;
+    ctx.beginPath();
+    ctx.ellipse(cx, cy - head * 0.08, head * 1.05, head * 1.18, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = p.skin;
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, head * 0.86, head * 0.98, 0, 0, Math.PI * 2);
+    ctx.fill();
+    const eyeY = cy - head * 0.08;
+    const eyeX = head * 0.32;
+    const look = this.lookTarget * head * 0.04;
+    ctx.fillStyle = "#1d2430";
+    for (const side of [-1, 1]) {
+      ctx.beginPath();
+      ctx.ellipse(cx + side * eyeX + look, eyeY, head * 0.07, head * 0.08 * (1 - s.blink), 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.strokeStyle = p.hair;
+    ctx.lineWidth = Math.max(2, head * 0.035);
+    const browLift = -s.brow * head * 0.08;
+    ctx.beginPath();
+    ctx.moveTo(cx - eyeX - head * 0.12, eyeY - head * 0.16 + browLift);
+    ctx.quadraticCurveTo(cx - eyeX, eyeY - head * 0.24 + browLift, cx - eyeX + head * 0.14, eyeY - head * 0.14 + browLift * 0.4);
+    ctx.moveTo(cx + eyeX + head * 0.12, eyeY - head * 0.16 + browLift);
+    ctx.quadraticCurveTo(cx + eyeX, eyeY - head * 0.24 + browLift, cx + eyeX - head * 0.14, eyeY - head * 0.14 + browLift * 0.4);
+    ctx.stroke();
+    const mouthY = cy + head * 0.38;
+    const mouthW = head * (0.34 + s.wide * 0.16 + s.smile * 0.08);
+    const open = head * (0.04 + s.open * 0.22);
+    const smile = s.smile * head * 0.08;
+    ctx.fillStyle = s.open > 0.2 ? "#6e3340" : "#c47b88";
+    ctx.beginPath();
+    ctx.ellipse(cx, mouthY - smile * 0.2, mouthW * (1 - s.round * 0.25), Math.max(head * 0.03, open), 0, 0, Math.PI * 2);
+    ctx.fill();
+    if (s.open > 0.35) {
+      ctx.fillStyle = "#f4f0ea";
+      ctx.fillRect(cx - mouthW * 0.45, mouthY - open * 0.85, mouthW * 0.9, open * 0.28);
+    }
+    ctx.fillStyle = "rgba(15, 23, 42, 0.72)";
+    ctx.font = `${Math.round(head * 0.16)}px sans-serif`;
+    ctx.textAlign = "center";
+    ctx.fillText("Illustrated", cx, h * 0.08);
+  }
 }
 
 function loadImage(url) {
