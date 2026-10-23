@@ -132,7 +132,7 @@ async function mountFace(canvas) {
   if (person.mesh) {
     try {
       portrait = new Portrait(canvas);
-      await portrait.load(person.portrait, person.mesh);
+      await portrait.load(person.portrait, person.mesh_url);
       portrait.setMode("idle", "neutral");
       last = performance.now();
       frameHandle = requestAnimationFrame(loop);
@@ -720,6 +720,18 @@ function openSettings() {
   };
 }
 
-boot = await fetch("/api/bootstrap").then((response) => response.json());
+const catalogue = await fetch("/api/catalogue").then((response) => response.json());
+const part1 = catalogue.ielts.find((item) => item.id === "food-at-home");
+const part2 = catalogue.ielts.find((item) => item.id === "skill-you-taught");
+boot = {
+  partners: catalogue.partners,
+  scenarios: catalogue.scenarios,
+  key_loaded: catalogue.key_loaded,
+  ielts: {
+    part1,
+    part2,
+    part3: { questions: part2.part3 || [], gloss: part2.gloss },
+  },
+};
 if (window.speechSynthesis) speechSynthesis.onvoiceschanged = () => speechSynthesis.getVoices();
 renderHome();

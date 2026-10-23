@@ -17,6 +17,11 @@ def send_allowed(phase: str) -> bool:
     return phase != "part2_prep"
 
 
+def review_visible(phase: str) -> bool:
+    """A mock shows no review card until the final review phase."""
+    return phase == "review"
+
+
 def part2_on_submit(speech_ms: int | None, already_continued: bool, hard_stop: bool) -> dict:
     if hard_stop or speech_ms is None:
         return {"end": True, "prompt": None}

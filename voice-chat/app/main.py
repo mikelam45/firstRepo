@@ -1,115 +1,156 @@
-"""LingoCoach local server. Default port is 8066."""
+"""HTTP service for LingoCoach. Port comes from the process, default 8066."""
 
 from __future__ import annotations
 
-import os
+import logging
 import time
-from collections import defaultdict, deque
 from pathlib import Path
 
-from fastapi import FastAPI, Header, Request
+from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from app.coach import public_settings, take_turn
-from app.ielts_prompts import FOOD, PART3, SKILL
-from app.ielts_review import review
-from app.partners import PARTNERS
-from app.scenarios import SCENARIOS
+from app.coach import ServiceError, handle_turn, validate_request
+from app.ielts_prompts import DIAGNOSTIC, gloss_for, public_bank
+from app.ielts_review import handle_review, validate_review_request
+from app.ielts_writing import PROMPTS as WRITING_PROMPTS
+from app.ielts_writing import check_script
+from app.limits import LIMITER
+from app.partners import all_partners, public_partner
+from app.scenarios import enabled_scenarios, public_scenario
 
-app = FastAPI(title="LingoCoach")
+logging.basicConfig(level=logging.INFO, format="%(message)s")
+logger = logging.getLogger("lingocoach")
+
 STATIC = Path(__file__).resolve().parent / "static"
-_HITS: dict[str, deque] = defaultdict(deque)
 
-
-def _limited(client_id: str, limit: int, window: int) -> bool:
-    now = time.monotonic()
-    bucket = _HITS[client_id]
-    while bucket and now - bucket[0] > window:
-        bucket.popleft()
-    if len(bucket) >= limit:
-        return True
-    bucket.append(now)
-    return False
+app = FastAPI(title="LingoCoach", docs_url=None, redoc_url=None)
 
 
 @app.get("/health")
-def health():
+def health() -> dict:
     return {"status": "ok"}
 
 
-@app.get("/api/bootstrap")
-def bootstrap():
+@app.get("/api/catalogue")
+def catalogue() -> dict:
     return {
-        "partners": PARTNERS,
-        "scenarios": [
-            {
-                "id": row["id"],
-                "title": row["title"],
-                "goal": row["goal"],
-                "locale": row["locale"],
-            }
-            for row in SCENARIOS
-        ],
-        "ielts": {"part1": FOOD, "part2": SKILL, "part3": PART3},
-        "key_loaded": bool((os.environ.get("OPENROUTER_API_KEY") or "").strip()),
+        "partners": [public_partner(partner) for partner in all_partners()],
+        "scenarios": [public_scenario(scenario) for scenario in enabled_scenarios()],
+        "ielts": public_bank("drill"),
+        "diagnostic": DIAGNOSTIC,
+        "writing": {
+            key: {"task": value["task"], "module": value["module"], "prompt": value["prompt"]}
+            for key, value in WRITING_PROMPTS.items()
+        },
+        "key_loaded": bool((__import__("os").environ.get("OPENROUTER_API_KEY") or "").strip()),
     }
+
+
+@app.get("/api/ielts/gloss")
+def ielts_gloss(prompt_id: str, support: str = "en", kind: str = "drill") -> dict:
+    try:
+        text = gloss_for(prompt_id, support, kind)
+    except KeyError:
+        return JSONResponse({"error": "invalid_request", "message": "Unknown prompt."}, status_code=400)
+    return {"gloss": text}
 
 
 @app.post("/api/turn")
-async def api_turn(request: Request, x_client_id: str | None = Header(default=None)):
+async def turn(request: Request):
+    started = time.perf_counter()
     try:
-        raw = await request.json()
+        body = await request.json()
     except Exception:
-        return JSONResponse({"error": "invalid_request"}, status_code=400)
-    if not isinstance(raw, dict):
-        return JSONResponse({"error": "invalid_request"}, status_code=400)
-    history = raw.get("history") or []
-    if not isinstance(history, list) or len(history) > 12:
-        return JSONResponse({"error": "invalid_request"}, status_code=400)
-    for item in history:
-        text = (item or {}).get("text") or ""
-        if len(text) > 500:
-            return JSONResponse({"error": "invalid_request"}, status_code=400)
-    client = x_client_id or "anonymous"
-    if _limited(f"turn:{client}", 30, 600):
-        return JSONResponse({"error": "slow_down"}, status_code=429, headers={"Retry-After": "30"})
-    body = {
-        "session_id": raw.get("session_id") or "",
-        "scenario_id": raw.get("scenario_id") or "hk-cha-chaan-teng",
-        "partner_id": raw.get("partner_id") or "amelia",
-        "settings": public_settings(raw.get("settings") or {}),
-        "history": history,
-        "fired_signals": raw.get("fired_signals") or [],
-    }
+        return _error(ServiceError(400, "invalid_request", "Body must be JSON."))
     try:
-        payload = await take_turn(body)
-    except Exception:
-        return JSONResponse({"error": "coach_unavailable"}, status_code=502)
-    return payload
+        payload = validate_request(body)
+        client_id = request.headers.get("x-client-id") or "anonymous"
+        allowed, retry = LIMITER.allow(f"turn:{client_id}", 30, 10 * 60)
+        if not allowed:
+            raise ServiceError(429, "slow_down", "Too many turns. Wait a moment.", retry)
+        result = handle_turn(payload)
+    except ServiceError as exc:
+        logger.info(
+            "turn session_id=%s ms=%d result=%s",
+            body.get("session_id") if isinstance(body, dict) else "-",
+            int((time.perf_counter() - started) * 1000),
+            exc.error,
+        )
+        return _error(exc)
+    logger.info(
+        "turn session_id=%s ms=%d result=ok",
+        payload["session_id"],
+        int((time.perf_counter() - started) * 1000),
+    )
+    return result
 
 
 @app.post("/api/ielts/review")
-async def api_review(request: Request, x_client_id: str | None = Header(default=None)):
+async def ielts_review(request: Request):
+    started = time.perf_counter()
     try:
-        raw = await request.json()
+        body = await request.json()
     except Exception:
-        return JSONResponse({"error": "invalid_request"}, status_code=400)
-    text = (raw.get("learner_text") or "") if isinstance(raw, dict) else ""
-    if not isinstance(raw, dict) or len(text) > 4000:
-        return JSONResponse({"error": "invalid_request"}, status_code=400)
-    client = x_client_id or "anonymous"
-    if _limited(f"review:{client}", 40, 1800):
-        return JSONResponse({"error": "slow_down"}, status_code=429, headers={"Retry-After": "30"})
+        return _error(ServiceError(400, "invalid_request", "Body must be JSON."))
     try:
-        return review(raw)
+        payload = validate_review_request(body)
+        client_id = request.headers.get("x-client-id") or "anonymous"
+        allowed, retry = LIMITER.allow(f"review:{client_id}", 40, 30 * 60)
+        if not allowed:
+            raise ServiceError(429, "slow_down", "Too many turns. Wait a moment.", retry)
+        result = handle_review(payload, _provider())
+    except ServiceError as exc:
+        logger.info(
+            "review session_id=%s ms=%d result=%s",
+            body.get("session_id") if isinstance(body, dict) else "-",
+            int((time.perf_counter() - started) * 1000),
+            exc.error,
+        )
+        return _error(exc)
+    logger.info(
+        "review session_id=%s ms=%d result=ok",
+        payload["session_id"],
+        int((time.perf_counter() - started) * 1000),
+    )
+    return result
+
+
+@app.post("/api/ielts/writing-check")
+async def writing_check(request: Request):
+    try:
+        body = await request.json()
     except Exception:
-        return JSONResponse({"error": "coach_unavailable"}, status_code=502)
+        return _error(ServiceError(400, "invalid_request", "Body must be JSON."))
+    task = body.get("task")
+    module = body.get("module")
+    text = body.get("text")
+    if task not in {"task1", "task2"} or module not in {"academic", "general", "both"}:
+        return _error(ServiceError(400, "invalid_request", "task or module is invalid."))
+    if not isinstance(text, str):
+        return _error(ServiceError(400, "invalid_request", "text is required."))
+    return check_script(task, module, text)
 
 
 @app.get("/")
-def index():
+def index() -> FileResponse:
     return FileResponse(STATIC / "index.html")
+
+
+def _provider():
+    from app.coach import resolve_provider
+
+    return resolve_provider()
+
+
+def _error(exc: ServiceError) -> JSONResponse:
+    body = {"error": exc.error}
+    if exc.message and exc.status == 400:
+        body["message"] = exc.message
+    headers = {}
+    if exc.retry_after:
+        headers["Retry-After"] = str(exc.retry_after)
+    return JSONResponse(body, status_code=exc.status, headers=headers)
 
 
 app.mount("/static", StaticFiles(directory=STATIC), name="static")

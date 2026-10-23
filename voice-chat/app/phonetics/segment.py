@@ -32,9 +32,22 @@ def segment(text: str) -> list[tuple[str, str]]:
             spans.append(("han", text[i:j]))
         elif ch.isascii() and ch.isalpha():
             j = i + 1
-            while j < n and text[j].isascii() and (text[j].isalpha() or text[j] in "'’"):
-                j += 1
-            spans.append(("latin", text[i:j]))
+            while j < n:
+                if text[j].isascii() and (text[j].isalpha() or text[j] in "'’"):
+                    j += 1
+                    continue
+                if text[j] in " \t,.;:!?-—":
+                    k = j
+                    while k < n and text[k] in " \t,.;:!?-—":
+                        k += 1
+                    if k < n and text[k].isascii() and text[k].isalpha():
+                        j = k
+                        continue
+                    # Keep trailing punctuation on the English span so espeak sees the clause.
+                    j = k
+                    break
+                break
+            spans.append(("latin", text[i:j].strip()))
         elif ch.isdigit():
             j = i + 1
             while j < n and text[j].isdigit():

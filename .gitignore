@@ -1,3 +1,5 @@
 openrouter_key/
 .env
 voice-chat/.venv/
+**/__pycache__/
+*.pyc

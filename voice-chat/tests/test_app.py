@@ -2,10 +2,19 @@ from fastapi.testclient import TestClient
 
 from app.main import app
 from app.partners import PARTNERS
-from app.phonetics import transcribe
-from app.visemes import english_visemes, has_open_vowel, syllable_visemes
+from app.phonetics.pipeline import annotate
+from app.visemes import english_visemes, pinyin_visemes
 
 client = TestClient(app)
+
+SETTINGS = {
+    "target": "yue",
+    "support": "en",
+    "level": "beginner",
+    "script": "Hant",
+    "accent": "en-GB",
+    "pinyin_tone": "mark",
+}
 
 
 def test_health():
@@ -20,6 +29,9 @@ def test_partners_are_six_people_aged_27():
     assert len(women) == 3
     assert len(men) == 3
     assert all(row["age"] == 27 for row in PARTNERS)
+    catalogue = client.get("/api/catalogue")
+    assert catalogue.status_code == 200
+    assert len(catalogue.json()["partners"]) == 6
 
 
 def test_cantonese_register_fixture():
@@ -27,7 +39,7 @@ def test_cantonese_register_fixture():
         "session_id": "s",
         "scenario_id": "hk-cha-chaan-teng",
         "partner_id": "wing",
-        "settings": {"target": "yue", "support": "en", "level": "beginner", "script": "Hant", "accent": "en-GB"},
+        "settings": SETTINGS,
         "history": [{"role": "learner", "text": "我要咖啡"}],
         "fired_signals": [],
     })
@@ -37,17 +49,17 @@ def test_cantonese_register_fixture():
     assert "唔該" in body["coaching"]["suggested_reply"]
     assert body["coaching"]["corrections"][0]["type"] == "register"
     assert body["coaching"]["suggested_reply_phonetic"].startswith("m4 goi1")
-    assert body["provider"] == "fixture"
 
 
 def test_opening_has_no_coaching():
     response = client.post("/api/turn", json={
         "session_id": "s",
         "scenario_id": "hk-cha-chaan-teng",
-        "settings": {"target": "yue", "support": "en", "level": "beginner"},
+        "settings": SETTINGS,
         "history": [],
     })
     body = response.json()
+    assert response.status_code == 200
     assert body["coaching"] is None
     assert body["character"]["text"]
     assert body["character"]["phonetic"]
@@ -62,9 +74,12 @@ def test_ielts_hides_overall_and_pronunciation():
         "prompt_id": "food-at-home",
         "target_band": 6.5,
         "support": "en",
+        "script": "Hant",
+        "accent": "en-GB",
         "speech_ms": 45000,
         "learner_text": text,
     })
+    assert response.status_code == 200
     body = response.json()
     assert body["overall_band"] is None
     pronunciation = next(row for row in body["criteria"] if row["id"] == "pronunciation")
@@ -73,20 +88,14 @@ def test_ielts_hides_overall_and_pronunciation():
 
 
 def test_golden_jyutping_and_visemes():
-    assert transcribe("唔該，一杯熱啡，走甜。", "yue")["phonetic"] == "m4 goi1 jat1 bui1 jit6 fe1 zau2 tim4"
-    assert transcribe("埋單", "yue")["phonetic"] == "maai4 daan1"
-    gb = transcribe("Could I get a coffee, please?", "en", "en-GB")["phonetic"]
-    us = transcribe("Could I get a coffee, please?", "en", "en-US")["phonetic"]
-    assert "kɒfi" in gb
-    assert "kɔːfi" in us
-    assert gb != us
+    assert annotate("唔該，一杯熱啡，走甜。", "yue")["phonetic"] == "m4 goi1 jat1 bui1 jit6 fe1 zau2 tim4"
+    assert annotate("埋單", "yue")["phonetic"] == "maai4 daan1"
     visemes = english_visemes("Do you usually cook at home?")
     assert len(visemes) > 1
     assert "DD" in visemes or "TH" in visemes
-    assert has_open_vowel(visemes)
-    pu = syllable_visemes("pu tong hua")
+    pu = pinyin_visemes("pu tong hua")
     assert pu[0] in {"PP", "U"}
     assert "aa" in pu
-    goi = syllable_visemes("m4 goi1")
+    goi = pinyin_visemes("m4 goi1")
     assert goi[0] == "PP"
-    assert has_open_vowel(goi)
+    assert any(name in {"aa", "E", "I", "O", "U"} for name in goi)

@@ -19,6 +19,43 @@ MOODS = {
 
 OPEN_VOWELS = {"aa", "E", "I", "O", "U"}
 
+_TONE_MARKS = str.maketrans(
+    {
+        "ā": "a",
+        "á": "a",
+        "ǎ": "a",
+        "à": "a",
+        "ē": "e",
+        "é": "e",
+        "ě": "e",
+        "è": "e",
+        "ī": "i",
+        "í": "i",
+        "ǐ": "i",
+        "ì": "i",
+        "ō": "o",
+        "ó": "o",
+        "ǒ": "o",
+        "ò": "o",
+        "ū": "u",
+        "ú": "u",
+        "ǔ": "u",
+        "ù": "u",
+        "ǖ": "v",
+        "ǘ": "v",
+        "ǚ": "v",
+        "ǜ": "v",
+        "ü": "v",
+        "ń": "n",
+        "ň": "n",
+        "ǹ": "n",
+    }
+)
+
+
+def _strip_tone_marks(token: str) -> str:
+    return token.translate(_TONE_MARKS)
+
 
 def english_visemes(text: str) -> list[str]:
     out: list[str] = []
@@ -110,7 +147,7 @@ def pinyin_visemes(pinyin: str) -> list[str]:
     }
     out: list[str] = []
     for raw in pinyin.lower().split():
-        syl = re.sub(r"[1-5]", "", raw)
+        syl = re.sub(r"[1-5]", "", _strip_tone_marks(raw))
         if not syl:
             continue
         matched = re.match(r"^(zh|ch|sh|b|p|m|f|d|t|n|l|g|k|h|j|q|x|r|z|c|s|y|w)", syl)
