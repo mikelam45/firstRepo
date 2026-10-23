@@ -13,22 +13,27 @@ const LID_LOWER_R = [373, 374, 380, 381, 390];
 const IRIS_L = [468, 469, 470, 471, 472];
 const IRIS_R = [473, 474, 475, 476, 477];
 
+const INNER_LIP = [78, 191, 80, 81, 82, 13, 312, 311, 310, 415, 308, 324, 318, 402, 317, 14, 87, 178, 88, 95];
+const LOWER_INNER = new Set([324, 318, 402, 317, 14, 87, 178, 88, 95]);
+const LOWER_OUTER = new Set([146, 91, 181, 84, 17, 314, 405, 321, 375]);
+const UPPER_LIP = new Set([191, 80, 81, 82, 13, 312, 311, 310, 415, 185, 40, 39, 37, 0, 267, 269, 270, 409, 61, 291, 78, 308]);
+
 const SHAPES = {
-  sil: { open: 0.04, round: 0, wide: 0.04, jaw: 0, press: 0 },
-  aa: { open: 1, round: 0.06, wide: 0.12, jaw: 1, press: 0 },
-  E: { open: 0.62, round: 0, wide: 0.78, jaw: 0.5, press: 0 },
-  I: { open: 0.36, round: 0, wide: 0.95, jaw: 0.22, press: 0 },
-  O: { open: 0.9, round: 0.92, wide: 0, jaw: 0.72, press: 0 },
-  U: { open: 0.5, round: 1, wide: 0, jaw: 0.34, press: 0 },
-  PP: { open: 0, round: 0.08, wide: 0, jaw: 0, press: 1 },
-  FF: { open: 0.2, round: 0.04, wide: 0.16, jaw: 0.12, press: 0.15 },
-  TH: { open: 0.4, round: 0, wide: 0.22, jaw: 0.28, press: 0 },
-  DD: { open: 0.46, round: 0, wide: 0.08, jaw: 0.36, press: 0 },
-  kk: { open: 0.55, round: 0.1, wide: 0, jaw: 0.58, press: 0 },
-  CH: { open: 0.4, round: 0.55, wide: 0, jaw: 0.3, press: 0 },
-  SS: { open: 0.22, round: 0, wide: 0.42, jaw: 0.12, press: 0 },
-  nn: { open: 0.28, round: 0, wide: 0.06, jaw: 0.18, press: 0 },
-  RR: { open: 0.38, round: 0.42, wide: 0, jaw: 0.26, press: 0 },
+  sil: { open: 0.02, round: 0, wide: 0, jaw: 0, press: 0 },
+  aa: { open: 0.74, round: 0.04, wide: 0.06, jaw: 0.55, press: 0 },
+  E: { open: 0.46, round: 0, wide: 0.34, jaw: 0.24, press: 0 },
+  I: { open: 0.22, round: 0, wide: 0.4, jaw: 0.08, press: 0 },
+  O: { open: 0.58, round: 0.75, wide: 0, jaw: 0.34, press: 0 },
+  U: { open: 0.34, round: 0.88, wide: 0, jaw: 0.16, press: 0 },
+  PP: { open: 0, round: 0.02, wide: 0, jaw: 0, press: 1 },
+  FF: { open: 0.2, round: 0, wide: 0.1, jaw: 0.08, press: 0.2 },
+  TH: { open: 0.28, round: 0, wide: 0.1, jaw: 0.14, press: 0 },
+  DD: { open: 0.26, round: 0, wide: 0.04, jaw: 0.16, press: 0 },
+  kk: { open: 0.32, round: 0.1, wide: 0, jaw: 0.28, press: 0 },
+  CH: { open: 0.24, round: 0.32, wide: 0, jaw: 0.12, press: 0 },
+  SS: { open: 0.16, round: 0, wide: 0.16, jaw: 0.06, press: 0 },
+  nn: { open: 0.14, round: 0, wide: 0.02, jaw: 0.08, press: 0 },
+  RR: { open: 0.24, round: 0.3, wide: 0, jaw: 0.12, press: 0 },
 };
 
 export const MOODS = {
@@ -79,16 +84,35 @@ function mouthLimits(rest, faceCount, triangles) {
     nose,
     chin,
     clearance,
-    up: Math.min(mw * 0.36, noseSpan * 0.62),
-    down: Math.min(mw * 0.62, Math.max(0.018, clearance * 0.5)),
+    up: Math.min(mw * 0.22, noseSpan * 0.48),
+    down: Math.min(mw * 0.34, Math.max(0.014, clearance * 0.34)),
+    jaw: Math.min(mw * 0.16, Math.max(0.008, clearance * 0.22)),
   };
+}
+
+function onLowerLip(index, y, seal) {
+  if (LOWER_INNER.has(index) || LOWER_OUTER.has(index)) return true;
+  if (UPPER_LIP.has(index)) return false;
+  return y > seal;
+}
+
+function blendedShape(current, next, amount) {
+  const from = shapeOf(current);
+  const to = shapeOf(next || current);
+  const mix = Math.max(0, Math.min(1, amount));
+  const out = {};
+  for (const key of Object.keys(from)) out[key] = from[key] * (1 - mix) + to[key] * mix;
+  return out;
 }
 
 function follow(shown, target, dt, reduce) {
   const step = Math.max(0, dt);
   for (const key of Object.keys(target)) {
     const rising = target[key] > shown[key];
-    const rate = MOUTH_KEYS[key] ? (rising ? 36 : 24) : 12;
+    let rate = 10;
+    if (key === "jaw") rate = rising ? 7 : 5;
+    else if (key === "press") rate = rising ? 28 : 22;
+    else if (MOUTH_KEYS[key]) rate = rising ? 16 : 12;
     const ease = reduce && MOUTH_KEYS[key] ? 1 : 1 - Math.exp(-step * rate);
     shown[key] = lerp(shown[key], target[key], ease);
   }
@@ -173,6 +197,8 @@ export class Portrait {
     this.mode = "idle";
     this.mood = "neutral";
     this.viseme = "sil";
+    this.nextViseme = "sil";
+    this.blend = 0;
     this.reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     this.lookTarget = 0;
     this.shown = { open: 0, round: 0, wide: 0, jaw: 0, press: 0, smile: 0.08, brow: 0, look: 0, nod: 0, blink: 0 };
@@ -244,8 +270,10 @@ export class Portrait {
     if (mood) this.mood = mood;
   }
 
-  setViseme(name) {
-    this.viseme = name;
+  setViseme(name, next, blend) {
+    this.viseme = name || "sil";
+    this.nextViseme = next || this.viseme;
+    this.blend = Number.isFinite(blend) ? Math.max(0, Math.min(1, blend)) : 0;
   }
 
   setLook(x) {
@@ -254,8 +282,8 @@ export class Portrait {
 
   frame(now, dt) {
     const mood = MOODS[this.mode === "listen" ? "listen" : this.mood] || MOODS.neutral;
-    const shape = shapeOf(this.viseme);
     const speaking = this.mode === "speak";
+    const shape = blendedShape(this.viseme, this.nextViseme, speaking ? this.blend || 0 : 0);
     const nodTarget = this.reduceMotion
       ? 0
       : this.mode === "listen"
@@ -303,38 +331,40 @@ export class Portrait {
     const cx = (rest[61][0] + rest[291][0]) / 2;
     const cy = (rest[13][1] + rest[14][1]) / 2;
     const s = this.shown;
-    const press = s.press;
-    // Shift each lip as one sheet. Interior lip points used to stay put, so a
-    // closed photograph never opened. Travel is capped by the nose-to-lip span
-    // and the chin-to-background gap so the mesh does not fold.
-    const shut = 1 - press * 0.92;
+    // Closed photos keep the inner lip on one line. Split that line by landmark
+    // so the upper lip rises and the lower lip drops, and let the chin follow
+    // a little later. A y-only split left the lower lip on the upper sheet.
+    const shut = 1 - s.press * 0.92;
     const U = s.open * limits.up * shut;
-    const D = s.open * Math.max(s.jaw, 0.28) * limits.down * shut;
+    const D = s.open * limits.down * shut;
+    const chinDrop = s.jaw * (limits.jaw || limits.down * 0.45) * shut;
     const lipTop = limits.lipTop;
     const nose = limits.nose;
     const chinY = limits.chin;
+    const lowerY = rest[17][1];
     for (let i = 0; i < n; i++) {
       const p = rest[i];
       const dx = (p[0] - cx) / mw;
       const y = p[1];
-      const hx = smoothstep(1 - Math.abs(dx) / 1.85);
+      const hx = smoothstep(1 - Math.abs(dx) / 1.35);
       let dy = 0;
-      if (y <= cy) {
+      if (!onLowerLip(i, y, cy)) {
         const fade = y >= lipTop ? 1 : smoothstep((y - nose) / Math.max(0.02, lipTop - nose));
         dy = -U * fade * hx;
-      } else if (y <= chinY) {
+      } else if (y <= lowerY) {
         dy = D * hx;
       } else {
-        dy = D * hx * Math.max(0, 1 - (y - chinY) / limits.clearance);
+        const span = Math.max(0.02, chinY - lowerY);
+        const jawT = Math.min(1, (y - lowerY) / span);
+        let mag = D * (1 - jawT) + chinDrop * jawT;
+        if (y > chinY) mag *= Math.max(0, 1 - (y - chinY) / limits.clearance);
+        dy = mag * hx;
       }
-      const band = Math.max(0, 1 - Math.abs(y - cy) / (mw * 1.15));
       const side = dx >= 0 ? 1 : -1;
-      let dxPx = side * s.wide * mw * 0.12 * band * smoothstep(Math.min(1, Math.abs(dx)));
-      dxPx += -dx * mw * s.round * 0.22 * band * hx;
-      const corner = smoothstep(Math.max(0, Math.abs(dx) - 0.36) / 0.45);
-      dy -= s.smile * mw * 0.05 * corner * band;
+      const corner = smoothstep(Math.max(0, Math.abs(dx) - 0.2) / 0.45);
+      let dxPx = side * s.wide * mw * 0.05 * corner - side * s.round * mw * 0.2 * corner;
+      dy -= s.smile * mw * 0.05 * corner;
       dxPx += side * s.smile * mw * 0.02 * corner;
-      if (press > 0.55 && Math.abs(dx) < 0.72 && Math.abs(y - cy) < 0.055) dy *= 1 - 0.75 * press;
       pts[i][0] = p[0] + dxPx;
       pts[i][1] = p[1] + dy;
     }
@@ -400,58 +430,73 @@ export class Portrait {
     const h = this.canvas.height;
     if (!ctx || !this.posed || !this.mouth || !w || !h) return;
     ctx.clearRect(0, 0, w, h);
-    if (open < 0.08) return;
+    if (open < 0.1) return;
     const pts = this.posed;
-    const mw = this.mouth.mw;
-    const left = pts[61];
-    const right = pts[291];
-    const upper = pts[0];
-    const lower = pts[17];
-    const mx = (left[0] + right[0]) / 2;
-    const span = Math.max(0.001, lower[1] - upper[1]);
-    const rx = Math.hypot(right[0] - left[0], right[1] - left[1]) * (0.34 + this.shown.wide * 0.06 - this.shown.round * 0.1);
-    const ry = Math.max(mw * 0.035, span * 0.34);
-    const my = upper[1] + span * 0.48;
-    const steps = 22;
-    const poly = [];
-    for (let i = 0; i < steps; i++) {
-      const angle = (i / steps) * Math.PI * 2;
-      const sy = Math.sin(angle);
-      poly.push([mx + Math.cos(angle) * rx, my + sy * ry * (sy > 0 ? 1.08 : 0.88)]);
+    const loop = INNER_LIP.map((index) => pts[index]);
+    let cx = 0;
+    let cy = 0;
+    let minY = Infinity;
+    let maxY = -Infinity;
+    for (const p of loop) {
+      cx += p[0];
+      cy += p[1];
+      minY = Math.min(minY, p[1]);
+      maxY = Math.max(maxY, p[1]);
     }
+    cx /= loop.length;
+    cy /= loop.length;
+    if (maxY - minY < this.mouth.mw * 0.08) return;
+    const inset = 0.9;
+    const poly = loop.map((p) => [cx + (p[0] - cx) * inset, cy + (p[1] - cy) * inset]);
+    const top = Math.min(...poly.map((p) => p[1])) * h;
+    const bot = Math.max(...poly.map((p) => p[1])) * h;
     ctx.beginPath();
-    poly.forEach((p, i) => {
-      const x = p[0] * w;
-      const y = p[1] * h;
-      if (i === 0) ctx.moveTo(x, y);
-      else ctx.lineTo(x, y);
-    });
+    const count = poly.length;
+    const at = (index) => {
+      const p = poly[(index + count) % count];
+      return [p[0] * w, p[1] * h];
+    };
+    const start = at(0);
+    ctx.moveTo(start[0], start[1]);
+    for (let i = 0; i < count; i++) {
+      const cur = at(i);
+      const nxt = at(i + 1);
+      ctx.quadraticCurveTo(cur[0], cur[1], (cur[0] + nxt[0]) / 2, (cur[1] + nxt[1]) / 2);
+    }
     ctx.closePath();
-    ctx.fillStyle = "#241014";
+    const shade = ctx.createLinearGradient(0, top, 0, bot);
+    shade.addColorStop(0, "rgba(104, 52, 58, 0.98)");
+    shade.addColorStop(0.2, "rgba(48, 18, 24, 0.98)");
+    shade.addColorStop(1, "rgba(22, 10, 14, 0.99)");
+    ctx.fillStyle = shade;
     ctx.fill();
-    ctx.save();
-    ctx.clip();
-    const top = (my - ry * 0.92) * h;
-    const bot = (my + ry * 1.05) * h;
-    const gap = Math.max(2, bot - top);
-    const midX = mx * w;
-    const toothW = rx * 2 * w * 0.72;
-    if (open > 0.18) {
-      ctx.fillStyle = "#f3f0e8";
-      const toothH = Math.max(2, gap * 0.22);
-      ctx.fillRect(midX - toothW / 2, top + gap * 0.06, toothW, toothH);
-      ctx.fillStyle = "rgba(150, 126, 116, 0.55)";
-      const teeth = 5;
-      for (let i = 1; i < teeth; i++) {
-        const x = midX - toothW / 2 + (toothW * i) / teeth;
-        ctx.fillRect(x, top + gap * 0.08, Math.max(1, w * 0.0015), toothH * 0.75);
+    if (open > 0.34) {
+      const upper = poly.slice(0, 11);
+      const tooth = Math.max(1.2, (bot - top) * 0.2);
+      ctx.save();
+      ctx.clip();
+      ctx.beginPath();
+      upper.forEach((p, i) => {
+        const x = p[0] * w;
+        const y = p[1] * h + tooth * 0.08;
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      });
+      for (let i = upper.length - 1; i >= 0; i--) ctx.lineTo(upper[i][0] * w, upper[i][1] * h + tooth);
+      ctx.closePath();
+      ctx.fillStyle = "rgba(246, 242, 234, 0.94)";
+      ctx.fill();
+      ctx.strokeStyle = "rgba(186, 170, 160, 0.65)";
+      ctx.lineWidth = Math.max(1, tooth * 0.08);
+      for (let k = 1; k <= 5; k++) {
+        const p = upper[Math.round((upper.length - 1) * k / 6)];
+        ctx.beginPath();
+        ctx.moveTo(p[0] * w, p[1] * h + tooth * 0.12);
+        ctx.lineTo(p[0] * w, p[1] * h + tooth * 0.9);
+        ctx.stroke();
       }
+      ctx.restore();
     }
-    ctx.fillStyle = "rgba(122, 58, 66, 0.9)";
-    ctx.beginPath();
-    ctx.ellipse(midX, top + gap * 0.72, toothW * 0.42, gap * 0.18, 0, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.restore();
     const gl = this.gl;
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
@@ -547,6 +592,8 @@ export class IllustratedPortrait {
     this.mode = "idle";
     this.mood = "neutral";
     this.viseme = "sil";
+    this.nextViseme = "sil";
+    this.blend = 0;
     this.lookTarget = 0;
     this.reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     this.shown = { open: 0, round: 0, wide: 0, jaw: 0, press: 0, smile: 0.08, brow: 0, blink: 0, nod: 0 };
@@ -572,8 +619,10 @@ export class IllustratedPortrait {
     if (mood) this.mood = mood;
   }
 
-  setViseme(name) {
-    this.viseme = name;
+  setViseme(name, next, blend) {
+    this.viseme = name || "sil";
+    this.nextViseme = next || this.viseme;
+    this.blend = Number.isFinite(blend) ? Math.max(0, Math.min(1, blend)) : 0;
   }
 
   setLook(x) {
@@ -582,7 +631,8 @@ export class IllustratedPortrait {
 
   frame(now, dt) {
     const mood = MOODS[this.mode === "listen" ? "listen" : this.mood] || MOODS.neutral;
-    const shape = SHAPES[this.viseme] || SHAPES.sil;
+    const speaking = this.mode === "speak";
+    const shape = blendedShape(this.viseme, this.nextViseme, speaking ? this.blend || 0 : 0);
     if (this.blinkStart < 0 && now >= this.nextBlink) {
       this.blinkStart = now;
       this.nextBlink = now + 2400 + Math.random() * 2800;
@@ -594,7 +644,6 @@ export class IllustratedPortrait {
       else this.blinkStart = -1;
     }
     const nod = this.reduceMotion ? 0 : this.mode === "listen" ? Math.sin(now / 620) * 0.045 : 0;
-    const speaking = this.mode === "speak";
     const smile = speaking ? Math.min(mood.smile, 0.26) : mood.smile;
     const target = {
       open: shape.open,
@@ -654,34 +703,33 @@ export class IllustratedPortrait {
     ctx.moveTo(cx + eyeX + head * 0.12, eyeY - head * 0.16 + browLift);
     ctx.quadraticCurveTo(cx + eyeX, eyeY - head * 0.24 + browLift, cx + eyeX - head * 0.14, eyeY - head * 0.14 + browLift * 0.4);
     ctx.stroke();
-    const jawDrop = s.open * s.jaw * head * 0.1 * (1 - s.press);
-    const mouthY = cy + head * 0.34 + jawDrop;
-    const mouthW = head * (0.3 + s.wide * 0.2 - s.round * 0.1 + s.smile * 0.05);
-    const openH = head * (0.045 + s.open * 0.46) * (1 - s.press * 0.92);
-    const smile = s.smile * head * 0.06;
-    if (s.press > 0.65 || s.open < 0.08) {
+    const jawDrop = s.open * s.jaw * head * 0.05 * (1 - s.press);
+    const mouthY = cy + head * 0.36 + jawDrop;
+    const mouthW = head * (0.28 + s.wide * 0.08 - s.round * 0.06 + s.smile * 0.04);
+    const openH = head * (0.02 + s.open * 0.22) * (1 - s.press * 0.92);
+    const smile = s.smile * head * 0.05;
+    if (s.press > 0.65 || s.open < 0.1) {
       ctx.strokeStyle = "#a85a68";
-      ctx.lineWidth = Math.max(2, head * 0.035);
+      ctx.lineWidth = Math.max(2, head * 0.03);
       ctx.lineCap = "round";
       ctx.beginPath();
       ctx.moveTo(cx - mouthW, mouthY);
-      ctx.quadraticCurveTo(cx, mouthY + smile * 1.4, cx + mouthW, mouthY);
+      ctx.quadraticCurveTo(cx, mouthY + smile, cx + mouthW, mouthY);
       ctx.stroke();
     } else {
-      ctx.fillStyle = "#3a1820";
+      const top = mouthY - openH * 0.28;
+      const bot = mouthY + openH * 0.72;
+      ctx.fillStyle = "#4a242c";
       ctx.beginPath();
-      ctx.ellipse(cx, mouthY - smile * 0.15, mouthW * (s.round > 0.6 ? 0.72 : 1), Math.max(head * 0.04, openH), 0, 0, Math.PI * 2);
+      ctx.moveTo(cx - mouthW, mouthY);
+      ctx.quadraticCurveTo(cx, top, cx + mouthW, mouthY);
+      ctx.quadraticCurveTo(cx, bot, cx - mouthW, mouthY);
       ctx.fill();
-      if (s.open > 0.18) {
-        ctx.fillStyle = "#f4f1ea";
-        const toothW = mouthW * (1.15 - s.round * 0.35);
-        const toothH = openH * 0.34;
-        ctx.fillRect(cx - toothW / 2, mouthY - openH * 0.82, toothW, toothH);
+      if (s.open > 0.34) {
+        ctx.fillStyle = "#f4f0e8";
+        const tooth = Math.max(2, openH * 0.16);
+        ctx.fillRect(cx - mouthW * 0.62, top + openH * 0.18, mouthW * 1.24, tooth);
       }
-      ctx.fillStyle = s.open > 0.45 ? "#c2646c" : "#7a3a44";
-      ctx.beginPath();
-      ctx.ellipse(cx, mouthY + openH * 0.28, mouthW * 0.42, openH * 0.28, 0, 0, Math.PI * 2);
-      ctx.fill();
     }
     ctx.fillStyle = "rgba(15, 23, 42, 0.72)";
     ctx.font = `${Math.round(head * 0.16)}px sans-serif`;

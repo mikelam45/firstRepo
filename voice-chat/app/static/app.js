@@ -1,4 +1,4 @@
-import { IllustratedPortrait, Portrait, englishVisemes, pinyinVisemes } from "./face.js?v=20261023-mouth";
+import { IllustratedPortrait, Portrait, englishVisemes, pinyinVisemes } from "./face.js?v=20261023-lips";
 import { collectTranscript, recognitionLanguage, transcriptPiece } from "./transcript.js";
 
 const I18N = {
@@ -1619,12 +1619,18 @@ function runMouth(shapes, mood, token, lineLang, rate) {
     const elapsed = clockOffset + (performance.now() - clockAt);
     let index = 0;
     while (index < marks.length - 1 && elapsed >= marks[index + 1]) index += 1;
-    try { face.setViseme(sequence[index] || "sil"); } catch (err) { /* audio still plays */ }
+    const name = sequence[index] || "sil";
+    const upcoming = sequence[Math.min(sequence.length - 1, index + 1)] || name;
+    const end = index < marks.length - 1 ? marks[index + 1] : total;
+    const span = Math.max(1, end - marks[index]);
+    const local = Math.max(0, Math.min(1, (elapsed - marks[index]) / span));
+    const anticipate = local > 0.72 ? ((local - 0.72) / 0.28) * 0.4 : 0;
+    try { face.setViseme(name, upcoming, anticipate); } catch (err) { /* audio still plays */ }
   };
   if (face) {
     try {
       face.setMode("speak", mood || "happy");
-      face.setViseme(sequence[0] || "sil");
+      face.setViseme(sequence[0] || "sil", sequence[1] || sequence[0] || "sil", 0);
     } catch (err) {
       /* keep going to speechSynthesis */
     }
@@ -2168,6 +2174,7 @@ function reqAsPromise(request) {
 async function boot() {
   const response = await fetch("/api/catalogue");
   state.catalogue = await response.json();
+  state.provider = state.catalogue.key_loaded ? "openrouter" : "fixture";
   try {
     const db = await openDb();
     state.history = await reqAsPromise(db.transaction("sessions").objectStore("sessions").getAll());
