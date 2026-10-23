@@ -30,6 +30,81 @@ load_openrouter_key() {
   return 0
 }
 
+# Return the PIDs that are listening on TCP PORT, one per line.
+port_pids() {
+  if command -v lsof >/dev/null 2>&1; then
+    lsof -ti tcp:"$PORT" 2>/dev/null || true
+  elif command -v fuser >/dev/null 2>&1; then
+    fuser "$PORT"/tcp 2>/dev/null | tr -s ' ' '\n' | grep -E '^[0-9]+$' || true
+  fi
+}
+
+# Stop a previous LingoCoach uvicorn that is holding PORT.
+# Only targets python/uvicorn processes listening on this port, and falls back
+# to checking the process cwd on Linux. If nothing is listening, do nothing.
+stop_existing_server() {
+  local pids pid comm args killed=0
+
+  pids=$(port_pids)
+
+  if [[ -z "${pids:-}" ]]; then
+    return 0
+  fi
+
+  while IFS= read -r pid; do
+    [[ "$pid" =~ ^[0-9]+$ ]] || continue
+    [[ "$pid" -eq $$ ]] && continue
+
+    comm=$(ps -p "$pid" -o comm= 2>/dev/null || true)
+    [[ -z "$comm" ]] && continue
+
+    args=$(ps -p "$pid" -o args= 2>/dev/null || true)
+
+    local is_match=0
+    case "$comm" in
+      python|python3|python3.*|uvicorn)
+        if [[ "$args" == *uvicorn* || "$args" == *"app.main:app"* ]]; then
+          is_match=1
+        fi
+        ;;
+    esac
+
+    if [[ "$is_match" -eq 0 && -e "/proc/$pid" ]]; then
+      local cwd
+      cwd=$(readlink "/proc/$pid/cwd" 2>/dev/null || true)
+      if [[ "$cwd" == "$PWD" && ("$comm" == python* || "$comm" == uvicorn) ]]; then
+        is_match=1
+      fi
+    fi
+
+    if [[ "$is_match" -eq 1 ]]; then
+      if kill -TERM "$pid" 2>/dev/null; then
+        killed=1
+      fi
+    fi
+  done <<< "$pids"
+
+  if [[ "$killed" -eq 1 ]]; then
+    echo "LingoCoach: stopped existing server on port ${PORT}."
+    local waited=0
+    while [[ "$waited" -lt 5 ]]; do
+      sleep 1
+      local still
+      still=$(port_pids)
+      [[ -z "$still" ]] && break
+      waited=$((waited + 1))
+    done
+    local leftover
+    leftover=$(port_pids)
+    if [[ -n "$leftover" ]]; then
+      while IFS= read -r pid; do
+        [[ "$pid" =~ ^[0-9]+$ ]] || continue
+        kill -KILL "$pid" 2>/dev/null || true
+      done <<< "$leftover"
+    fi
+  fi
+}
+
 candidates=(
   "${LINGOCOACH_ENV_FILE:-}"
   "/Users/mikelam/firstRepo/openrouter_key/.env_voice_chat"
@@ -48,6 +123,8 @@ done
 if [[ "$loaded" -eq 0 ]]; then
   echo "LingoCoach: no OpenRouter key. Replies use offline examples."
 fi
+
+stop_existing_server
 
 if [[ ! -x .venv/bin/python ]]; then
   python3 -m venv .venv
