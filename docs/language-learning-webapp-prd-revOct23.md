@@ -1440,7 +1440,13 @@ The same image runs in both places below. A Mac builds `linux/arm64` on Apple si
 
 ### 21.4 MacBook
 
-This is the first environment. Podman on macOS starts a small Linux VM (`podman machine`) and runs the container there. The page is still opened in a Mac browser, so `http://127.0.0.1:8080` counts as a secure page and the microphone is allowed.
+The first run is a local Python process, not the container. From `voice-chat/` on the Mac:
+
+```text
+./run-local.sh
+```
+
+That script creates `.venv`, installs the Python packages, reads `/Users/mikelam/firstRepo/openrouter_key/.env_voice_chat` when that file exists, and serves `http://127.0.0.1:8066`. An empty key still boots and uses the fixture coach. Podman, below, is the later packaged run. The page is still opened in a Mac browser, so `http://127.0.0.1:8066` counts as a secure page and the microphone is allowed.
 
 Install Podman with Homebrew, then start the VM once:
 

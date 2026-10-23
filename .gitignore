@@ -1,2 +1,3 @@
 openrouter_key/
 .env
+voice-chat/.venv/
