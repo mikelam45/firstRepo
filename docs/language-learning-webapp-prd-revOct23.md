@@ -12,6 +12,7 @@ What revOct23 adds to the previous spec:
 - The partner on screen blinks, listens, and moves their mouth with the line they are speaking.
 - The service is Python, and the way it runs is a Podman container. See [§21](#21-python-service-under-podman). The page in the browser is still a page: the mic, the speaker, and the face mesh stay on the device.
 - Model calls go through the OpenRouter API. Different jobs use different cheap models. See [§22](#22-openrouter-models).
+- The first machine is a MacBook, using Podman. The later machine is an Ubuntu VPS, using the same image. See [§21.4](#214-macbook) and [§21.5](#215-ubuntu-vps).
 
 ---
 
@@ -1433,6 +1434,119 @@ Logs go to stdout. They include `session_id`, latency, and validation failures. 
 | Mouth, blink, brows, nod | The browser, using the viseme list and mood the Python response already computed, §20 |
 
 The container does not open a microphone and does not draw the portrait. A phone uses the published port, then the device’s own speech APIs.
+
+The same image runs in both places below. A Mac builds `linux/arm64` on Apple silicon and `linux/amd64` on an Intel Mac. An Ubuntu VPS is almost always `linux/amd64`. Build on the machine that will run the container. Copying an Apple silicon image onto the VPS will not start.
+
+### 21.4 MacBook
+
+This is the first environment. Podman on macOS starts a small Linux VM (`podman machine`) and runs the container there. The page is still opened in a Mac browser, so `http://127.0.0.1:8080` counts as a secure page and the microphone is allowed.
+
+Install Podman with Homebrew, then start the VM once:
+
+```text
+brew install podman
+podman machine init --cpus 2 --memory 4096 --disk-size 20
+podman machine start
+podman info
+```
+
+`podman info` should report rootless. Apple silicon and Intel both use these commands. Homebrew’s Podman is the one on `PATH`.
+
+From the repo root, with the `Containerfile` present:
+
+```text
+umask 077
+printf 'OPENROUTER_API_KEY=%s\n' 'paste-the-openrouter-key-here' > .env
+podman build -t lingocoach:revOct23 .
+podman run --replace --name lingocoach \
+  --read-only --tmpfs /tmp \
+  --cap-drop=ALL --security-opt=no-new-privileges \
+  -p 127.0.0.1:8080:8080 \
+  --env-file .env \
+  lingocoach:revOct23
+```
+
+`.env` stays out of git (`.containerignore` and `.gitignore`). Leaving the key empty is allowed: `/health` still returns ok and turns use fixtures.
+
+Check from the Mac, not from inside the VM:
+
+```text
+curl -fsS http://127.0.0.1:8080/health
+```
+
+The body is `{"status":"ok"}`. Then open that same origin in Safari or Chrome. Stop the container with `podman stop lingocoach`. Stop the VM with `podman machine stop` when the Mac should sleep. Tests stay `podman run --rm --entrypoint pytest lingocoach:revOct23`.
+
+### 21.5 Ubuntu VPS
+
+This comes after the Mac run is healthy. The host is Ubuntu 24.04 LTS. Log in with an SSH key as a normal sudo user. The image is built on the VPS so the architecture matches.
+
+```text
+sudo apt-get update
+sudo apt-get install -y podman
+sudo loginctl enable-linger "$USER"
+podman info
+```
+
+`apt` writes the user’s `/etc/subuid` and `/etc/subgid` ranges. Linger keeps a rootless container running after logout.
+
+Clone the same git revision used on the Mac into `~/lingocoach`. Put the key in `~/lingocoach.env` with mode `600`, one line, `OPENROUTER_API_KEY=...`. That file is outside the git work tree.
+
+```text
+cd ~/lingocoach
+podman build -t lingocoach:revOct23 .
+```
+
+Publish the app only on localhost. A phone on the public internet needs HTTPS, because the microphone is blocked on a plain `http://` IP address. Caddy terminates TLS and forwards to the container.
+
+`~/.config/containers/systemd/lingocoach.container`:
+
+```text
+[Container]
+Image=localhost/lingocoach:revOct23
+ContainerName=lingocoach
+PublishPort=127.0.0.1:8080:8080
+EnvironmentFile=%h/lingocoach.env
+ReadOnly=true
+Tmpfs=/tmp
+DropCapability=ALL
+NoNewPrivileges=true
+
+[Service]
+Restart=on-failure
+
+[Install]
+WantedBy=default.target
+```
+
+```text
+systemctl --user daemon-reload
+systemctl --user enable --now lingocoach.service
+curl -fsS http://127.0.0.1:8080/health
+```
+
+Point a domain at the VPS, then install Caddy. Replace the site name in `/etc/caddy/Caddyfile` with that domain:
+
+```text
+your.domain.example {
+    reverse_proxy 127.0.0.1:8080
+}
+```
+
+```text
+sudo apt-get install -y caddy
+sudo systemctl reload caddy
+```
+
+Caddy obtains the certificate. The firewall allows SSH, 80, and 443. Port 8080 stays closed to the internet.
+
+```text
+sudo ufw allow OpenSSH
+sudo ufw allow 80/tcp
+sudo ufw allow 443/tcp
+sudo ufw enable
+```
+
+The phone then opens `https://` that domain. Typing works as soon as `/health` is ok. The microphone works once the certificate is in place. Logs are `journalctl --user -u lingocoach.service`. Updating is a new `podman build` on the VPS and `systemctl --user restart lingocoach.service`.
 
 ---
 
