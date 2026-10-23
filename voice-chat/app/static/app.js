@@ -1,4 +1,4 @@
-import { IllustratedPortrait, Portrait, englishVisemes, pinyinVisemes } from "./face.js";
+import { IllustratedPortrait, Portrait, englishVisemes, pinyinVisemes } from "./face.js?v=20261023-mouth";
 import { collectTranscript, recognitionLanguage, transcriptPiece } from "./transcript.js";
 
 const I18N = {
@@ -1589,27 +1589,56 @@ function stopSpeaking() {
   finishMouth();
 }
 
-function runMouth(shapes, mood, token, lineLang) {
-  const step = lineLang === "en" ? 90 : 125;
-  if (face) {
-    try {
-      face.setMode("speak", mood || "happy");
-      face.setViseme(shapes[0] || "sil");
-    } catch (err) {
-      /* keep going to speechSynthesis */
-    }
+const VOWEL_HOLD = { aa: 2.6, E: 2.15, I: 1.75, O: 2.45, U: 2.05 };
+
+function visemeHold(name) {
+  if (VOWEL_HOLD[name]) return VOWEL_HOLD[name];
+  if (name === "sil") return 1.2;
+  if (name === "PP") return 0.8;
+  return 0.95;
+}
+
+function runMouth(shapes, mood, token, lineLang, rate) {
+  const sequence = shapes.length ? shapes : ["sil"];
+  const unit = (lineLang === "en" ? 74 : 102) / Math.max(0.72, rate || 1);
+  const marks = [];
+  let acc = 0;
+  for (const name of sequence) {
+    marks.push(acc);
+    acc += visemeHold(name) * unit;
   }
-  let cursor = 0;
-  mouthTimer = window.setInterval(() => {
+  const total = Math.max(acc, 280);
+  let clockOffset = 0;
+  let clockAt = performance.now();
+  const apply = () => {
     if (token !== speakToken) {
       window.clearInterval(mouthTimer);
       return;
     }
-    cursor += 1;
-    if (!face || cursor >= shapes.length) return;
-    try { face.setViseme(shapes[cursor]); } catch (err) { /* audio still plays */ }
-  }, step);
-  return step;
+    if (!face) return;
+    const elapsed = clockOffset + (performance.now() - clockAt);
+    let index = 0;
+    while (index < marks.length - 1 && elapsed >= marks[index + 1]) index += 1;
+    try { face.setViseme(sequence[index] || "sil"); } catch (err) { /* audio still plays */ }
+  };
+  if (face) {
+    try {
+      face.setMode("speak", mood || "happy");
+      face.setViseme(sequence[0] || "sil");
+    } catch (err) {
+      /* keep going to speechSynthesis */
+    }
+  }
+  mouthTimer = window.setInterval(apply, 32);
+  return {
+    total,
+    sync(charIndex, length) {
+      const frac = length > 0 ? Math.max(0, Math.min(0.96, charIndex / length)) : 0;
+      clockOffset = frac * total;
+      clockAt = performance.now();
+      apply();
+    },
+  };
 }
 
 function speakText(text, lineLang, who, visemes, mood) {
@@ -1626,8 +1655,9 @@ function speakText(text, lineLang, who, visemes, mood) {
   const person = who || partner() || { id: state.settings.partner, gender: "woman" };
   const lang = lineLang || "en";
   const shapes = shapesFor(spoken, lang, visemes);
+  const rate = sessionRate || (state.settings.level === "beginner" ? 0.85 : 1);
   state.speaking = { text: spoken, lineLang: lang, partner_id: person.id, visemes: shapes, mood: mood || "happy" };
-  const step = runMouth(shapes, mood, token, lang);
+  const mouth = runMouth(shapes, mood, token, lang, rate);
   let said = false;
   const say = () => {
     if (token !== speakToken || said) return;
@@ -1642,12 +1672,12 @@ function speakText(text, lineLang, who, visemes, mood) {
       state.notice = message;
       showStatus(message, true);
       document.querySelectorAll("button.speak").forEach((button) => { button.title = message; });
-      window.setTimeout(() => { if (token === speakToken) finishMouth(); }, shapes.length * step + 200);
+      window.setTimeout(() => { if (token === speakToken) finishMouth(); }, mouth.total + 240);
       return;
     }
     if (!synthNow) {
       announce(t("noSynth"));
-      window.setTimeout(() => { if (token === speakToken) finishMouth(); }, shapes.length * step + 200);
+      window.setTimeout(() => { if (token === speakToken) finishMouth(); }, mouth.total + 240);
       return;
     }
     const utterance = new SpeechSynthesisUtterance(spoken);
@@ -1656,10 +1686,17 @@ function speakText(text, lineLang, who, visemes, mood) {
     if (voice && (lang !== "yue" || isCantoneseVoice(voice))) {
       try { utterance.voice = voice; } catch (err) { /* lang is already set; still speak */ }
     }
-    utterance.rate = sessionRate || (state.settings.level === "beginner" ? 0.85 : 1);
+    utterance.rate = rate;
     const done = () => { if (token === speakToken) finishMouth(); };
     utterance.onend = done;
     utterance.onerror = done;
+    utterance.onboundary = (event) => {
+      if (token !== speakToken) return;
+      if (event.name && event.name !== "word" && event.name !== "sentence") return;
+      const idx = event.charIndex || 0;
+      if (idx <= 0) return;
+      mouth.sync(idx, spoken.length);
+    };
     try {
       if (synthNow.paused) synthNow.resume();
       synthNow.speak(utterance);
@@ -1703,7 +1740,8 @@ async function mountFace() {
       await portrait.load(who.portrait, who.mesh_url);
       if (token !== mountToken) return;
       portrait.ready = true;
-      portrait.setMode(listening ? "listen" : "idle");
+      if (state.speaking) portrait.setMode("speak", state.speaking.mood || "happy");
+      else portrait.setMode(listening ? "listen" : "idle");
       return;
     } catch (err) {
       /* fall through to the illustrated card */
@@ -1713,7 +1751,8 @@ async function mountFace() {
   const illustrated = new IllustratedPortrait(canvas, who);
   illustrated.ready = true;
   face = illustrated;
-  illustrated.setMode(listening ? "listen" : "idle");
+  if (state.speaking) illustrated.setMode("speak", state.speaking.mood || "happy");
+  else illustrated.setMode(listening ? "listen" : "idle");
 }
 
 function loop(now) {
