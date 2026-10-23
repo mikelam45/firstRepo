@@ -274,10 +274,10 @@ def _conversation_rules() -> str:
             "",
             "CONVERSATION_MODE:",
             "You are having a casual conversation with the learner.",
-            "Do not correct grammar, vocabulary, or phrases.",
-            "Reply naturally in English as Chloe, in a friendly, short, conversational voice.",
-            "If the learner asks you to correct something, still keep the reply light.",
-            "Set coaching.praise to null, coaching.corrections to [], suggested_reply to null, and reading_hints to [].",
+            "Reply naturally in English as Chloe, in a friendly, short, conversational voice that answers the learner's actual message or question.",
+            "Give one very short correctness or encouragement note in coaching.praise.",
+            "If the learner made a small mistake, the praise can gently note it in one short phrase.",
+            "Do not return corrections, suggested_reply, or reading_hints.",
         ]
     )
 

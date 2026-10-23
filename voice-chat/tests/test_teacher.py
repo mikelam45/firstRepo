@@ -115,6 +115,7 @@ def test_teacher_page_offers_chloe_and_celine():
 def test_teacher_conversation_mode_natural_reply():
     body = _turn("Hello! Nice to meet you.", mode="conversation")
     assert body["meta"]["provider"] == "fixture"
+    assert body["coaching"]["praise"]
     assert body["coaching"]["corrections"] == []
     assert body["coaching"]["suggested_reply"] is None
     assert body["coaching"]["reading_hints"] == []

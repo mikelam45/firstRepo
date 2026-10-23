@@ -95,8 +95,14 @@ def _teacher_conversation(payload: dict, scenario: dict) -> dict:
     fired = union_signals(payload.get("fired_signals") or [], fired, allowed)
     including = turns_remaining_including_this(level, history)
     text = _conversation_reply(history, level, including)
-    empty_coaching = {"praise": None, "corrections": [], "suggested_reply": None, "reading_hints": []}
-    return _pack(text, empty_coaching, target, support, fired, "open")
+    praise = _t(
+        support,
+        "That sounds clear.",
+        "这句话听起来很清楚。",
+        "呢句聽落好清楚。",
+    )
+    coaching = {"praise": praise, "corrections": [], "suggested_reply": None, "reading_hints": []}
+    return _pack(text, coaching, target, support, fired, "open")
 
 
 def _conversation_reply(history: list[dict], level: str, including: int) -> str:
