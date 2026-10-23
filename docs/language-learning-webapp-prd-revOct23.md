@@ -13,6 +13,7 @@ What revOct23 adds to the previous spec:
 - The service is Python, and the way it runs is a Podman container. See [§21](#21-python-service-under-podman). The page in the browser is still a page: the mic, the speaker, and the face mesh stay on the device.
 - Model calls go through the OpenRouter API. Different jobs use different cheap models. See [§22](#22-openrouter-models).
 - The first machine is a MacBook, using Podman. The later machine is an Ubuntu VPS, using the same image. See [§21.4](#214-macbook) and [§21.5](#215-ubuntu-vps).
+- On the Mac, the OpenRouter key is the env file `/Users/mikelam/firstRepo/openrouter_key/.env_voice_chat`. That file is not committed.
 
 ---
 
@@ -1384,7 +1385,7 @@ The browser page is still a page. The microphone, speech synthesis, and the face
 
 ### 21.1 One image
 
-`Containerfile` at the repo root. The base image is `python:3.12-slim-bookworm`, pinned by digest in that file once the first green build has recorded the digest. The build installs `espeak-ng` and the Python dependencies from a lockfile, then copies `app/` and `tests/`. It does not copy `.env` or a provider key. A `.containerignore` excludes `.env`, `.git`, and editor caches.
+`Containerfile` at the repo root. The base image is `python:3.12-slim-bookworm`, pinned by digest in that file once the first green build has recorded the digest. The build installs `espeak-ng` and the Python dependencies from a lockfile, then copies `app/` and `tests/`. It does not copy `.env`, `openrouter_key/`, or a provider key. A `.containerignore` excludes `.env`, `openrouter_key/`, `.git`, and editor caches.
 
 The image runs one process. The default command is:
 
@@ -1452,21 +1453,19 @@ podman info
 
 `podman info` should report rootless. Apple silicon and Intel both use these commands. Homebrew’s Podman is the one on `PATH`.
 
-From the repo root, with the `Containerfile` present:
+From the repo root, with the `Containerfile` present. The key is already on the Mac at `/Users/mikelam/firstRepo/openrouter_key/.env_voice_chat`. Podman reads that file on the host. The file contains one line, `OPENROUTER_API_KEY=` followed by the key. It is mode `600`. It is not copied into `voice-chat/`, into the image, or into git. `.gitignore` ignores `openrouter_key/`.
 
 ```text
-umask 077
-printf 'OPENROUTER_API_KEY=%s\n' 'paste-the-openrouter-key-here' > .env
 podman build -t lingocoach:revOct23 .
 podman run --replace --name lingocoach \
   --read-only --tmpfs /tmp \
   --cap-drop=ALL --security-opt=no-new-privileges \
   -p 127.0.0.1:8080:8080 \
-  --env-file .env \
+  --env-file /Users/mikelam/firstRepo/openrouter_key/.env_voice_chat \
   lingocoach:revOct23
 ```
 
-`.env` stays out of git (`.containerignore` and `.gitignore`). Leaving the key empty is allowed: `/health` still returns ok and turns use fixtures.
+Leaving the key empty is allowed: `/health` still returns ok and turns use fixtures.
 
 Check from the Mac, not from inside the VM:
 
@@ -1489,7 +1488,7 @@ podman info
 
 `apt` writes the user’s `/etc/subuid` and `/etc/subgid` ranges. Linger keeps a rootless container running after logout.
 
-Clone the same git revision used on the Mac into `~/lingocoach`. Put the key in `~/lingocoach.env` with mode `600`, one line, `OPENROUTER_API_KEY=...`. That file is outside the git work tree.
+Clone the same git revision used on the Mac into `~/lingocoach`. Put the same `OPENROUTER_API_KEY` value in `~/lingocoach.env` with mode `600`, one line. That file is outside the git work tree. The Mac path `/Users/mikelam/firstRepo/openrouter_key/.env_voice_chat` is the source of the value. The VPS keeps its own copy.
 
 ```text
 cd ~/lingocoach
