@@ -306,7 +306,12 @@ run_podman() {
   fi
 
   echo "LingoCoach: building image ${IMAGE}…"
-  podman build -t "$IMAGE" .
+  # Explicit DNS: rootless Podman builds often cannot resolve deb.debian.org /
+  # pypi.org when the host resolv.conf is empty or points at a broken stub.
+  podman build \
+    --dns "${LINGOCOACH_BUILD_DNS1:-8.8.8.8}" \
+    --dns "${LINGOCOACH_BUILD_DNS2:-1.1.1.1}" \
+    -t "$IMAGE" .
 
   free_port_host
 
@@ -383,7 +388,10 @@ install_systemd() {
   fi
 
   echo "LingoCoach: building image for systemd unit…"
-  podman build -t "$IMAGE" .
+  podman build \
+    --dns "${LINGOCOACH_BUILD_DNS1:-8.8.8.8}" \
+    --dns "${LINGOCOACH_BUILD_DNS2:-1.1.1.1}" \
+    -t "$IMAGE" .
 
   systemctl --user daemon-reload
   systemctl --user enable --now lingocoach.service

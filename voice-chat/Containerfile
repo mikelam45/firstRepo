@@ -6,9 +6,13 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PORT=8066
 
+# espeak-ng improves English IPA; phonetics has a grapheme fallback if missing.
+# Do not fail the image build when apt/DNS is broken inside the build netns
+# (common VPS symptom: "Temporary failure resolving 'deb.debian.org'").
 RUN apt-get update \
     && apt-get install -y --no-install-recommends espeak-ng \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    || (rm -rf /var/lib/apt/lists/*; echo "WARN: espeak-ng skipped (apt/DNS); using phonetics fallback")
 
 WORKDIR /srv
 COPY requirements.txt .

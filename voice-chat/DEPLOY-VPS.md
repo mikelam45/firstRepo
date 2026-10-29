@@ -109,7 +109,39 @@ Force the non-container path:
 
 ```bash
 ./deploy-vps.sh --local
+# HTTPS without Podman (venv + Caddy):
+./deploy-vps.sh --https --local
 ```
+
+### Podman build fails: `Temporary failure resolving 'deb.debian.org'`
+
+The Containerfile’s `apt-get` runs **inside** the build network namespace. If that netns has no working DNS, you get `Unable to locate package espeak-ng` even when the host looks fine.
+
+**Quick unblock (no image build):**
+
+```bash
+cd ~/lingocoach/voice-chat
+./deploy-vps.sh --https --local
+```
+
+**Fix DNS, then rebuild:**
+
+```bash
+# Host resolver (pick one that works from this VPS):
+getent hosts deb.debian.org || true
+echo -e 'nameserver 8.8.8.8\nnameserver 1.1.1.1' | sudo tee /etc/resolv.conf
+
+# Deploy always passes --dns 8.8.8.8 / 1.1.1.1 to podman build.
+# Optional overrides:
+# export LINGOCOACH_BUILD_DNS1=8.8.8.8
+# export LINGOCOACH_BUILD_DNS2=1.1.1.1
+
+cd ~/lingocoach/voice-chat
+git pull origin cursor/enhance-lingocoach-prd-aecd
+./deploy-vps.sh --https
+```
+
+`espeak-ng` is best-effort in the image (phonetics falls back if apt still fails). If **`pip install`** also fails with the same DNS error, use `--local` until host DNS works.
 
 Firewall for HTTP-only:
 
