@@ -1,0 +1,28 @@
+# Quadlet unit for rootless Podman (Ubuntu VPS).
+# Install: mkdir -p ~/.config/containers/systemd
+#          cp lingocoach.container ~/.config/containers/systemd/
+# Then:    systemctl --user daemon-reload
+#          systemctl --user enable --now lingocoach.service
+#
+# Env file must be outside git (mode 600), one line:
+#   OPENROUTER_API_KEY=...
+# Default path matches PRD §21.5: ~/lingocoach.env
+# Override with EnvironmentFile= before enabling the unit.
+#
+# This checkout listens on 8066 (Mac run-local.sh uses the same port).
+
+[Container]
+Image=localhost/lingocoach:revOct23
+ContainerName=lingocoach
+PublishPort=0.0.0.0:8066:8066
+EnvironmentFile=%h/lingocoach.env
+ReadOnly=true
+Tmpfs=/tmp
+DropCapability=ALL
+NoNewPrivileges=true
+
+[Service]
+Restart=on-failure
+
+[Install]
+WantedBy=default.target
