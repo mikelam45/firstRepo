@@ -1526,16 +1526,17 @@ cd ~/lingocoach
 podman build -t lingocoach:revOct23 .
 ```
 
-Publish the app only on localhost. A phone on the public internet needs HTTPS, because the microphone is blocked on a plain `http://` IP address. Caddy terminates TLS and forwards to the container.
+Publish the app only on localhost. A phone on the public internet needs HTTPS, because the microphone is blocked on a plain `http://` IP address. Caddy terminates TLS on public port **8066** and forwards to the container on loopback **18066**. Prefer `voice-chat/deploy-vps.sh --https` (see `voice-chat/DEPLOY-VPS.md`) over hand-editing units.
 
-`~/.config/containers/systemd/lingocoach.container`:
+`~/.config/containers/systemd/lingocoach.container` (HTTPS bind; `deploy-vps.sh --https --systemd` rewrites this):
 
 ```text
 [Container]
 Image=localhost/lingocoach:revOct23
 ContainerName=lingocoach
-PublishPort=127.0.0.1:8080:8080
+PublishPort=127.0.0.1:18066:8066
 EnvironmentFile=%h/lingocoach.env
+Environment=LINGOCOACH_HTTPS=1
 ReadOnly=true
 Tmpfs=/tmp
 DropCapability=ALL
@@ -1551,14 +1552,20 @@ WantedBy=default.target
 ```text
 systemctl --user daemon-reload
 systemctl --user enable --now lingocoach.service
-curl -fsS http://127.0.0.1:8080/health
+curl -fsS http://127.0.0.1:18066/health
 ```
 
-Point a domain at the VPS, then install Caddy. Replace the site name in `/etc/caddy/Caddyfile` with that domain:
+Point a domain at the VPS, then install Caddy. Public URL form is **`https://DOMAIN:8066/`** (not port 443). Example operator host: `https://103-195-5-86.as-cloud-xip.com:8066/`. ACME HTTP-01 still uses port **80**.
 
 ```text
-your.domain.example {
-    reverse_proxy 127.0.0.1:8080
+# Rendered by deploy-vps.sh from voice-chat/Caddyfile.template
+http://103-195-5-86.as-cloud-xip.com {
+    @not_acme not path /.well-known/acme-challenge/*
+    redir @not_acme https://103-195-5-86.as-cloud-xip.com:8066{uri} permanent
+}
+
+https://103-195-5-86.as-cloud-xip.com:8066 {
+    reverse_proxy 127.0.0.1:18066
 }
 ```
 
@@ -1567,16 +1574,16 @@ sudo apt-get install -y caddy
 sudo systemctl reload caddy
 ```
 
-Caddy obtains the certificate. The firewall allows SSH, 80, and 443. Port 8080 stays closed to the internet.
+Caddy obtains the certificate. The firewall allows SSH, **80** (ACME), and **8066** (HTTPS). Port **18066** stays closed to the internet. Do not leave a prior plain-HTTP app published on public 8066 once Caddy owns that port.
 
 ```text
 sudo ufw allow OpenSSH
 sudo ufw allow 80/tcp
-sudo ufw allow 443/tcp
+sudo ufw allow 8066/tcp
 sudo ufw enable
 ```
 
-The phone then opens `https://` that domain. Typing works as soon as `/health` is ok. The microphone works once the certificate is in place. Logs are `journalctl --user -u lingocoach.service`. Updating is a new `podman build` on the VPS and `systemctl --user restart lingocoach.service`.
+The phone then opens `https://` that domain **with `:8066`**. Typing works as soon as `/health` is ok. The microphone works once the certificate is in place. Logs are `journalctl --user -u lingocoach.service`. Updating is a new `podman build` on the VPS and `systemctl --user restart lingocoach.service` (or re-run `./deploy-vps.sh --https`).
 
 ---
 

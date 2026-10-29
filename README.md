@@ -6,17 +6,18 @@ The current spec is [docs/language-learning-webapp-prd-revOct23.md](docs/languag
 
 Ubuntu VPS (same port **8066**): see [voice-chat/DEPLOY-VPS.md](voice-chat/DEPLOY-VPS.md). Prefer `voice-chat/deploy-vps.sh` (Podman image from `voice-chat/Containerfile`, or `./restart.sh` if Podman is missing). Put secrets in `~/lingocoach.env` (mode 600), not in git.
 
-**HTTPS on the VPS:** point a real domain’s DNS A/AAAA at the VPS, open ports **80** and **443**, then:
+**HTTPS on the VPS:** point a real domain’s DNS A/AAAA at the VPS, open ports **80** (ACME HTTP-01) and **8066** (public TLS), then:
 
 ```bash
 cd voice-chat
-export LINGOCOACH_DOMAIN=YOUR_DOMAIN_HERE   # required — your DNS name, not a placeholder
-# optional: export LINGOCOACH_ACME_EMAIL=you@YOUR_DOMAIN_HERE
+# required — your DNS name (example host below is the operator’s VPS name)
+export LINGOCOACH_DOMAIN=103-195-5-86.as-cloud-xip.com
+# optional: export LINGOCOACH_ACME_EMAIL=you@example.com
 ./deploy-vps.sh --https
 # or: ./deploy-vps.sh --https --systemd
 ```
 
-That binds the app to `127.0.0.1:8066` and puts **Caddy** in front (automatic Let’s Encrypt TLS, HTTP→HTTPS redirect, HSTS). Visit `https://YOUR_DOMAIN/`. Details and firewall notes are in [voice-chat/DEPLOY-VPS.md](voice-chat/DEPLOY-VPS.md).
+That binds the app to `127.0.0.1:18066` and puts **Caddy** in front on **`https://DOMAIN:8066/`** (Let’s Encrypt via :80, HTTP→HTTPS redirect to :8066). Visit `https://103-195-5-86.as-cloud-xip.com:8066/` — include **`:8066`**; this is not port-443 `https://DOMAIN/`. Details and firewall notes are in [voice-chat/DEPLOY-VPS.md](voice-chat/DEPLOY-VPS.md).
 
 ## TOTP unlock gate (optional locally, recommended on a VPS)
 
@@ -36,4 +37,4 @@ cd voice-chat
 # Then put LINGOCOACH_TOTP_SECRET=<that value> in ~/lingocoach.env (VPS) or export it locally.
 ```
 
-Open `http://127.0.0.1:8066/login` (or `https://YOUR_DOMAIN/login` on a VPS with `--https`), enter the current code, then use the coach as usual. On HTTPS deploys the session cookie `lc_session` is HttpOnly **and Secure**.
+Open `http://127.0.0.1:8066/login` (or `https://YOUR_DOMAIN:8066/login` on a VPS with `--https`), enter the current code, then use the coach as usual. On HTTPS deploys the session cookie `lc_session` is HttpOnly **and Secure**.

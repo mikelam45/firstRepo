@@ -12,14 +12,21 @@
 #   ./deploy-vps.sh              # build + run (podman) or restart.sh
 #   ./deploy-vps.sh --systemd    # also install the quadlet unit
 #   ./deploy-vps.sh --local      # force restart.sh path (no container)
-#   ./deploy-vps.sh --https      # bind app to 127.0.0.1 + Caddy TLS on 443
-#   LINGOCOACH_DOMAIN=example.com ./deploy-vps.sh --https
+#   ./deploy-vps.sh --https      # Caddy TLS on :8066 → 127.0.0.1:18066
+#   LINGOCOACH_DOMAIN=103-195-5-86.as-cloud-xip.com ./deploy-vps.sh --https
 #   PORT=8066 ./deploy-vps.sh
+#
+# HTTPS public URL form: https://DOMAIN:HTTPS_PORT/  (default HTTPS_PORT=8066)
+# ACME HTTP-01 still needs port 80 open. App binds loopback INTERNAL_PORT (18066).
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$SCRIPT_DIR"
 
+# HTTP-only: public app port. HTTPS: public TLS port defaults to the same 8066
+# (Caddy), while the app moves to INTERNAL_PORT on loopback.
 PORT="${PORT:-8066}"
+HTTPS_PORT="${LINGOCOACH_HTTPS_PORT:-${HTTPS_PORT:-8066}}"
+INTERNAL_PORT="${LINGOCOACH_INTERNAL_PORT:-${INTERNAL_PORT:-18066}}"
 IMAGE="${LINGOCOACH_IMAGE:-lingocoach:revOct23}"
 CONTAINER_NAME="${LINGOCOACH_CONTAINER:-lingocoach}"
 MODE="auto" # auto | podman | local | systemd
@@ -32,7 +39,7 @@ for arg in "$@"; do
     --podman) MODE="podman" ;;
     --https) HTTPS=1 ;;
     -h|--help)
-      sed -n '2,17p' "${SCRIPT_DIR}/deploy-vps.sh"
+      sed -n '2,20p' "${SCRIPT_DIR}/deploy-vps.sh"
       exit 0
       ;;
     *)
@@ -76,6 +83,15 @@ resolve_domain() {
   printf '%s' "$d"
 }
 
+# Host port the app (uvicorn/Podman publish) listens on.
+app_host_port() {
+  if [[ "$HTTPS" -eq 1 ]]; then
+    printf '%s' "$INTERNAL_PORT"
+  else
+    printf '%s' "$PORT"
+  fi
+}
+
 bind_host() {
   if [[ "$HTTPS" -eq 1 ]]; then
     printf '127.0.0.1'
@@ -85,8 +101,9 @@ bind_host() {
 }
 
 health_check() {
-  local url="http://127.0.0.1:${PORT}/health"
-  local i
+  local app_port
+  app_port="$(app_host_port)"
+  local url="http://127.0.0.1:${app_port}/health"
   local _try
   for _try in 1 2 3 4 5 6 7 8 9 10; do
     if curl -fsS "$url" >/dev/null 2>&1; then
@@ -100,7 +117,8 @@ health_check() {
 }
 
 free_port_host() {
-  # Best-effort: stop our container or uvicorn holding PORT.
+  # Best-effort: stop our container or uvicorn holding the app host port
+  # (and HTTPS public port when switching from prior HTTP-on-8066).
   if command -v podman >/dev/null 2>&1; then
     podman stop "$CONTAINER_NAME" >/dev/null 2>&1 || true
     podman rm "$CONTAINER_NAME" >/dev/null 2>&1 || true
@@ -108,8 +126,25 @@ free_port_host() {
   if [[ -x ./restart.sh ]]; then
     # shellcheck source=local-common.sh
     . ./local-common.sh
-    force_stop_port || true
+    # force_stop_port uses PORT from the environment.
+    local _saved_port="${PORT}"
+    PORT="$(app_host_port)" force_stop_port || true
+    if [[ "$HTTPS" -eq 1 && "$HTTPS_PORT" != "$(app_host_port)" ]]; then
+      PORT="$HTTPS_PORT" force_stop_port || true
+    fi
+    PORT="$_saved_port"
   fi
+}
+
+refuse_placeholder_domain() {
+  local domain="$1"
+  case "$domain" in
+    YOUR_DOMAIN_HERE|your.domain.example|example.com|coach.example.com|*.invalid|*placeholder*)
+      echo "Refusing placeholder domain '${domain}'. Use your real DNS name." >&2
+      echo "  Example (operator host): LINGOCOACH_DOMAIN=103-195-5-86.as-cloud-xip.com ./deploy-vps.sh --https" >&2
+      exit 1
+      ;;
+  esac
 }
 
 render_caddyfile() {
@@ -134,10 +169,21 @@ render_caddyfile() {
     echo "Invalid domain (whitespace)." >&2
     exit 1
   fi
+  if [[ ! "$HTTPS_PORT" =~ ^[0-9]+$ || ! "$INTERNAL_PORT" =~ ^[0-9]+$ ]]; then
+    echo "HTTPS_PORT and INTERNAL_PORT must be numeric." >&2
+    exit 1
+  fi
+  if [[ "$HTTPS_PORT" == "$INTERNAL_PORT" ]]; then
+    echo "HTTPS_PORT (${HTTPS_PORT}) and INTERNAL_PORT (${INTERNAL_PORT}) must differ." >&2
+    echo "  Caddy binds the public TLS port; the app binds loopback INTERNAL_PORT." >&2
+    exit 1
+  fi
 
   local content
   content="$(cat "$template")"
   content="${content//__LINGOCOACH_DOMAIN__/${domain}}"
+  content="${content//__HTTPS_PORT__/${HTTPS_PORT}}"
+  content="${content//__INTERNAL_PORT__/${INTERNAL_PORT}}"
   content="${content//__ACME_EMAIL_BLOCK__/${email_block}}"
   printf '%s\n' "$content" >"$out"
 }
@@ -148,17 +194,12 @@ install_caddy_https() {
   if [[ -z "$domain" ]]; then
     echo "HTTPS requires a real DNS name." >&2
     echo "  Set LINGOCOACH_DOMAIN (preferred), or DOMAIN / VPS_HOST, then re-run with --https." >&2
-    echo "  Example: LINGOCOACH_DOMAIN=coach.example.com ./deploy-vps.sh --https" >&2
+    echo "  Example: LINGOCOACH_DOMAIN=103-195-5-86.as-cloud-xip.com ./deploy-vps.sh --https" >&2
     exit 1
   fi
-  case "$domain" in
-    YOUR_DOMAIN_HERE|your.domain.example|example.com|coach.example.com|*.invalid|*placeholder*)
-      echo "Refusing placeholder domain '${domain}'. Use your real DNS name." >&2
-      exit 1
-      ;;
-  esac
+  refuse_placeholder_domain "$domain"
 
-  echo "LingoCoach: HTTPS for domain ${domain} (Caddy → 127.0.0.1:${PORT})"
+  echo "LingoCoach: HTTPS https://${domain}:${HTTPS_PORT}/ (Caddy → 127.0.0.1:${INTERNAL_PORT})"
   if [[ -n "${LINGOCOACH_ACME_EMAIL:-${ACME_EMAIL:-}}" ]]; then
     echo "LingoCoach: ACME account email is set (value not printed)."
   else
@@ -202,16 +243,18 @@ install_caddy_https() {
     systemctl reload caddy
   fi
 
-  echo "LingoCoach: Caddy reloaded. Visit https://${domain}/ (HTTP :80 redirects to HTTPS)."
-  echo "  Ensure DNS A/AAAA for ${domain} points here, and ufw allows 80/tcp + 443/tcp."
-  echo "  App stays on 127.0.0.1:${PORT}; do not open ${PORT}/tcp publicly when using --https."
+  echo "LingoCoach: Caddy reloaded. Visit https://${domain}:${HTTPS_PORT}/"
+  echo "  ACME HTTP-01 uses :80 (keep 80/tcp open). Public TLS is :${HTTPS_PORT}."
+  echo "  ufw: allow 80/tcp + ${HTTPS_PORT}/tcp. Do not leave a prior plain-HTTP app on public ${HTTPS_PORT}."
+  echo "  App stays on 127.0.0.1:${INTERNAL_PORT}; that port stays closed to the internet."
 }
 
 run_local() {
-  local host
+  local host app_port
   host="$(bind_host)"
-  echo "LingoCoach: using ./restart.sh (venv + uvicorn on ${host}:${PORT})"
-  export PORT
+  app_port="$(app_host_port)"
+  echo "LingoCoach: using ./restart.sh (venv + uvicorn on ${host}:${app_port})"
+  export PORT="$app_port"
   if [[ "$HTTPS" -eq 1 ]]; then
     export LINGOCOACH_HTTPS=1
     # run-local.sh binds 0.0.0.0 by default; force loopback for HTTPS proxy mode.
@@ -228,8 +271,9 @@ run_local() {
 }
 
 run_podman() {
-  local env_file="" host
+  local env_file="" host app_port
   host="$(bind_host)"
+  app_port="$(app_host_port)"
   if env_file="$(resolve_env_file)"; then
     echo "LingoCoach: using env file ${env_file} (contents not printed)."
     chmod 600 "$env_file" 2>/dev/null || true
@@ -258,7 +302,7 @@ run_podman() {
     --tmpfs /tmp
     --cap-drop=ALL
     --security-opt=no-new-privileges
-    -p "${host}:${PORT}:8066"
+    -p "${host}:${app_port}:8066"
   )
   if [[ "$HTTPS" -eq 1 ]]; then
     run_args+=(-e LINGOCOACH_HTTPS=1)
@@ -271,18 +315,19 @@ run_podman() {
     [[ -n "${TOTP_SECRET:-}" ]] && run_args+=(-e TOTP_SECRET)
   fi
 
-  echo "LingoCoach: starting container on ${host}:${PORT}…"
+  echo "LingoCoach: starting container on ${host}:${app_port}…"
   podman run -d "${run_args[@]}" "$IMAGE"
   health_check
 }
 
 install_systemd() {
-  local unit_src unit_dir unit_dst env_file="" host publish
+  local unit_src unit_dir unit_dst env_file="" host publish app_port
   unit_src="$(pwd)/lingocoach.container"
   unit_dir="${HOME}/.config/containers/systemd"
   unit_dst="${unit_dir}/lingocoach.container"
   host="$(bind_host)"
-  publish="${host}:${PORT}:8066"
+  app_port="$(app_host_port)"
+  publish="${host}:${app_port}:8066"
 
   [[ -f "$unit_src" ]] || {
     echo "Missing ${unit_src}" >&2
@@ -341,15 +386,14 @@ if [[ "$HTTPS" -eq 1 ]]; then
   if [[ -z "$_early_domain" ]]; then
     echo "HTTPS requires a real DNS name." >&2
     echo "  Set LINGOCOACH_DOMAIN (preferred), or DOMAIN / VPS_HOST, then re-run with --https." >&2
-    echo "  Example: LINGOCOACH_DOMAIN=coach.example.com ./deploy-vps.sh --https" >&2
+    echo "  Example: LINGOCOACH_DOMAIN=103-195-5-86.as-cloud-xip.com ./deploy-vps.sh --https" >&2
     exit 1
   fi
-  case "$_early_domain" in
-    YOUR_DOMAIN_HERE|your.domain.example|example.com|coach.example.com|*.invalid|*placeholder*)
-      echo "Refusing placeholder domain '${_early_domain}'. Use your real DNS name." >&2
-      exit 1
-      ;;
-  esac
+  refuse_placeholder_domain "$_early_domain"
+  if [[ "$HTTPS_PORT" == "$INTERNAL_PORT" ]]; then
+    echo "HTTPS_PORT (${HTTPS_PORT}) and INTERNAL_PORT (${INTERNAL_PORT}) must differ." >&2
+    exit 1
+  fi
   unset _early_domain
 fi
 
