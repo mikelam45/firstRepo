@@ -37,6 +37,27 @@ STATIC = Path(__file__).resolve().parent / "static"
 
 app = FastAPI(title="LingoCoach", docs_url=None, redoc_url=None)
 
+
+def request_is_https(request: Request) -> bool:
+    """True when the client connection is HTTPS (direct or via reverse proxy).
+
+    Behind Caddy/nginx, uvicorn sees http://127.0.0.1; trust X-Forwarded-Proto
+    only when LINGOCOACH_HTTPS is set (deploy-vps.sh --https sets this). In that
+    mode, prefer Secure session cookies so lc_session is not sent on plain HTTP.
+    """
+    if request.url.scheme == "https":
+        return True
+    flag = os.environ.get("LINGOCOACH_HTTPS", "").strip().lower()
+    if flag not in {"1", "true", "yes", "on"}:
+        return False
+    forwarded = (request.headers.get("x-forwarded-proto") or "").split(",")[0].strip().lower()
+    if forwarded == "https":
+        return True
+    # HTTPS proxy mode: public access is https:// only; set Secure even if the
+    # header is missing (e.g. health check or misconfigured proxy).
+    return True
+
+
 if "pytest" not in sys.modules:
     if ensure_openrouter_key():
         logger.info(
@@ -92,14 +113,13 @@ async def totp_verify(request: Request):
     if not token:
         return JSONResponse({"error": "totp_disabled"}, status_code=404)
     response = JSONResponse({"ok": True})
-    secure = request.url.scheme == "https"
     response.set_cookie(
         key=totp_gate.COOKIE_NAME,
         value=token,
         max_age=totp_gate.SESSION_MAX_AGE,
         httponly=True,
         samesite="lax",
-        secure=secure,
+        secure=request_is_https(request),
         path="/",
     )
     return response

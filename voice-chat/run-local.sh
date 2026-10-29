@@ -3,6 +3,8 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 PORT="${PORT:-8066}"
+# Bind address. Default public (Mac / HTTP VPS). deploy-vps.sh --https sets HOST=127.0.0.1.
+HOST="${HOST:-0.0.0.0}"
 
 # Shared stop/port helpers (also used by restart.sh).
 # shellcheck source=local-common.sh
@@ -104,4 +106,4 @@ if port_is_busy; then
     exit 1
   fi
 fi
-exec .venv/bin/python -m uvicorn app.main:app --host 0.0.0.0 --port "$PORT"
+exec .venv/bin/python -m uvicorn app.main:app --host "$HOST" --port "$PORT"

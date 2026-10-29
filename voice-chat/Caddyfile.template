@@ -1,0 +1,17 @@
+# LingoCoach Caddyfile template (Let's Encrypt automatic HTTPS).
+# deploy-vps.sh --https substitutes __LINGOCOACH_DOMAIN__ (and optional email).
+# Do not commit a real hostname here.
+#
+# Requires: DNS A/AAAA for the domain → this VPS; ports 80 and 443 open.
+# App must listen on 127.0.0.1:8066 only (not public 8066).
+
+__ACME_EMAIL_BLOCK__
+__LINGOCOACH_DOMAIN__ {
+	encode gzip
+	reverse_proxy 127.0.0.1:8066
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		# Discourage MIME sniffing on static assets
+		X-Content-Type-Options nosniff
+	}
+}

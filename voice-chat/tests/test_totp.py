@@ -85,6 +85,9 @@ def test_valid_code_sets_session_and_unlocks(monkeypatch):
     assert response.status_code == 200
     assert response.json() == {"ok": True}
     assert totp_gate.COOKIE_NAME in response.cookies
+    # Local HTTP: Secure must stay off so the browser stores lc_session.
+    set_cookie = response.headers.get("set-cookie") or ""
+    assert "Secure" not in set_cookie
 
     catalogue = client.get("/api/catalogue")
     assert catalogue.status_code == 200
@@ -107,6 +110,48 @@ def test_valid_code_sets_session_and_unlocks(monkeypatch):
         },
     )
     assert turn.status_code == 200
+
+
+def test_secure_cookie_when_https_proxy_mode(monkeypatch):
+    """Behind Caddy, deploy sets LINGOCOACH_HTTPS=1; cookie must be Secure."""
+    _enable(monkeypatch)
+    monkeypatch.setenv("LINGOCOACH_HTTPS", "1")
+    client = TestClient(app)
+    code = pyotp.TOTP(TEST_SECRET).now()
+    response = client.post(
+        "/api/totp/verify",
+        json={"code": code},
+        headers={"X-Forwarded-Proto": "https"},
+    )
+    assert response.status_code == 200
+    set_cookie = response.headers.get("set-cookie") or ""
+    assert "Secure" in set_cookie
+    assert "HttpOnly" in set_cookie
+
+
+def test_secure_cookie_with_https_flag_without_forwarded_header(monkeypatch):
+    _enable(monkeypatch)
+    monkeypatch.setenv("LINGOCOACH_HTTPS", "1")
+    client = TestClient(app)
+    code = pyotp.TOTP(TEST_SECRET).now()
+    response = client.post("/api/totp/verify", json={"code": code})
+    assert response.status_code == 200
+    assert "Secure" in (response.headers.get("set-cookie") or "")
+
+
+def test_no_secure_cookie_when_forwarded_proto_spoofed_without_flag(monkeypatch):
+    """Ignore X-Forwarded-Proto unless LINGOCOACH_HTTPS is opted in."""
+    _enable(monkeypatch)
+    monkeypatch.delenv("LINGOCOACH_HTTPS", raising=False)
+    client = TestClient(app)
+    code = pyotp.TOTP(TEST_SECRET).now()
+    response = client.post(
+        "/api/totp/verify",
+        json={"code": code},
+        headers={"X-Forwarded-Proto": "https"},
+    )
+    assert response.status_code == 200
+    assert "Secure" not in (response.headers.get("set-cookie") or "")
 
 
 def test_login_page_is_public(monkeypatch):

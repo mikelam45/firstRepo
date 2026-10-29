@@ -8,6 +8,7 @@ Secret sources (never logged), first match wins:
 When none are set, the gate is off (local/dev open access) and the process
 logs "TOTP not configured". On a VPS, put the secret in ~/lingocoach.env so
 the gate stays on. Session cookie is HttpOnly after a valid 6-digit code.
+On HTTPS (LINGOCOACH_HTTPS=1 / X-Forwarded-Proto), the cookie also sets Secure.
 """
 
 from __future__ import annotations
