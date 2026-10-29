@@ -4,14 +4,15 @@ IELTS-style speaking practice on a phone, with explanations in English, Putonghu
 
 The current spec is [docs/language-learning-webapp-prd-revOct23.md](docs/language-learning-webapp-prd-revOct23.md) (revOct23). It covers IELTS practice, the six partners aged 27, OpenRouter, and Podman on a MacBook first and an Ubuntu VPS later. On the Mac the OpenRouter key is `/Users/mikelam/firstRepo/openrouter_key/.env_voice_chat`, which is gitignored. The running app is in [voice-chat](voice-chat). On the Mac, `voice-chat/run-local.sh` serves it at http://127.0.0.1:8066 and reads the OpenRouter key from `/Users/mikelam/firstRepo/openrouter_key/.env_voice_chat` when that file is present.
 
-Ubuntu VPS (same port **8066**): see [voice-chat/DEPLOY-VPS.md](voice-chat/DEPLOY-VPS.md). Prefer `voice-chat/deploy-vps.sh` (Podman image from `voice-chat/Containerfile`, or `./restart.sh` if Podman is missing). Put secrets in `~/lingocoach.env` (mode 600), not in git.
+Ubuntu VPS (same port **8066**): see [voice-chat/DEPLOY-VPS.md](voice-chat/DEPLOY-VPS.md). **First clone** the repo (`git clone … ~/lingocoach`) before `cd ~/lingocoach/voice-chat` — that path does not exist until then. Prefer `voice-chat/deploy-vps.sh` (Podman image from `voice-chat/Containerfile`, or `./restart.sh` if Podman is missing). Put secrets in `~/lingocoach.env` (mode 600), not in git.
 
 **HTTPS on the VPS:** point a real domain’s DNS A/AAAA at the VPS, open ports **80** (ACME HTTP-01) and **8066** (public TLS), then:
 
 ```bash
-cd voice-chat
-# required — your DNS name (example host below is the operator’s VPS name)
-export LINGOCOACH_DOMAIN=103-195-5-86.as-cloud-xip.com
+# after: git clone https://github.com/mikelam45/firstRepo.git ~/lingocoach
+cd ~/lingocoach/voice-chat
+# Domain can be in ~/lingocoach.env or exported (example host = operator VPS name):
+# export LINGOCOACH_DOMAIN=103-195-5-86.as-cloud-xip.com
 # optional: export LINGOCOACH_ACME_EMAIL=you@example.com
 ./deploy-vps.sh --https
 # or: ./deploy-vps.sh --https --systemd

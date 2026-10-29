@@ -71,8 +71,23 @@ resolve_env_file() {
 }
 
 # Public DNS name for Let's Encrypt. Never invent one.
+# Prefers the shell env; if unset, reads LINGOCOACH_DOMAIN / DOMAIN / VPS_HOST
+# from ~/lingocoach.env (or voice-chat/.env) so a single secrets file is enough.
 resolve_domain() {
   local d="${LINGOCOACH_DOMAIN:-${DOMAIN:-${VPS_HOST:-}}}"
+  if [[ -z "$d" ]]; then
+    local f line
+    if f="$(resolve_env_file)"; then
+      line="$(grep -E '^[[:space:]]*(export[[:space:]]+)?(LINGOCOACH_DOMAIN|DOMAIN|VPS_HOST)=' "$f" | head -n1 || true)"
+      if [[ -n "$line" ]]; then
+        d="${line#*=}"
+        d="${d#\"}"
+        d="${d%\"}"
+        d="${d#\'}"
+        d="${d%\'}"
+      fi
+    fi
+  fi
   d="${d#"${d%%[![:space:]]*}"}"
   d="${d%"${d##*[![:space:]]}"}"
   # Strip accidental scheme / path / trailing slash / port

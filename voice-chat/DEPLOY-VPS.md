@@ -33,13 +33,16 @@ For HTTPS you will also need Caddy (the deploy script can install it):
 sudo apt-get install -y caddy
 ```
 
-## 2. Clone / pull this branch
+## 2. First clone (required — creates `~/lingocoach`)
+
+`cd ~/lingocoach/voice-chat` fails with **No such file or directory** until this step runs. That means the repo was never cloned (not a deploy-script bug). As root, `~` is `/root`, so the tree is `/root/lingocoach/...`. Any path is fine — clone into that name once:
 
 ```bash
-# first time
+# first time (creates ~/lingocoach with voice-chat/ inside)
 git clone https://github.com/mikelam45/firstRepo.git ~/lingocoach
 cd ~/lingocoach
 git checkout cursor/enhance-lingocoach-prd-aecd
+# then work from: cd ~/lingocoach/voice-chat
 
 # later updates
 cd ~/lingocoach
@@ -47,6 +50,8 @@ git fetch origin
 git checkout cursor/enhance-lingocoach-prd-aecd
 git pull origin cursor/enhance-lingocoach-prd-aecd
 ```
+
+Prefer branch `cursor/enhance-lingocoach-prd-aecd` (current PR). Use `main` only if you intentionally want the default branch instead.
 
 ## 3. Secrets (never commit)
 
@@ -64,9 +69,12 @@ On the VPS put secrets outside the git tree in `~/lingocoach.env` (mode 600):
 cat > ~/lingocoach.env <<'EOF'
 OPENROUTER_API_KEY=PASTE_KEY_HERE
 LINGOCOACH_TOTP_SECRET=PASTE_BASE32_SECRET_HERE
+LINGOCOACH_DOMAIN=103-195-5-86.as-cloud-xip.com
 EOF
 chmod 600 ~/lingocoach.env
 ```
+
+`LINGOCOACH_DOMAIN` can live in that file (read by `./deploy-vps.sh --https`) or be `export`ed in the shell. Replace the example host with your DNS name if different.
 
 Or use `~/lingocoach/voice-chat/.env` with mode `600` (also gitignored). Do not paste keys or TOTP secrets into chat or commit them.
 
@@ -142,8 +150,8 @@ sudo ufw enable
 cd ~/lingocoach/voice-chat
 chmod +x deploy-vps.sh restart.sh run-local.sh
 
-# Replace with YOUR domain — never commit secrets; example host below is the operator's VPS name.
-export LINGOCOACH_DOMAIN=103-195-5-86.as-cloud-xip.com
+# Domain: already in ~/lingocoach.env (see §3), or export here instead:
+# export LINGOCOACH_DOMAIN=103-195-5-86.as-cloud-xip.com
 # optional:
 # export LINGOCOACH_ACME_EMAIL=you@example.com
 # export LINGOCOACH_HTTPS_PORT=8066
