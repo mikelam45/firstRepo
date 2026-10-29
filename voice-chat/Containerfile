@@ -6,13 +6,10 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PORT=8066
 
-# espeak-ng improves English IPA; phonetics has a grapheme fallback if missing.
-# Do not fail the image build when apt/DNS is broken inside the build netns
-# (common VPS symptom: "Temporary failure resolving 'deb.debian.org'").
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends espeak-ng \
-    && rm -rf /var/lib/apt/lists/* \
-    || (rm -rf /var/lib/apt/lists/*; echo "WARN: espeak-ng skipped (apt/DNS); using phonetics fallback")
+# No apt-get here: many VPS Podman builds cannot resolve deb.debian.org
+# ("Temporary failure resolving…"). English IPA uses phonemizer when espeak-ng
+# is present on the host, otherwise the built-in grapheme fallback in
+# app/phonetics/english.py.
 
 WORKDIR /srv
 COPY requirements.txt .
@@ -20,6 +17,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY app ./app
 COPY tests ./tests
 
+# useradd needs passwd from the base image (no apt). UID matches the prior image.
 RUN useradd --uid 10001 --create-home --shell /usr/sbin/nologin appuser
 USER 10001
 

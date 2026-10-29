@@ -275,9 +275,10 @@ run_local() {
     # run-local.sh binds 0.0.0.0 by default; force loopback for HTTPS proxy mode.
     export HOST="${host}"
   fi
-  # restart.sh execs run-local.sh in the foreground; for VPS we background it.
-  if [[ -t 1 ]]; then
-    # Interactive: leave in foreground so logs stream (same as Mac).
+  # restart.sh execs run-local.sh in the foreground. For --https we must return
+  # so install_caddy_https can run; always background in that mode.
+  if [[ "$HTTPS" -eq 0 && -t 1 ]]; then
+    # Interactive HTTP-only: leave in foreground so logs stream (same as Mac).
     exec ./restart.sh
   fi
   nohup ./restart.sh >>"${HOME}/lingocoach-uvicorn.log" 2>&1 &
@@ -306,12 +307,17 @@ run_podman() {
   fi
 
   echo "LingoCoach: building image ${IMAGE}…"
-  # Explicit DNS: rootless Podman builds often cannot resolve deb.debian.org /
-  # pypi.org when the host resolv.conf is empty or points at a broken stub.
-  podman build \
+  # Explicit DNS: rootless Podman builds often cannot resolve pypi.org when
+  # the host resolv.conf is empty or points at a broken stub.
+  if ! podman build \
     --dns "${LINGOCOACH_BUILD_DNS1:-8.8.8.8}" \
     --dns "${LINGOCOACH_BUILD_DNS2:-1.1.1.1}" \
-    -t "$IMAGE" .
+    -t "$IMAGE" .; then
+    echo "LingoCoach: Podman build failed (often DNS inside the build netns)." >&2
+    echo "  Falling back to ./restart.sh (venv). Or re-run: ./deploy-vps.sh --https --local" >&2
+    run_local
+    return 0
+  fi
 
   free_port_host
 
