@@ -16,6 +16,7 @@ def _candidates() -> list[Path]:
     raw = [
         os.environ.get("LINGOCOACH_ENV_FILE", "").strip(),
         "/Users/mikelam/firstRepo/openrouter_key/.env_voice_chat",
+        "/Users/mikelam/firstRepo/voice-chat/.env",
         str(home / "firstRepo" / "openrouter_key" / ".env_voice_chat"),
         str(here.parent / "openrouter_key" / ".env_voice_chat"),
         str(here / ".env"),

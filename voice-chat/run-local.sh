@@ -128,6 +128,7 @@ stop_existing_server() {
 candidates=(
   "${LINGOCOACH_ENV_FILE:-}"
   "/Users/mikelam/firstRepo/openrouter_key/.env_voice_chat"
+  "/Users/mikelam/firstRepo/voice-chat/.env"
   "$HOME/firstRepo/openrouter_key/.env_voice_chat"
   "$(dirname "$0")/../openrouter_key/.env_voice_chat"
   "$(dirname "$0")/.env"
