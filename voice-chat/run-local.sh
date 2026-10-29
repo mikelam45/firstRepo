@@ -8,34 +8,36 @@ PORT="${PORT:-8066}"
 # shellcheck source=local-common.sh
 . ./local-common.sh
 
-# Read one assignment line. Accept optional "export" and surrounding quotes.
-# Never print the key. A raw one-line file is accepted when it has no spaces.
-load_openrouter_key() {
-  local file="$1" line key
+# Read KEY=value from a file. Accept optional "export" and surrounding quotes.
+# Never print the value. For OPENROUTER_API_KEY only, a raw one-line file is OK.
+load_env_assignment() {
+  local file="$1" varname="$2" allow_raw="${3:-0}" line value
   [[ -n "$file" && -f "$file" ]] || return 1
-  line="$(grep -E '^[[:space:]]*(export[[:space:]]+)?OPENROUTER_API_KEY=' "$file" | tail -n 1 || true)"
+  line="$(grep -E "^[[:space:]]*(export[[:space:]]+)?${varname}=" "$file" | tail -n 1 || true)"
   if [[ -n "$line" ]]; then
-    key="${line#*=}"
-    key="${key//$'\r'/}"
-    key="${key#"${key%%[![:space:]]*}"}"
-    key="${key%"${key##*[![:space:]]}"}"
-    if [[ ${#key} -ge 2 && ( ( "$key" == \"*\" && "$key" == *\" ) || ( "$key" == \'*\' && "$key" == *\' ) ) ]]; then
-      key="${key:1:${#key}-2}"
+    value="${line#*=}"
+    value="${value//$'\r'/}"
+    value="${value#"${value%%[![:space:]]*}"}"
+    value="${value%"${value##*[![:space:]]}"}"
+    if [[ ${#value} -ge 2 && ( ( "$value" == \"*\" && "$value" == *\" ) || ( "$value" == \'*\' && "$value" == *\' ) ) ]]; then
+      value="${value:1:${#value}-2}"
     fi
-  elif [[ "$(grep -cve '^[[:space:]]*$' "$file" || true)" == "1" ]]; then
-    key="$(grep -v '^[[:space:]]*$' "$file" | head -n 1)"
-    key="${key//$'\r'/}"
-    key="${key#"${key%%[![:space:]]*}"}"
-    key="${key%"${key##*[![:space:]]}"}"
-    [[ "$key" != *" "* && "$key" != *=* ]] || key=""
+  elif [[ "$allow_raw" == "1" && "$(grep -cve '^[[:space:]]*$' "$file" || true)" == "1" ]]; then
+    value="$(grep -v '^[[:space:]]*$' "$file" | head -n 1)"
+    value="${value//$'\r'/}"
+    value="${value#"${value%%[![:space:]]*}"}"
+    value="${value%"${value##*[![:space:]]}"}"
+    [[ "$value" != *" "* && "$value" != *=* ]] || value=""
   fi
-  [[ -n "${key:-}" ]] || return 1
-  export OPENROUTER_API_KEY="$key"
+  [[ -n "${value:-}" ]] || return 1
+  printf -v "$varname" '%s' "$value"
+  export "$varname"
   return 0
 }
 
 candidates=(
   "${LINGOCOACH_ENV_FILE:-}"
+  "${HOME}/lingocoach.env"
   "/Users/mikelam/firstRepo/openrouter_key/.env_voice_chat"
   "/Users/mikelam/firstRepo/voice-chat/.env"
   "$HOME/firstRepo/openrouter_key/.env_voice_chat"
@@ -44,7 +46,7 @@ candidates=(
 )
 loaded=0
 for file in "${candidates[@]}"; do
-  if load_openrouter_key "$file"; then
+  if load_env_assignment "$file" OPENROUTER_API_KEY 1; then
     echo "LingoCoach: OpenRouter key loaded (${#OPENROUTER_API_KEY} characters)."
     loaded=1
     break
@@ -52,6 +54,24 @@ for file in "${candidates[@]}"; do
 done
 if [[ "$loaded" -eq 0 ]]; then
   echo "LingoCoach: no OpenRouter key. Replies use offline examples."
+fi
+
+# Optional TOTP: prefer existing env, else load from the same env files (never echo).
+# Alias TOTP_SECRET is accepted by the app; LINGOCOACH_TOTP_SECRET wins.
+if [[ -z "${LINGOCOACH_TOTP_SECRET:-}" ]]; then
+  for file in "${candidates[@]}"; do
+    if load_env_assignment "$file" LINGOCOACH_TOTP_SECRET 0; then
+      break
+    fi
+    if [[ -z "${TOTP_SECRET:-}" ]] && load_env_assignment "$file" TOTP_SECRET 0; then
+      break
+    fi
+  done
+fi
+if [[ -n "${LINGOCOACH_TOTP_SECRET:-}" || -n "${TOTP_SECRET:-}" || -f .totp_secret ]]; then
+  echo "LingoCoach: TOTP gate will be enabled."
+else
+  echo "LingoCoach: TOTP not configured (optional: set LINGOCOACH_TOTP_SECRET or run .venv/bin/python -m app.totp_setup)."
 fi
 
 LINGOCOACH_STOP_VERBOSE=1 stop_existing_server

@@ -1,4 +1,9 @@
-"""HTTP service for LingoCoach. Port comes from the process, default 8066."""
+"""HTTP service for LingoCoach. Port comes from the process, default 8066.
+
+TOTP: set LINGOCOACH_TOTP_SECRET or TOTP_SECRET (base32), or run
+`python -m app.totp_setup` to write voice-chat/.totp_secret, then open
+Authenticator and enter the code at /login. Unset secret = gate off (dev).
+"""
 
 from __future__ import annotations
 
@@ -10,8 +15,9 @@ from pathlib import Path
 
 import httpx
 from fastapi import FastAPI, Request
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.coach import ServiceError, handle_turn, validate_request
 from app.keyfile import ensure_openrouter_key
@@ -22,6 +28,7 @@ from app.ielts_writing import check_script
 from app.limits import LIMITER
 from app.partners import all_partners, public_partner
 from app.scenarios import enabled_scenarios, public_scenario
+from app import totp_gate
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 logger = logging.getLogger("lingocoach")
@@ -38,11 +45,73 @@ if "pytest" not in sys.modules:
         )
     else:
         logger.info("No OpenRouter key. Replies use offline examples.")
+    totp_gate.ensure_configured()
+
+
+class TotpMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        if not totp_gate.is_enabled():
+            return await call_next(request)
+        path = request.url.path
+        if totp_gate.is_public_path(path):
+            return await call_next(request)
+        token = request.cookies.get(totp_gate.COOKIE_NAME)
+        if totp_gate.session_valid(token):
+            return await call_next(request)
+        wants_html = "text/html" in (request.headers.get("accept") or "")
+        if path.startswith("/api/") or not wants_html:
+            return JSONResponse({"error": "auth_required"}, status_code=401)
+        return RedirectResponse(url="/login", status_code=303)
+
+
+app.add_middleware(TotpMiddleware)
 
 
 @app.get("/health")
 def health() -> dict:
     return {"status": "ok"}
+
+
+@app.get("/login")
+def login_page() -> FileResponse:
+    return FileResponse(STATIC / "login.html")
+
+
+@app.post("/api/totp/verify")
+async def totp_verify(request: Request):
+    if not totp_gate.is_enabled():
+        return JSONResponse({"error": "totp_disabled"}, status_code=404)
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "invalid_request"}, status_code=400)
+    code = body.get("code") if isinstance(body, dict) else None
+    if not totp_gate.verify_code(str(code or "")):
+        return JSONResponse({"error": "invalid_code"}, status_code=401)
+    token = totp_gate.mint_session_token()
+    if not token:
+        return JSONResponse({"error": "totp_disabled"}, status_code=404)
+    response = JSONResponse({"ok": True})
+    secure = request.url.scheme == "https"
+    response.set_cookie(
+        key=totp_gate.COOKIE_NAME,
+        value=token,
+        max_age=totp_gate.SESSION_MAX_AGE,
+        httponly=True,
+        samesite="lax",
+        secure=secure,
+        path="/",
+    )
+    return response
+
+
+@app.get("/api/totp/setup")
+def totp_setup():
+    """One-shot otpauth URI after a secret was just created this process. Never logs the URI."""
+    uri = totp_gate.consume_setup_uri()
+    if not uri:
+        return JSONResponse({"error": "setup_unavailable"}, status_code=404)
+    return {"otpauth_uri": uri, "secret_length": len(totp_gate.current_secret() or "")}
 
 
 @app.get("/api/openrouter/status")

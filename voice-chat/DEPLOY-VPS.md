@@ -28,18 +28,31 @@ git checkout cursor/enhance-lingocoach-prd-aecd
 git pull origin cursor/enhance-lingocoach-prd-aecd
 ```
 
-## 3. OpenRouter key (never commit)
+## 3. Secrets (never commit)
 
-On the Mac the key lives at `/Users/mikelam/firstRepo/openrouter_key/.env_voice_chat` (gitignored).
+On the Mac the OpenRouter key lives at `/Users/mikelam/firstRepo/openrouter_key/.env_voice_chat` (gitignored).
 
-On the VPS put the **same value** outside the git tree:
+On the VPS put secrets outside the git tree in `~/lingocoach.env` (mode 600):
 
 ```bash
-printf 'OPENROUTER_API_KEY=PASTE_KEY_HERE\n' > ~/lingocoach.env
+# Generate a TOTP secret once (on any machine with pyotp), then store only on the VPS:
+#   python3 -c 'import pyotp; print(pyotp.random_base32())'
+# Or on the VPS after venv exists:
+#   cd ~/lingocoach/voice-chat && .venv/bin/python -m app.totp_setup
+#   (writes gitignored voice-chat/.totp_secret; for Podman prefer the env var below)
+
+cat > ~/lingocoach.env <<'EOF'
+OPENROUTER_API_KEY=PASTE_KEY_HERE
+LINGOCOACH_TOTP_SECRET=PASTE_BASE32_SECRET_HERE
+EOF
 chmod 600 ~/lingocoach.env
 ```
 
-Or use `~/lingocoach/voice-chat/.env` with mode `600` (also gitignored). Do not paste the key into chat or commit it.
+Or use `~/lingocoach/voice-chat/.env` with mode `600` (also gitignored). Do not paste keys or TOTP secrets into chat or commit them.
+
+**TOTP enroll:** add the same base32 secret (or the printed `otpauth://` URI from `python -m app.totp_setup`) in Google Authenticator / Authy / 1Password as issuer **LingoCoach**. After deploy, open `http://VPS_HOST:8066/login`, enter the 6-digit code, then the coach unlocks (HttpOnly cookie, 7 days).
+
+When `LINGOCOACH_TOTP_SECRET` / `TOTP_SECRET` / `.totp_secret` is absent, the gate stays off (open access). On a public VPS, keep the secret set.
 
 ## 4. Start on 8066
 

@@ -4,8 +4,9 @@
 # Then:    systemctl --user daemon-reload
 #          systemctl --user enable --now lingocoach.service
 #
-# Env file must be outside git (mode 600), one line:
+# Env file must be outside git (mode 600). Typical lines:
 #   OPENROUTER_API_KEY=...
+#   LINGOCOACH_TOTP_SECRET=...   # base32; enables /login gate when set
 # Default path matches PRD §21.5: ~/lingocoach.env
 # Override with EnvironmentFile= before enabling the unit.
 #

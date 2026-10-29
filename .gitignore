@@ -2,6 +2,7 @@ openrouter_key/
 .env
 .venv/
 voice-chat/.venv/
+voice-chat/.totp_secret
 __pycache__/
 **/__pycache__/
 .pytest_cache/

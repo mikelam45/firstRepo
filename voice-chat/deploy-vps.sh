@@ -37,7 +37,8 @@ for arg in "$@"; do
 done
 
 # Resolve env file. Prefer PRD path ~/lingocoach.env, then voice-chat/.env.
-# Do not create the file; the operator must place the key (mode 600).
+# Do not create the file; the operator must place secrets (mode 600).
+# Accepts OpenRouter and/or TOTP assignments (values never printed).
 resolve_env_file() {
   local candidates=(
     "${LINGOCOACH_ENV_FILE:-}"
@@ -47,7 +48,7 @@ resolve_env_file() {
   local f
   for f in "${candidates[@]}"; do
     [[ -n "$f" && -f "$f" ]] || continue
-    if grep -qE '^[[:space:]]*(export[[:space:]]+)?OPENROUTER_API_KEY=' "$f" \
+    if grep -qE '^[[:space:]]*(export[[:space:]]+)?(OPENROUTER_API_KEY|LINGOCOACH_TOTP_SECRET|TOTP_SECRET)=' "$f" \
       || [[ "$(grep -cve '^[[:space:]]*$' "$f" || true)" == "1" ]]; then
       printf '%s' "$f"
       return 0
@@ -101,10 +102,16 @@ run_podman() {
   if env_file="$(resolve_env_file)"; then
     echo "LingoCoach: using env file ${env_file} (contents not printed)."
     chmod 600 "$env_file" 2>/dev/null || true
+    if grep -qE '^[[:space:]]*(export[[:space:]]+)?(LINGOCOACH_TOTP_SECRET|TOTP_SECRET)=' "$env_file"; then
+      echo "LingoCoach: TOTP gate will be enabled (secret from env file)."
+    else
+      echo "LingoCoach: TOTP not in env file (optional: add LINGOCOACH_TOTP_SECRET=…)."
+    fi
   else
-    echo "LingoCoach: no OpenRouter env file found."
-    echo "  Create ${HOME}/lingocoach.env (mode 600) with one line:"
+    echo "LingoCoach: no env file found."
+    echo "  Create ${HOME}/lingocoach.env (mode 600) with:"
     echo "    OPENROUTER_API_KEY=..."
+    echo "    LINGOCOACH_TOTP_SECRET=...   # optional; recommended on a public VPS"
     echo "  Or voice-chat/.env. App still starts; live turns need the key."
   fi
 
@@ -124,8 +131,10 @@ run_podman() {
   )
   if [[ -n "${env_file}" ]]; then
     run_args+=(--env-file "$env_file")
-  elif [[ -n "${OPENROUTER_API_KEY:-}" ]]; then
-    run_args+=(-e OPENROUTER_API_KEY)
+  else
+    [[ -n "${OPENROUTER_API_KEY:-}" ]] && run_args+=(-e OPENROUTER_API_KEY)
+    [[ -n "${LINGOCOACH_TOTP_SECRET:-}" ]] && run_args+=(-e LINGOCOACH_TOTP_SECRET)
+    [[ -n "${TOTP_SECRET:-}" ]] && run_args+=(-e TOTP_SECRET)
   fi
 
   echo "LingoCoach: starting container on 0.0.0.0:${PORT}…"
