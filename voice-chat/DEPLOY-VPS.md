@@ -241,6 +241,20 @@ cd ~/lingocoach && git pull origin cursor/enhance-lingocoach-prd-aecd
 cd voice-chat && ./deploy-vps.sh --https
 ```
 
+If **`Job for caddy.service failed`** after “Valid configuration”:
+
+```bash
+sudo journalctl -u caddy -n 50 --no-pager
+sudo ss -lntp | grep -E ':80|:8066'
+# Almost always: leftover uvicorn still on public 8066. Free it, then:
+cd ~/lingocoach && git pull origin cursor/enhance-lingocoach-prd-aecd
+cd voice-chat
+PORT=8066 bash -c '. ./local-common.sh && force_stop_port'
+./deploy-vps.sh --https
+```
+
+Also free **:80** if another web server owns it (Apache/nginx). Caddy needs :80 for Let’s Encrypt HTTP-01 and :8066 for HTTPS.
+
 From your laptop (replace host and SSH user):
 
 ```bash

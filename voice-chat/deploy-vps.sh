@@ -212,6 +212,25 @@ render_caddyfile() {
   printf '%s\n' "$content" >"$out"
 }
 
+# Run a command with sudo when /etc/caddy is not writable as this user.
+caddy_root() {
+  if [[ -w /etc/caddy/Caddyfile ]] || [[ -w /etc/caddy ]]; then
+    "$@"
+  else
+    sudo "$@"
+  fi
+}
+
+# Show listeners on ACME (:80) and public TLS (HTTPS_PORT) for diagnostics.
+show_http_listeners() {
+  echo "LingoCoach: listeners on :80 and :${HTTPS_PORT}:" >&2
+  if command -v ss >/dev/null 2>&1; then
+    ss -lntp 2>/dev/null | grep -E ":(80|${HTTPS_PORT})\\b" >&2 || echo "  (none via ss)" >&2
+  elif command -v lsof >/dev/null 2>&1; then
+    lsof -nP -iTCP:80,${HTTPS_PORT} -sTCP:LISTEN 2>/dev/null >&2 || echo "  (none via lsof)" >&2
+  fi
+}
+
 install_caddy_https() {
   local domain tmp_cfg
   domain="$(resolve_domain)"
@@ -240,6 +259,19 @@ install_caddy_https() {
     sudo apt-get install -y caddy
   fi
 
+  # Caddy must own public HTTPS_PORT (8066). A leftover uvicorn/HTTP deploy on
+  # 0.0.0.0:8066 makes systemctl start fail with "address already in use".
+  # Do NOT free INTERNAL_PORT here — the app is already healthy on 18066.
+  echo "LingoCoach: freeing public :${HTTPS_PORT} for Caddy (app stays on :${INTERNAL_PORT})…"
+  if command -v podman >/dev/null 2>&1; then
+    # Old HTTP publish of the container on 8066 (ignore if absent).
+    podman stop "$CONTAINER_NAME" >/dev/null 2>&1 || true
+    podman rm "$CONTAINER_NAME" >/dev/null 2>&1 || true
+  fi
+  # shellcheck source=local-common.sh
+  . ./local-common.sh
+  PORT="$HTTPS_PORT" force_stop_port || true
+
   tmp_cfg="$(mktemp)"
   # shellcheck disable=SC2064
   trap "rm -f '$tmp_cfg'" RETURN
@@ -251,23 +283,31 @@ install_caddy_https() {
     exit 1
   fi
 
-  if [[ ! -w /etc/caddy ]]; then
-    if ! command -v sudo >/dev/null 2>&1; then
-      echo "Need write access to /etc/caddy (or sudo)." >&2
-      exit 1
-    fi
-    sudo mkdir -p /etc/caddy
-    sudo cp "$tmp_cfg" /etc/caddy/Caddyfile
-    sudo systemctl enable --now caddy
-    sudo systemctl reload caddy
-  else
-    mkdir -p /etc/caddy
-    cp "$tmp_cfg" /etc/caddy/Caddyfile
-    systemctl enable --now caddy
-    systemctl reload caddy
+  caddy_root mkdir -p /etc/caddy
+  caddy_root cp "$tmp_cfg" /etc/caddy/Caddyfile
+  # Prefer restart over enable --now + reload: reload fails when the unit never started.
+  caddy_root systemctl enable caddy >/dev/null 2>&1 || true
+  if ! caddy_root systemctl restart caddy; then
+    echo "LingoCoach: caddy.service failed to start." >&2
+    show_http_listeners
+    echo "--- systemctl status caddy ---" >&2
+    caddy_root systemctl status caddy --no-pager -l 2>&1 | tail -n 40 >&2 || true
+    echo "--- journalctl -u caddy (recent) ---" >&2
+    caddy_root journalctl -u caddy -n 40 --no-pager 2>&1 | tail -n 40 >&2 || true
+    echo "Common fix: something else is bound to :80 or :${HTTPS_PORT}." >&2
+    echo "  sudo ss -lntp | grep -E ':80|:${HTTPS_PORT}'" >&2
+    echo "  # stop leftover app on 8066, then: cd ~/lingocoach/voice-chat && ./deploy-vps.sh --https" >&2
+    exit 1
   fi
 
-  echo "LingoCoach: Caddy reloaded. Visit https://${domain}:${HTTPS_PORT}/"
+  if ! caddy_root systemctl is-active --quiet caddy; then
+    echo "LingoCoach: caddy.service is not active after restart." >&2
+    show_http_listeners
+    caddy_root journalctl -u caddy -n 40 --no-pager 2>&1 | tail -n 40 >&2 || true
+    exit 1
+  fi
+
+  echo "LingoCoach: Caddy is active. Visit https://${domain}:${HTTPS_PORT}/"
   echo "  ACME HTTP-01 uses :80 (keep 80/tcp open). Public TLS is :${HTTPS_PORT}."
   echo "  ufw: allow 80/tcp + ${HTTPS_PORT}/tcp. Do not leave a prior plain-HTTP app on public ${HTTPS_PORT}."
   echo "  App stays on 127.0.0.1:${INTERNAL_PORT}; that port stays closed to the internet."
