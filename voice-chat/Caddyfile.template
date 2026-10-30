@@ -1,0 +1,30 @@
+# LingoCoach Caddyfile template (Let's Encrypt automatic HTTPS on a non-443 port).
+# deploy-vps.sh --https substitutes placeholders for domain, HTTPS port, internal
+# port, and an optional global email block. Do not commit a real hostname here.
+#
+# Access pattern (example host the operator gave):
+#   https://103-195-5-86.as-cloud-xip.com:8066/
+#
+# Requires: DNS A/AAAA for the domain → this VPS; port 80 open for ACME HTTP-01;
+# public HTTPS on the HTTPS port (default 8066). App listens on 127.0.0.1 and the
+# internal port (default 18066) only. Do not publish the app itself on public 8066
+# when using --https (Caddy owns that port).
+#
+# If HTTP-01 is blocked and you cannot open :80, use DNS ACME or TLS-ALPN on the
+# HTTPS port (advanced; not wired by this template — see Caddy automatic HTTPS docs).
+
+__ACME_EMAIL_BLOCK__
+# Plain HTTP on :80: leave ACME challenge paths alone; send browsers to HTTPS.
+http://__LINGOCOACH_DOMAIN__ {
+	@not_acme not path /.well-known/acme-challenge/*
+	redir @not_acme https://__LINGOCOACH_DOMAIN__:__HTTPS_PORT__{uri} permanent
+}
+
+https://__LINGOCOACH_DOMAIN__:__HTTPS_PORT__ {
+	encode gzip
+	reverse_proxy 127.0.0.1:__INTERNAL_PORT__
+	header {
+		# No Strict-Transport-Security: HSTS would push UAs to :443, which we do not serve.
+		X-Content-Type-Options nosniff
+	}
+}

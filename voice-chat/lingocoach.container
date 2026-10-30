@@ -1,0 +1,35 @@
+# Quadlet unit for rootless Podman (Ubuntu VPS).
+# Install: mkdir -p ~/.config/containers/systemd
+#          cp lingocoach.container ~/.config/containers/systemd/
+# Then:    systemctl --user daemon-reload
+#          systemctl --user enable --now lingocoach.service
+#
+# Env file must be outside git (mode 600). Typical lines:
+#   OPENROUTER_API_KEY=...
+#   LINGOCOACH_TOTP_SECRET=...   # base32; enables /login gate when set
+# Default path matches PRD §21.5: ~/lingocoach.env
+# Override with EnvironmentFile= before enabling the unit.
+#
+# This checkout listens on 8066 (Mac run-local.sh uses the same port).
+#
+# HTTP-only (default below): publish on 0.0.0.0:8066.
+# HTTPS (Caddy on public :8066): ./deploy-vps.sh --https [--systemd] rewrites
+# PublishPort to 127.0.0.1:18066:8066 and sets Environment=LINGOCOACH_HTTPS=1 so
+# the app sets Secure on lc_session behind the proxy. Caddy owns public 8066/tcp
+# (TLS); keep 18066 closed to the internet; leave 80/tcp open for ACME HTTP-01.
+
+[Container]
+Image=localhost/lingocoach:revOct23
+ContainerName=lingocoach
+PublishPort=0.0.0.0:8066:8066
+EnvironmentFile=%h/lingocoach.env
+ReadOnly=true
+Tmpfs=/tmp
+DropCapability=ALL
+NoNewPrivileges=true
+
+[Service]
+Restart=on-failure
+
+[Install]
+WantedBy=default.target
