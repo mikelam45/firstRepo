@@ -307,9 +307,11 @@ run_podman() {
   fi
 
   echo "LingoCoach: building image ${IMAGE}…"
-  # Explicit DNS: rootless Podman builds often cannot resolve pypi.org when
-  # the host resolv.conf is empty or points at a broken stub.
+  # Prefer host network for RUN (apt/pip DNS). Slirp DNS often cannot resolve
+  # pypi.org / deb.debian.org on locked-down VPS images.
+  # Fallback: venv path (same as --local) so --https can still finish.
   if ! podman build \
+    --network=host \
     --dns "${LINGOCOACH_BUILD_DNS1:-8.8.8.8}" \
     --dns "${LINGOCOACH_BUILD_DNS2:-1.1.1.1}" \
     -t "$IMAGE" .; then
@@ -394,10 +396,15 @@ install_systemd() {
   fi
 
   echo "LingoCoach: building image for systemd unit…"
-  podman build \
+  if ! podman build \
+    --network=host \
     --dns "${LINGOCOACH_BUILD_DNS1:-8.8.8.8}" \
     --dns "${LINGOCOACH_BUILD_DNS2:-1.1.1.1}" \
-    -t "$IMAGE" .
+    -t "$IMAGE" .; then
+    echo "LingoCoach: Podman build failed; cannot install systemd unit without an image." >&2
+    echo "  Use: ./deploy-vps.sh --https --local" >&2
+    exit 1
+  fi
 
   systemctl --user daemon-reload
   systemctl --user enable --now lingocoach.service
@@ -445,7 +452,12 @@ case "$MODE" in
     run_podman
     ;;
   auto)
-    if command -v podman >/dev/null 2>&1; then
+    # Prefer venv on VPS HTTPS deploys: Podman build DNS is often broken
+    # (pypi.org / deb.debian.org). Force containers with --podman / --systemd.
+    if [[ "$HTTPS" -eq 1 && "${LINGOCOACH_USE_PODMAN:-0}" != "1" ]]; then
+      echo "LingoCoach: HTTPS auto path uses venv (skip Podman). Force image: --podman"
+      run_local
+    elif command -v podman >/dev/null 2>&1; then
       run_podman
     else
       echo "LingoCoach: Podman not installed; falling back to ./restart.sh"

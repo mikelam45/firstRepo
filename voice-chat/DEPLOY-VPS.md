@@ -113,26 +113,25 @@ Force the non-container path:
 ./deploy-vps.sh --https --local
 ```
 
-### Podman build / DNS (`Temporary failure resolving 'deb.debian.org'`)
+### Podman build / DNS (`Temporary failure resolving 'deb.debian.org'` / `pypi.org`)
 
-The image **no longer runs `apt-get`** (that step only installed optional `espeak-ng` and broke builds when DNS inside the Podman netns was dead). Pull the latest branch if you still see that apt warning.
-
-If **`pip install` inside `podman build`** fails the same way (cannot resolve `pypi.org`), skip containers:
+**Do this on the VPS (recommended):** HTTPS deploy uses the **venv** path by default so you never wait on broken Podman DNS:
 
 ```bash
 cd ~/lingocoach
 git pull origin cursor/enhance-lingocoach-prd-aecd
 cd voice-chat
-./deploy-vps.sh --https --local
+./deploy-vps.sh --https
+# same as: ./deploy-vps.sh --https --local
 ```
 
-`./deploy-vps.sh --https` also falls back to the venv path when Podman build fails.
+If you still see `apt-get` / `espeak-ng` in the build log, you are on an **old** commit — `git pull` first. Current `Containerfile` has **no** `apt-get`.
 
-Optional DNS fix if you want containers later:
+Force a Podman image only when DNS works (`--network=host` is passed to `podman build`):
 
 ```bash
-echo -e 'nameserver 8.8.8.8\nnameserver 1.1.1.1' | sudo tee /etc/resolv.conf
-getent hosts pypi.org
+./deploy-vps.sh --https --podman
+# or: LINGOCOACH_USE_PODMAN=1 ./deploy-vps.sh --https
 ```
 
 Firewall for HTTP-only:
