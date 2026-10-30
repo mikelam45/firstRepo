@@ -231,6 +231,16 @@ curl -fsS http://127.0.0.1:18066/health
 # {"status":"ok"}
 ```
 
+If deploy says `health check failed for http://127.0.0.1:18066/health`:
+
+```bash
+tail -n 50 ~/lingocoach-uvicorn.log
+ss -lntp | grep -E '18066|8066' || true
+# Re-pull and retry (deps install in foreground first now):
+cd ~/lingocoach && git pull origin cursor/enhance-lingocoach-prd-aecd
+cd voice-chat && ./deploy-vps.sh --https
+```
+
 From your laptop (replace host and SSH user):
 
 ```bash

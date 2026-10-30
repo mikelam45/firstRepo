@@ -118,7 +118,16 @@ ensure_venv_with_pip() {
 }
 
 ensure_venv_with_pip
+echo "LingoCoach: installing Python deps (may take a minute on first run)…"
 .venv/bin/python -m pip install -q -r requirements.txt
+echo "LingoCoach: deps ready"
+
+# deploy-vps.sh --https runs this first in the foreground so health checks
+# are not racing a cold pip install.
+if [[ "${LINGOCOACH_PREPARE_ONLY:-0}" == "1" ]]; then
+  echo "LingoCoach: prepare-only done (not starting uvicorn)."
+  exit 0
+fi
 
 # Return 0 if something accepts TCP connections on PORT (IPv4).
 port_is_busy() {
@@ -143,4 +152,5 @@ if port_is_busy; then
     exit 1
   fi
 fi
+echo "LingoCoach: uvicorn on ${HOST}:${PORT}"
 exec .venv/bin/python -m uvicorn app.main:app --host "$HOST" --port "$PORT"

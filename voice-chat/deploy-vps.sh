@@ -119,8 +119,10 @@ health_check() {
   local app_port
   app_port="$(app_host_port)"
   local url="http://127.0.0.1:${app_port}/health"
-  local _try
-  for _try in 1 2 3 4 5 6 7 8 9 10; do
+  local log="${HOME}/lingocoach-uvicorn.log"
+  local _try _max=60
+  echo "LingoCoach: waiting for ${url} (up to ${_max}s)…"
+  for ((_try = 1; _try <= _max; _try++)); do
     if curl -fsS "$url" >/dev/null 2>&1; then
       echo "LingoCoach: health ok at ${url}"
       return 0
@@ -128,6 +130,13 @@ health_check() {
     sleep 1
   done
   echo "LingoCoach: health check failed for ${url}" >&2
+  if [[ -f "$log" ]]; then
+    echo "LingoCoach: last lines of ${log}:" >&2
+    tail -n 40 "$log" >&2 || true
+  else
+    echo "LingoCoach: no log at ${log} yet (uvicorn may not have started)." >&2
+  fi
+  echo "LingoCoach: debug: ss -lntp | grep ${app_port} ; curl -v ${url}" >&2
   return 1
 }
 
@@ -265,9 +274,10 @@ install_caddy_https() {
 }
 
 run_local() {
-  local host app_port
+  local host app_port log
   host="$(bind_host)"
   app_port="$(app_host_port)"
+  log="${HOME}/lingocoach-uvicorn.log"
   echo "LingoCoach: using ./restart.sh (venv + uvicorn on ${host}:${app_port})"
   export PORT="$app_port"
   if [[ "$HTTPS" -eq 1 ]]; then
@@ -281,8 +291,17 @@ run_local() {
     # Interactive HTTP-only: leave in foreground so logs stream (same as Mac).
     exec ./restart.sh
   fi
-  nohup ./restart.sh >>"${HOME}/lingocoach-uvicorn.log" 2>&1 &
-  echo "LingoCoach: started in background (log: ${HOME}/lingocoach-uvicorn.log)"
+
+  # Install deps in the foreground first (cold pip often exceeds a short health wait).
+  echo "LingoCoach: preparing venv/deps in foreground…"
+  if ! LINGOCOACH_PREPARE_ONLY=1 ./run-local.sh; then
+    echo "LingoCoach: prepare failed. Fix venv/pip, then retry." >&2
+    return 1
+  fi
+
+  : >"$log"
+  nohup ./restart.sh >>"$log" 2>&1 &
+  echo "LingoCoach: started in background pid $! (log: ${log})"
   health_check
 }
 
