@@ -261,6 +261,56 @@ From your laptop (replace host and SSH user):
 ssh YOUR_USER@VPS_HOST 'curl -fsS http://127.0.0.1:18066/health'
 ```
 
+### External `curl` hangs on `:8066` (firewall — not the app)
+
+If **`:80` returns Caddy’s 301** to `https://YOUR_DOMAIN:8066/...` but **`https://YOUR_DOMAIN:8066/` hangs** until timeout, the app and Caddy are usually fine. A **TCP connect timeout** means packets never reach the VPS on **8066** — almost always the **cloud provider security group / firewall panel**, even when `ufw` already allows the port. Do **not** keep debugging uvicorn until listeners and local HTTPS curl succeed.
+
+Use short timeouts so the client does not hang forever:
+
+```bash
+curl -v --connect-timeout 5 --max-time 10 https://YOUR_DOMAIN:8066/
+```
+
+**On the VPS (ordered):**
+
+```bash
+# 1) Who is listening?
+sudo ss -lntp | grep -E ':80|:8066|:18066'
+
+# 2) App + Caddy locally (expect JSON / HTML; -k ignores cert name mismatch on 127.0.0.1)
+curl -fsS --connect-timeout 5 --max-time 10 http://127.0.0.1:18066/health
+curl -vsk --connect-timeout 5 --max-time 10 https://127.0.0.1:8066/health \
+  -H "Host: 103-195-5-86.as-cloud-xip.com"
+
+# 3) Host firewall
+sudo ufw allow 80/tcp
+sudo ufw allow 8066/tcp
+sudo ufw status verbose
+```
+
+**Cloud panel (usual fix):** open **inbound TCP 8066** (and **80** for ACME / HTTP→HTTPS) to the VPS in the provider’s security group / network ACL. `ufw` alone is not enough if the panel still drops 8066.
+
+**From your laptop:**
+
+```bash
+curl -v --connect-timeout 5 --max-time 10 http://103-195-5-86.as-cloud-xip.com/
+# expect 301 → https://…:8066/
+curl -v --connect-timeout 5 --max-time 10 https://103-195-5-86.as-cloud-xip.com:8066/
+# if this hangs at "Trying …:8066", the panel is still blocking 8066
+```
+
+**Optional — TLS on `:443` instead** (avoids odd-port blocks when providers only allow 80/443):
+
+```bash
+# after ufw allow 443/tcp and opening 443 in the cloud panel:
+export LINGOCOACH_DOMAIN=103-195-5-86.as-cloud-xip.com
+export LINGOCOACH_HTTPS_PORT=443
+cd ~/lingocoach/voice-chat && ./deploy-vps.sh --https
+# then visit https://103-195-5-86.as-cloud-xip.com/  (no :8066 in the URL)
+```
+
+Keep **:80** open for Let’s Encrypt. Re-run deploy after changing `LINGOCOACH_HTTPS_PORT` so Caddyfile + redirects match.
+
 ## Update after a new commit
 
 ```bash

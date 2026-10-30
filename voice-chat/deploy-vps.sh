@@ -311,6 +311,7 @@ install_caddy_https() {
   echo "  ACME HTTP-01 uses :80 (keep 80/tcp open). Public TLS is :${HTTPS_PORT}."
   echo "  ufw: allow 80/tcp + ${HTTPS_PORT}/tcp. Do not leave a prior plain-HTTP app on public ${HTTPS_PORT}."
   echo "  App stays on 127.0.0.1:${INTERNAL_PORT}; that port stays closed to the internet."
+  echo "  If external curl hangs on :${HTTPS_PORT} (TCP connect timeout) while :80 redirects: open TCP ${HTTPS_PORT} in the cloud provider panel (ufw alone is not enough). See DEPLOY-VPS.md."
 }
 
 run_local() {
