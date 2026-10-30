@@ -78,9 +78,46 @@ fi
 
 LINGOCOACH_STOP_VERBOSE=1 stop_existing_server
 
-if [[ ! -x .venv/bin/python ]]; then
-  python3 -m venv .venv
-fi
+# Debian/Ubuntu often create a .venv without pip (ensurepip disabled), or leave a
+# half-broken tree after a failed first run. Repair before install.
+ensure_venv_with_pip() {
+  local need_recreate=0
+  if [[ ! -x .venv/bin/python ]]; then
+    need_recreate=1
+  elif ! .venv/bin/python -m pip --version >/dev/null 2>&1; then
+    echo "LingoCoach: .venv has no pip; bootstrapping…"
+    if .venv/bin/python -m ensurepip --upgrade >/dev/null 2>&1 \
+      && .venv/bin/python -m pip --version >/dev/null 2>&1; then
+      return 0
+    fi
+    need_recreate=1
+  else
+    return 0
+  fi
+
+  if [[ "$need_recreate" -eq 1 ]]; then
+    echo "LingoCoach: creating .venv (with pip)…"
+    rm -rf .venv
+    if ! python3 -m venv --upgrade-deps .venv 2>/dev/null; then
+      # Older python3-venv without --upgrade-deps
+      if ! python3 -m venv .venv; then
+        echo "LingoCoach: cannot create venv. On Debian/Ubuntu install:" >&2
+        echo "  sudo apt-get install -y python3-venv python3-pip" >&2
+        exit 1
+      fi
+      .venv/bin/python -m ensurepip --upgrade >/dev/null 2>&1 || true
+    fi
+  fi
+
+  if ! .venv/bin/python -m pip --version >/dev/null 2>&1; then
+    echo "LingoCoach: pip still missing inside .venv." >&2
+    echo "  sudo apt-get install -y python3-venv python3-pip" >&2
+    echo "  rm -rf .venv && ./run-local.sh" >&2
+    exit 1
+  fi
+}
+
+ensure_venv_with_pip
 .venv/bin/python -m pip install -q -r requirements.txt
 
 # Return 0 if something accepts TCP connections on PORT (IPv4).

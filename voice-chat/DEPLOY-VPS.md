@@ -21,10 +21,12 @@ This cloud agent has **no SSH credentials** for your VPS. Run the steps below on
 
 ```bash
 sudo apt-get update
-sudo apt-get install -y podman git curl
+sudo apt-get install -y podman git curl python3-venv python3-pip
 sudo loginctl enable-linger "$USER"
-podman info   # should report rootless
+podman info   # should report rootless (optional if you use --local / HTTPS venv path)
 ```
+
+`python3-venv` + `python3-pip` are required for `./deploy-vps.sh --https` (venv path). Without them you get `.venv/bin/python: No module named pip`.
 
 For HTTPS you will also need Caddy (the deploy script can install it):
 
@@ -118,9 +120,12 @@ Force the non-container path:
 **Do this on the VPS (recommended):** HTTPS deploy uses the **venv** path by default so you never wait on broken Podman DNS:
 
 ```bash
+sudo apt-get install -y python3-venv python3-pip
 cd ~/lingocoach
 git pull origin cursor/enhance-lingocoach-prd-aecd
 cd voice-chat
+# If you already hit "No module named pip", drop the broken tree once:
+rm -rf .venv
 ./deploy-vps.sh --https
 # same as: ./deploy-vps.sh --https --local
 ```
