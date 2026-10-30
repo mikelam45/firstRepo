@@ -174,13 +174,19 @@ def new_nonce() -> str:
     return secrets.token_hex(8)
 
 
-PUBLIC_EXACT = {"/health", "/login", "/api/totp/verify", "/api/totp/setup"}
+PUBLIC_EXACT = {
+    "/health",
+    "/login",
+    "/api/totp/verify",
+    "/api/totp/setup",
+    "/setup/qr",
+}
 
 
 def is_public_path(path: str) -> bool:
     if path in PUBLIC_EXACT:
         return True
-    # Login page may request a tiny dedicated asset set.
-    if path.startswith("/static/login"):
+    # Login / one-time QR enroll pages may request a tiny dedicated asset set.
+    if path.startswith("/static/login") or path.startswith("/static/setup"):
         return True
     return False

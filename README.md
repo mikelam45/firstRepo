@@ -38,4 +38,19 @@ cd voice-chat
 # Then put LINGOCOACH_TOTP_SECRET=<that value> in ~/lingocoach.env (VPS) or export it locally.
 ```
 
+**One-time QR page (phone scan):** after the secret is set on the VPS, mint a single-use link (hash stored in gitignored `.totp_qr_token`, mode 600; expires ~20 minutes; invalidated after the first successful page load):
+
+```bash
+cd ~/lingocoach/voice-chat
+# URL from LINGOCOACH_PUBLIC_BASE, or DOMAIN + port (example host):
+# export LINGOCOACH_DOMAIN=103-195-5-86.as-cloud-xip.com
+# export LINGOCOACH_HTTPS_PORT=8066
+# optional override: export LINGOCOACH_PUBLIC_BASE=https://103-195-5-86.as-cloud-xip.com:8066
+.venv/bin/python -m app.totp_qr
+# or: .venv/bin/python -m app.totp_setup --qr-link
+# Prints: https://103-195-5-86.as-cloud-xip.com:8066/setup/qr?token=…
+```
+
+Open that URL on your phone, scan the QR (or type the manual base32 key), then go to `/login` and enter the 6-digit code. Do not leave `/setup/qr` without a token — it is not a permanent public QR.
+
 Open `http://127.0.0.1:8066/login` (or `https://YOUR_DOMAIN:8066/login` on a VPS with `--https`), enter the current code, then use the coach as usual. On HTTPS deploys the session cookie `lc_session` is HttpOnly **and Secure**.

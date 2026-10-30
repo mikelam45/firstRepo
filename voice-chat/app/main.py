@@ -3,6 +3,7 @@
 TOTP: set LINGOCOACH_TOTP_SECRET or TOTP_SECRET (base32), or run
 `python -m app.totp_setup` to write voice-chat/.totp_secret, then open
 Authenticator and enter the code at /login. Unset secret = gate off (dev).
+One-time QR enroll: `python -m app.totp_qr` → GET /setup/qr?token=…
 """
 
 from __future__ import annotations
@@ -15,7 +16,7 @@ from pathlib import Path
 
 import httpx
 from fastapi import FastAPI, Request
-from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
 
@@ -29,6 +30,7 @@ from app.limits import LIMITER
 from app.partners import all_partners, public_partner
 from app.scenarios import enabled_scenarios, public_scenario
 from app import totp_gate
+from app import totp_qr
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 logger = logging.getLogger("lingocoach")
@@ -96,6 +98,35 @@ def health() -> dict:
 @app.get("/login")
 def login_page() -> FileResponse:
     return FileResponse(STATIC / "login.html")
+
+
+@app.get("/setup/qr")
+def setup_qr_page(request: Request):
+    """One-time Authenticator QR page. Token required; consumed on first success.
+
+    Behavior: valid token + configured secret → 200 HTML with otpauth QR and
+    manual base32 key, then the token file is deleted. Missing / wrong /
+    expired / already-used token → 404. Never logs the secret or otpauth URI.
+    """
+    if not totp_gate.is_enabled():
+        return HTMLResponse("Not found", status_code=404)
+    token = request.query_params.get("token")
+    if not totp_qr.consume_enroll_token(token):
+        return HTMLResponse("Not found", status_code=404)
+    secret = totp_gate.current_secret()
+    otpauth = totp_qr.otpauth_uri()
+    if not secret or not otpauth:
+        return HTMLResponse("Not found", status_code=404)
+    template = (STATIC / "setup_qr.html").read_text(encoding="utf-8")
+    html = totp_qr.render_setup_page(template, secret, otpauth)
+    return HTMLResponse(
+        html,
+        status_code=200,
+        headers={
+            "Cache-Control": "no-store, no-cache, must-revalidate, private",
+            "Pragma": "no-cache",
+        },
+    )
 
 
 @app.post("/api/totp/verify")

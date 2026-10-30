@@ -82,6 +82,20 @@ Or use `~/lingocoach/voice-chat/.env` with mode `600` (also gitignored). Do not 
 
 **TOTP enroll:** add the same base32 secret (or the printed `otpauth://` URI from `python -m app.totp_setup`) in Google Authenticator / Authy / 1Password as issuer **LingoCoach**. After deploy, open `/login` on your public URL, enter the 6-digit code, then the coach unlocks (HttpOnly cookie, 7 days; **Secure** when HTTPS is enabled).
 
+**One-time QR page (recommended on the phone):** the secret/QR is **not** left on a permanent public URL. On the VPS, with the app already serving HTTPS and `LINGOCOACH_TOTP_SECRET` set:
+
+```bash
+cd ~/lingocoach/voice-chat
+# Prefer PUBLIC_BASE, else DOMAIN + HTTPS_PORT (example = this VPS):
+# export LINGOCOACH_PUBLIC_BASE=https://103-195-5-86.as-cloud-xip.com:8066
+# or: export LINGOCOACH_DOMAIN=103-195-5-86.as-cloud-xip.com
+#     export LINGOCOACH_HTTPS_PORT=8066
+.venv/bin/python -m app.totp_qr
+# equivalent: .venv/bin/python -m app.totp_setup --qr-link
+```
+
+That prints `https://103-195-5-86.as-cloud-xip.com:8066/setup/qr?token=…` (shape: `/setup/qr?token=<high-entropy>`). Open it once on the phone, scan with Google Authenticator, then use `/login`. The token is stored **hashed** in gitignored `voice-chat/.totp_qr_token` (mode 600), expires in ~20 minutes, and is **invalidated after the first successful page load**. A refresh or second visit returns 404.
+
 When `LINGOCOACH_TOTP_SECRET` / `TOTP_SECRET` / `.totp_secret` is absent, the gate stays off (open access). On a public VPS, keep the secret set.
 
 ## 4a. HTTP-only on 8066
