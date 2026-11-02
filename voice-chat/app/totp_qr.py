@@ -1,12 +1,13 @@
-"""One-time Authenticator enrollment page (otpauth deep link + manual key).
+"""One-time Authenticator enrollment page (Dinner_recipe-style GA QR).
 
 Mint a high-entropy token (CLI), store only its hash + expiry next to
-.totp_secret (mode 600). GET /setup/qr?token=… shows a primary otpauth://
-deep-link button, a large manual base32 key, and an optional collapsed QR
-once, then invalidates the token. TTL defaults to 20 minutes.
+.totp_secret (mode 600). GET /setup/qr?token=… shows a large otpauth://
+PNG QR on a light page (Mac Chrome → iPhone Camera / Google Authenticator),
+plus Enter a setup key and an otpauth:// deep link for phone browsers.
+First successful page load invalidates the token. TTL defaults to 20 minutes.
 
-Camera QR scan is unreliable on real iPhones — prefer the otpauth button
-or Enter a setup key / 輸入設定密鑰. Open the enroll URL in the phone browser.
+QR modules encode otpauth://totp/… only — never the HTTPS enroll URL.
+iPhone GA’s “請改用相機” flow: open Camera, point at the Mac QR, Add.
 
 Usage (from voice-chat/):
   .venv/bin/python -m app.totp_qr
@@ -38,13 +39,13 @@ import segno
 from app import totp_gate
 
 # Default QR is a segno PNG data-URL (pure-Python wheel: py3-none-any, no
-# Pillow / libjpeg). Target ≥280 CSS px, module scale ≥8–10px, quiet zone ≥4.
-# SVG remains a last-resort fallback only. Critical: QR *modules* encode
-# otpauth://totp/… only — never the HTTPS /setup/qr?token=… page URL
-# (iPhone Camera would open that as a webpage).
+# Pillow / libjpeg). Target ≥320 CSS px for Mac-monitor → iPhone Camera scan,
+# module scale ≥8–10px, quiet zone ≥4. SVG is last-resort only.
+# Critical: QR *modules* encode otpauth://totp/… only — never the HTTPS
+# /setup/qr?token=… page URL (Camera would open a webpage instead of GA).
 QR_BOX_SIZE = 10  # module scale in px (≥8–10 keeps camera edges hard)
 QR_BORDER = 6  # modules; GA expects ≥4 — extra quiet zone for phone cameras
-QR_MIN_PX = 280
+QR_MIN_PX = 320  # large enough for cross-device monitor scanning
 QR_ERROR = "m"
 _PNG_SIG = b"\x89PNG\r\n\x1a\n"
 
@@ -471,10 +472,10 @@ def _html_attr_escape(value: str) -> str:
 
 
 def render_setup_page(template: str, secret: str, otpauth: str) -> str:
-    """Embed otpauth deep link, grouped manual key, and optional QR.
+    """Embed primary otpauth QR, grouped manual key, and otpauth deep link.
 
-    otpauth must be otpauth://totp/… — used as the primary CTA href so iPhone
-    can open Authenticator without a camera scan.
+    otpauth must be otpauth://totp/… — encoded into QR modules (Mac→iPhone
+    Camera) and as a secondary deep-link href for phone browsers.
     """
     uri = require_otpauth_payload(otpauth)
     markup = qr_markup(uri)
@@ -528,7 +529,7 @@ def main(argv: list[str] | None = None) -> int:
     # Print only the link + metadata — never the TOTP secret.
     print(url)
     print(f"Expires in ~{max(0, exp - int(time.time()))}s; works once (first successful page load).")
-    print("Open on your phone. Prefer Enter a setup key if the camera fails; then /login.")
+    print("Open on Mac Chrome; scan with iPhone Camera (or GA). Leave page open. Then /login.")
     return 0
 
 

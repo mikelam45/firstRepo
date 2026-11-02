@@ -6,196 +6,95 @@
   <title>LingoCoach — Authenticator setup</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23101826'/%3E%3Ccircle cx='16' cy='14' r='7' fill='%23e7eef8'/%3E%3C/svg%3E">
   <style>
+    /* Dinner_recipe-style GA enroll: light page + large otpauth QR for Mac→iPhone Camera. */
     :root {
-      color-scheme: dark;
-      --bg: #101826;
-      --bg-2: #182334;
-      --ink: #e7eef8;
-      --muted: #93a4bd;
-      --line: #2c3c55;
-      --accent: #3c7dff;
+      color-scheme: only light;
+      --bg: #f4f6f9;
+      --surface: #ffffff;
+      --ink: #1a2233;
+      --muted: #5a6a82;
+      --line: #d5dde8;
+      --accent: #1a73e8;
       --accent-ink: #ffffff;
-      --ok: #3d9a6a;
+      --ok: #1e7a4a;
+      --warn-bg: #fff8e8;
+      --warn-line: #e6d4a8;
       font-family: "Segoe UI", "PingFang HK", "Noto Sans CJK TC", "Noto Sans SC", sans-serif;
     }
     * { box-sizing: border-box; }
-    html, body { margin: 0; min-height: 100%; background: #070b14; color: var(--ink); }
-    .phone {
-      width: min(480px, 100%);
+    html, body {
+      margin: 0;
+      min-height: 100%;
+      background: var(--bg);
+      color: var(--ink);
+    }
+    .sheet {
+      width: min(520px, 100%);
       min-height: 100dvh;
       margin: 0 auto;
-      background: var(--bg);
+      background: var(--surface);
       display: flex;
       flex-direction: column;
       justify-content: center;
-      padding: 24px 16px;
-      padding-top: max(24px, env(safe-area-inset-top));
-      padding-bottom: max(24px, env(safe-area-inset-bottom));
+      padding: 28px 20px;
+      padding-top: max(28px, env(safe-area-inset-top));
+      padding-bottom: max(28px, env(safe-area-inset-bottom));
+      border-left: 1px solid var(--line);
+      border-right: 1px solid var(--line);
     }
-    .mark { font-weight: 700; letter-spacing: 0.01em; font-size: 1.35rem; margin: 0 0 8px; }
-    .lede { margin: 0 0 8px; line-height: 1.45; font-size: 1.05rem; }
-    .lede-zh { margin: 0 0 16px; color: var(--muted); font-size: 0.95rem; line-height: 1.45; }
-    .muted { color: var(--muted); margin: 0 0 16px; line-height: 1.45; }
+    .mark {
+      font-weight: 700;
+      letter-spacing: 0.01em;
+      font-size: 1.45rem;
+      margin: 0 0 6px;
+    }
+    .lede {
+      margin: 0 0 6px;
+      line-height: 1.45;
+      font-size: 1.08rem;
+    }
+    .lede-zh {
+      margin: 0 0 16px;
+      color: var(--muted);
+      font-size: 0.98rem;
+      line-height: 1.45;
+    }
     .warn {
       margin: 0 0 20px;
       padding: 12px 14px;
-      border: 1px solid var(--line);
-      border-radius: 12px;
-      background: var(--bg-2);
-      color: var(--muted);
-      font-size: 0.92rem;
+      border: 1px solid var(--warn-line);
+      border-radius: 10px;
+      background: var(--warn-bg);
+      color: #6a5520;
+      font-size: 0.9rem;
       line-height: 1.4;
-    }
-    .otpauth-btn {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      min-height: 56px;
-      margin: 0 0 8px;
-      border: 0;
-      border-radius: 14px;
-      background: var(--accent);
-      color: var(--accent-ink);
-      padding: 14px 18px;
-      font-weight: 700;
-      font-size: 1.1rem;
-      text-decoration: none;
-      text-align: center;
-      line-height: 1.3;
-    }
-    .otpauth-btn:active { filter: brightness(0.92); }
-    .otpauth-sub {
-      margin: 0;
-      color: var(--muted);
-      font-size: 0.88rem;
-      line-height: 1.4;
-      text-align: center;
-    }
-    .panel {
-      margin: 0 0 24px;
-      padding: 16px;
-      border: 1px solid var(--line);
-      border-radius: 12px;
-      background: var(--bg-2);
-    }
-    .panel-title {
-      margin: 0 0 10px;
-      font-size: 1.05rem;
-      font-weight: 700;
-    }
-    .panel-title .badge {
-      display: inline-block;
-      margin-left: 6px;
-      padding: 2px 8px;
-      border-radius: 6px;
-      background: rgba(60, 125, 255, 0.2);
-      color: #9ec0ff;
-      font-size: 0.72rem;
-      font-weight: 600;
-      vertical-align: middle;
-      letter-spacing: 0.04em;
-      text-transform: uppercase;
     }
     .steps {
-      margin: 0 0 14px;
+      margin: 0 0 18px;
       padding-left: 1.25rem;
       color: var(--muted);
       font-size: 0.95rem;
       line-height: 1.55;
     }
-    .steps li { margin: 0 0 6px; }
+    .steps li { margin: 0 0 8px; }
     .steps strong { color: var(--ink); font-weight: 600; }
-    .key-label { font-size: 0.92rem; color: var(--muted); margin: 0 0 8px; }
-    .key-row {
-      display: flex;
-      gap: 8px;
-      align-items: stretch;
-      margin: 0 0 8px;
-    }
-    .key {
-      flex: 1;
-      margin: 0;
-      padding: 18px 16px;
-      border-radius: 12px;
-      border: 1px solid var(--line);
-      background: #0c121c;
-      font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
-      font-size: 1.35rem;
-      letter-spacing: 0.12em;
-      word-break: break-all;
-      line-height: 1.55;
-      user-select: all;
-      color: var(--ink);
-    }
-    .copy {
-      flex: 0 0 auto;
-      min-width: 88px;
-      border: 1px solid var(--accent);
-      border-radius: 12px;
-      background: var(--accent);
-      color: var(--accent-ink);
-      font-weight: 700;
-      font-size: 0.95rem;
-      cursor: pointer;
-      padding: 0 14px;
-    }
-    .copy:active { filter: brightness(0.92); }
-    .copy.copied {
-      background: var(--ok);
-      border-color: var(--ok);
-    }
-    .account-hint {
-      margin: 0;
-      color: var(--muted);
-      font-size: 0.88rem;
-      line-height: 1.4;
-    }
-    .advanced {
-      margin: 0 0 20px;
-      border: 1px solid var(--line);
-      border-radius: 12px;
-      background: var(--bg-2);
-      padding: 0;
-    }
-    .advanced > summary {
-      cursor: pointer;
-      list-style: none;
-      padding: 12px 14px;
-      color: var(--muted);
-      font-size: 0.9rem;
-      font-weight: 600;
-      user-select: none;
-    }
-    .advanced > summary::-webkit-details-marker { display: none; }
-    .advanced > summary::before {
-      content: "▸ ";
-      color: var(--muted);
-    }
-    .advanced[open] > summary::before { content: "▾ "; }
-    .advanced-body {
-      padding: 0 14px 14px;
-      border-top: 1px solid var(--line);
-    }
-    .advanced-body .muted {
-      margin: 12px 0;
-      font-size: 0.88rem;
-    }
     .qr-wrap {
       align-self: center;
-      /* Force light scheme so OS/browser dark invert cannot flip QR modules. */
       color-scheme: only light;
       forced-color-adjust: none;
       background: #ffffff;
-      padding: 28px;
-      border-radius: 12px;
+      padding: 32px;
+      border-radius: 8px;
+      border: 1px solid var(--line);
       line-height: 0;
-      margin: 0 0 12px;
-      box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08);
+      margin: 0 auto 12px;
+      width: fit-content;
+      max-width: 100%;
     }
     .qr-wrap .qr-img,
     .qr-wrap img,
     .qr-wrap svg {
-      width: min(280px, 68vw);
+      width: min(360px, 78vw);
       max-width: 100%;
       height: auto;
       aspect-ratio: 1 / 1;
@@ -211,9 +110,102 @@
       shape-rendering: crispEdges;
     }
     .scan-tip {
-      margin: 0;
+      margin: 0 0 24px;
       color: var(--muted);
-      font-size: 0.85rem;
+      font-size: 0.88rem;
+      line-height: 1.45;
+      text-align: center;
+    }
+    .divider {
+      margin: 4px 0 20px;
+      border: 0;
+      border-top: 1px solid var(--line);
+    }
+    .panel-title {
+      margin: 0 0 10px;
+      font-size: 1.02rem;
+      font-weight: 700;
+    }
+    .panel-title .badge {
+      display: inline-block;
+      margin-left: 6px;
+      padding: 2px 8px;
+      border-radius: 6px;
+      background: #e8f0fe;
+      color: #174ea6;
+      font-size: 0.72rem;
+      font-weight: 600;
+      vertical-align: middle;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+    .key-label { font-size: 0.9rem; color: var(--muted); margin: 0 0 8px; }
+    .key-row {
+      display: flex;
+      gap: 8px;
+      align-items: stretch;
+      margin: 0 0 8px;
+    }
+    .key {
+      flex: 1;
+      margin: 0;
+      padding: 16px 14px;
+      border-radius: 10px;
+      border: 1px solid var(--line);
+      background: #f8fafc;
+      font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+      font-size: 1.2rem;
+      letter-spacing: 0.1em;
+      word-break: break-all;
+      line-height: 1.55;
+      user-select: all;
+      color: var(--ink);
+    }
+    .copy {
+      flex: 0 0 auto;
+      min-width: 88px;
+      border: 1px solid var(--accent);
+      border-radius: 10px;
+      background: var(--accent);
+      color: var(--accent-ink);
+      font-weight: 700;
+      font-size: 0.95rem;
+      cursor: pointer;
+      padding: 0 14px;
+    }
+    .copy:active { filter: brightness(0.94); }
+    .copy.copied {
+      background: var(--ok);
+      border-color: var(--ok);
+    }
+    .account-hint {
+      margin: 0 0 18px;
+      color: var(--muted);
+      font-size: 0.88rem;
+      line-height: 1.4;
+    }
+    .otpauth-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 48px;
+      margin: 0 0 8px;
+      border: 1px solid var(--accent);
+      border-radius: 10px;
+      background: var(--accent);
+      color: var(--accent-ink);
+      padding: 12px 16px;
+      font-weight: 700;
+      font-size: 1rem;
+      text-decoration: none;
+      text-align: center;
+      line-height: 1.3;
+    }
+    .otpauth-btn:active { filter: brightness(0.94); }
+    .otpauth-sub {
+      margin: 0 0 22px;
+      color: var(--muted);
+      font-size: 0.86rem;
       line-height: 1.4;
       text-align: center;
     }
@@ -221,13 +213,13 @@
       display: inline-flex;
       align-items: center;
       justify-content: center;
+      align-self: center;
       min-height: 48px;
-      border: 0;
-      border-radius: 999px;
+      border-radius: 10px;
       background: transparent;
       color: var(--ink);
       border: 1px solid var(--line);
-      padding: 0 16px;
+      padding: 0 18px;
       font-weight: 600;
       text-decoration: none;
       text-align: center;
@@ -235,40 +227,39 @@
   </style>
 </head>
 <body>
-  <div class="phone">
+  <div class="sheet">
     <p class="mark">LingoCoach</p>
-    <p class="lede">Add <strong>__ISSUER__:__ACCOUNT__</strong> — tap below to open Authenticator. Do not use the camera.</p>
-    <p class="lede-zh">點一下開啟 Authenticator（不要用相機掃描 QR）。</p>
-    <p class="warn">This link works once. After you leave or refresh, it will not open again. Finish setup (or copy the key) before you leave.</p>
+    <p class="lede">Scan this QR with your <strong>iPhone Camera</strong> (or Google Authenticator) to add <strong>__ISSUER__:__ACCOUNT__</strong>.</p>
+    <p class="lede-zh">用 <strong>iPhone 相機</strong>掃描這個 QR（Google Authenticator 也會提示「請改用相機」）。</p>
+    <p class="warn">This link works once. Leave this page open while you scan — do not refresh. After you leave, remint with <code>./lingocoachctl.sh qr</code>.</p>
 
-    <a class="otpauth-btn" id="otpauth-link" href="__OTPAUTH_URI__">Open in Authenticator<br><span style="font-weight:600;font-size:0.9rem;opacity:0.92">點一下開啟 Authenticator</span></a>
-    <p class="otpauth-sub">Opens Google Authenticator / Password apps with the account ready — no camera scan.</p>
+    <ol class="steps" aria-label="Scan steps">
+      <li>Keep this page open on your <strong>Mac</strong> (Chrome / Safari).</li>
+      <li>On the iPhone, open the <strong>Camera</strong> app — or Google Authenticator → <strong>+</strong> → <strong>Scan a QR code</strong>.</li>
+      <li>Point at the QR below. When Camera shows an Authenticator banner, tap it and <strong>Add</strong>.</li>
+      <li>Open <strong>/login</strong> and enter the 6-digit code.</li>
+    </ol>
 
-    <section class="panel" aria-labelledby="manual-title">
-      <h2 class="panel-title" id="manual-title">Enter a setup key / 輸入設定密鑰 <span class="badge">Backup</span></h2>
-      <ol class="steps">
-        <li>Open <strong>Google Authenticator</strong> → tap <strong>+</strong>.</li>
-        <li>Choose <strong>Enter a setup key</strong> / <strong>輸入設定密鑰</strong> (not Scan a QR code).</li>
-        <li>Account: <strong>__ACCOUNT__</strong> (or __ISSUER__:__ACCOUNT__). Type: <strong>Time based</strong>.</li>
-        <li>Paste the key below (Copy). Spaces are optional.</li>
-        <li>Tap <strong>Add</strong>, then unlock with the 6-digit code.</li>
-      </ol>
-      <p class="key-label">Your setup key (base32)</p>
-      <div class="key-row">
-        <p class="key" id="manual">__MANUAL_KEY__</p>
-        <button type="button" class="copy" id="copy-key" data-raw="__MANUAL_KEY_RAW__">Copy</button>
-      </div>
-      <p class="account-hint">If the button above did nothing, this key always works.</p>
-    </section>
+    <div class="qr-wrap" id="qr-primary">__QR_MARKUP__</div>
+    <p class="scan-tip">QR encodes <code>otpauth://totp/…</code> only (not this page URL). Brighten the Mac screen if the scan fails.</p>
 
-    <details class="advanced">
-      <summary>Advanced: show QR image (optional / 相機常失敗)</summary>
-      <div class="advanced-body">
-        <p class="muted">Camera scan often fails on iPhone. Prefer the button or setup key above. If you still try: Authenticator → <strong>+ → Scan a QR code</strong> — not the iPhone Camera app.</p>
-        <div class="qr-wrap">__QR_MARKUP__</div>
-        <p class="scan-tip">Prefer the otpauth button or manual key — do not rely on camera scan.</p>
-      </div>
-    </details>
+    <hr class="divider">
+
+    <h2 class="panel-title">Can’t scan? Enter a setup key / 輸入設定密鑰 <span class="badge">Backup</span></h2>
+    <ol class="steps">
+      <li>Google Authenticator → <strong>+</strong> → <strong>Enter a setup key</strong> / <strong>輸入設定密鑰</strong>.</li>
+      <li>Account: <strong>__ACCOUNT__</strong> (or __ISSUER__:__ACCOUNT__). Type: <strong>Time based</strong>.</li>
+      <li>Paste the key below (Copy). Spaces are optional → <strong>Add</strong>.</li>
+    </ol>
+    <p class="key-label">Your setup key (base32)</p>
+    <div class="key-row">
+      <p class="key" id="manual">__MANUAL_KEY__</p>
+      <button type="button" class="copy" id="copy-key" data-raw="__MANUAL_KEY_RAW__">Copy</button>
+    </div>
+    <p class="account-hint">Use this if Camera / Authenticator still cannot read the QR.</p>
+
+    <a class="otpauth-btn" id="otpauth-link" href="__OTPAUTH_URI__">Open in Authenticator<br><span style="font-weight:600;font-size:0.88rem;opacity:0.92">點一下開啟（手機瀏覽器開啟此頁時）</span></a>
+    <p class="otpauth-sub">On the phone browser, this deep link adds the account without scanning.</p>
 
     <a class="primary" href="/login">Continue to unlock</a>
   </div>

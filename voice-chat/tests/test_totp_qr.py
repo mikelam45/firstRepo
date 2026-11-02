@@ -197,22 +197,22 @@ def test_setup_qr_valid_once_then_gone(monkeypatch, tmp_path):
     assert "works once" in body.lower() or "This link works once" in body
     assert TEST_SECRET in body
     assert expected.startswith("otpauth://totp/")
-    # Primary CTA: otpauth:// deep link (no camera).
-    assert 'id="otpauth-link"' in body
-    assert f'href="{expected}"' in body or f'href="{expected.replace("&", "&amp;")}"' in body
-    assert "Open in Authenticator" in body
-    assert "點一下開啟 Authenticator" in body
-    assert "Do not use the camera" in body or "不要用相機" in body
-    # Manual setup key is the backup path.
-    assert "Enter a setup key" in body or "輸入設定密鑰" in body
-    assert "Copy" in body
-    assert totp_qr.format_manual_key(TEST_SECRET) in body
-    # QR is optional / collapsed under Advanced.
-    assert "<details" in body
-    assert "Advanced" in body
+    # Dinner_recipe-style: primary is a large otpauth QR for iPhone Camera.
+    assert 'id="qr-primary"' in body or 'class="qr-wrap"' in body
+    assert "iPhone Camera" in body or "相機" in body
+    assert "請改用相機" in body or "Camera" in body
+    # QR is visible (not collapsed under <details>).
+    assert "<details" not in body
     qr_chunk = body.split('class="qr-wrap"', 1)[1].split("</div>", 1)[0]
     assert 'src="data:image/png;base64,' in qr_chunk
     _assert_qr_markup_scannable(qr_chunk)
+    # Manual setup key + otpauth deep link remain as backup / phone path.
+    assert "Enter a setup key" in body or "輸入設定密鑰" in body or "Can’t scan" in body or "Can't scan" in body
+    assert "Copy" in body
+    assert totp_qr.format_manual_key(TEST_SECRET) in body
+    assert 'id="otpauth-link"' in body
+    assert f'href="{expected}"' in body or f'href="{expected.replace("&", "&amp;")}"' in body
+    assert "Open in Authenticator" in body
     assert "Cache-Control" in first.headers
     assert "no-store" in first.headers.get("cache-control", "")
 
@@ -223,7 +223,7 @@ def test_setup_qr_valid_once_then_gone(monkeypatch, tmp_path):
 
 
 def test_setup_page_includes_otpauth_href(monkeypatch, tmp_path):
-    """Enroll HTML must expose the provisioning URI as an otpauth:// link."""
+    """Enroll HTML exposes otpauth:// as deep link and as QR payload (GA Key URI)."""
     _enable(monkeypatch, tmp_path)
     raw, _ = totp_qr.mint_enroll_token()
     client = TestClient(app)
@@ -241,6 +241,10 @@ def test_setup_page_includes_otpauth_href(monkeypatch, tmp_path):
     assert "/setup/qr?token=" not in body
     # Deep link must not be an https enroll URL.
     assert 'href="https://' not in body.split('id="otpauth-link"', 1)[1].split(">", 1)[0]
+    # Light page + primary QR (Dinner_recipe Mac→iPhone Camera flow).
+    assert 'color-scheme: only light' in body or "color-scheme: only light" in body
+    assert 'class="qr-wrap"' in body
+    assert "<details" not in body
 
 
 def test_otpauth_uri_google_authenticator_shape():
@@ -421,7 +425,7 @@ def test_qr_markup_falls_back_to_svg_when_png_fails(monkeypatch):
 
 
 def test_setup_page_qr_payload_is_otpauth(monkeypatch, tmp_path, qr_decoder_ready):
-    """End-to-end: optional QR still encodes otpauth; primary path is the link."""
+    """End-to-end: primary QR decodes to the exact Google Authenticator otpauth URI."""
     _enable(monkeypatch, tmp_path)
     raw, _ = totp_qr.mint_enroll_token()
     client = TestClient(app)
@@ -434,18 +438,27 @@ def test_setup_page_qr_payload_is_otpauth(monkeypatch, tmp_path, qr_decoder_read
     assert expected.startswith("otpauth://totp/")
     escaped = expected.replace("&", "&amp;")
     assert f'href="{escaped}"' in body or f'href="{expected}"' in body
-    assert "Enter a setup key" in body or "輸入設定密鑰" in body
+    assert "Enter a setup key" in body or "輸入設定密鑰" in body or "Can’t scan" in body
     assert totp_qr.format_manual_key(TEST_SECRET) in body
     assert "/setup/qr?token=" not in body
-    # Optional advanced QR (still generated) must decode to the same URI.
+    # Primary QR (Dinner_recipe / GA Key URI Format) must decode to the same URI.
     assert 'class="qr-wrap"' in body
+    assert "<details" not in body
     qr_chunk = body.split('class="qr-wrap"', 1)[1].split("</div>", 1)[0]
     _assert_qr_markup_scannable(qr_chunk)
     assert totp_qr.qr_encoded_payload(expected).startswith("otpauth://totp/")
     png = _png_from_markup(qr_chunk)
+    w, h = totp_qr.png_ihdr_size(png)
+    assert w >= totp_qr.QR_MIN_PX and h >= totp_qr.QR_MIN_PX
+    assert totp_qr.QR_MIN_PX >= 320
     decoded, used = _decode_qr_png(png)
     assert used == qr_decoder_ready or used
     assert decoded == expected
+    parsed = urlparse(decoded)
+    assert parsed.scheme == "otpauth" and parsed.netloc == "totp"
+    qs = parse_qs(parsed.query)
+    assert qs["secret"] == [TEST_SECRET]
+    assert qs["issuer"] == [totp_gate.ISSUER]
 
 
 def test_format_manual_key_groups_base32():
@@ -505,6 +518,40 @@ def test_cli_prints_url_not_secret(monkeypatch, tmp_path, capsys):
     assert "103-195-5-86.as-cloud-xip.com:8066" in out
     assert TEST_SECRET not in out
     assert "otpauth://" not in out
+    assert "iPhone Camera" in out or "Mac" in out
+
+
+def test_google_authenticator_key_uri_format_and_qr_roundtrip(qr_decoder_ready):
+    """Google Key Uri Format checks used by GA (same shape Dinner_recipe expects).
+
+    otpauth://totp/Issuer:account?secret=BASE32&issuer=Issuer
+    QR PNG must decode byte-for-byte to that URI.
+    """
+    secret = pyotp.random_base32()
+    uri = pyotp.TOTP(secret).provisioning_uri(
+        name=totp_gate.ACCOUNT, issuer_name=totp_gate.ISSUER
+    )
+    assert uri.startswith("otpauth://totp/")
+    parsed = urlparse(uri)
+    assert parsed.scheme == "otpauth"
+    assert parsed.netloc == "totp"
+    assert unquote(parsed.path.lstrip("/")) == f"{totp_gate.ISSUER}:{totp_gate.ACCOUNT}"
+    qs = parse_qs(parsed.query)
+    assert qs.get("secret") == [secret]
+    assert qs.get("issuer") == [totp_gate.ISSUER]
+    # No algorithm/digits/period overrides — GA defaults (SHA1/6/30).
+    assert "algorithm" not in qs
+    assert "digits" not in qs
+    assert "period" not in qs
+    # Refuse encoding the enroll page into modules.
+    with pytest.raises(ValueError):
+        totp_qr.require_otpauth_payload(
+            "https://example.com/setup/qr?token=not-otpauth"
+        )
+    png = totp_qr.qr_png_bytes(uri)
+    decoded, _ = _decode_qr_png(png)
+    assert decoded == uri
+    assert pyotp.TOTP(secret).verify(pyotp.TOTP(secret).now(), valid_window=1)
 
 
 def test_setup_qr_public_when_gate_on(monkeypatch, tmp_path):

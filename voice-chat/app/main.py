@@ -4,7 +4,7 @@ TOTP: set LINGOCOACH_TOTP_SECRET or TOTP_SECRET (base32), or run
 `python -m app.totp_setup` to write voice-chat/.totp_secret, then open
 Authenticator and enter the code at /login. Unset secret = gate off (dev).
 One-time enroll page: `python -m app.totp_qr` → GET /setup/qr?token=…
-(open on phone browser; tap otpauth or paste setup key — not camera).
+(open on Mac; scan otpauth QR with iPhone Camera / GA, or paste setup key).
 """
 
 from __future__ import annotations
@@ -105,10 +105,11 @@ def login_page() -> FileResponse:
 def setup_qr_page(request: Request):
     """One-time Authenticator enroll page. Token required; consumed on first success.
 
-    Behavior: valid token + configured secret → 200 HTML with otpauth:// deep
-    link (primary), manual base32 key, and optional collapsed QR, then the
-    token file is deleted. Missing / wrong / expired / already-used token →
-    404. Never logs the secret or otpauth URI.
+    Behavior: valid token + configured secret → 200 HTML with a large
+    otpauth:// PNG QR (Dinner_recipe-style light page for Mac→iPhone Camera),
+    manual base32 key, and otpauth deep link, then the token file is deleted.
+    Missing / wrong / expired / already-used token → 404. Never logs the
+    secret or otpauth URI.
     """
     if not totp_gate.is_enabled():
         return HTMLResponse("Not found", status_code=404)
