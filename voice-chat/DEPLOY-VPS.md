@@ -97,7 +97,16 @@ cd ~/lingocoach/voice-chat
 # equivalent: .venv/bin/python -m app.totp_setup --qr-link
 ```
 
-That prints `https://103-195-5-86.as-cloud-xip.com:8066/setup/qr?token=…` (shape: `/setup/qr?token=<high-entropy>`). Open it **once** on the phone (Safari is fine for viewing). In **Google Authenticator** choose **+ → Scan a QR code** — do not use the iPhone Camera app (that opens the enroll webpage). The page shows a raster PNG QR (otpauth://totp/…); after restart/deploy, remint with `./lingocoachctl.sh qr` so you get a fresh PNG. Then use `/login`. The token is stored **hashed** in gitignored `voice-chat/.totp_qr_token` (mode 600), expires in ~20 minutes, and is **invalidated after the first successful page load**. A refresh or second visit returns 404.
+That prints `https://103-195-5-86.as-cloud-xip.com:8066/setup/qr?token=…` (shape: `/setup/qr?token=<high-entropy>`). Open it **once** on the phone (Safari is fine for viewing).
+
+**Preferred — Enter a setup key (unblocks even if the camera fails):**
+
+1. Open **Google Authenticator** → **+** → **Enter a setup key** (not Scan a QR code, not the iPhone Camera app).
+2. Account: `unlock` (or `LingoCoach:unlock`). Type: **Time based**.
+3. Paste the large base32 key from the page (Copy button). Spaces are optional.
+4. Tap **Add**, then open `/login` and enter the 6-digit code.
+
+**Optional QR:** Authenticator → **+ → Scan a QR code** over the PNG on the page (otpauth://totp/…, not a website). After restart/deploy, remint with `./lingocoachctl.sh qr` so you get a fresh page. The token is stored **hashed** in gitignored `voice-chat/.totp_qr_token` (mode 600), expires in ~20 minutes, and is **invalidated after the first successful page load**. A refresh or second visit returns 404.
 
 When `LINGOCOACH_TOTP_SECRET` / `TOTP_SECRET` / `.totp_secret` is absent, the gate stays off (open access). On a public VPS, keep the secret set.
 
