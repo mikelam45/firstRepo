@@ -1,8 +1,12 @@
-"""One-time QR enrollment link for Google Authenticator.
+"""One-time Authenticator enrollment page (otpauth deep link + manual key).
 
 Mint a high-entropy token (CLI), store only its hash + expiry next to
-.totp_secret (mode 600). GET /setup/qr?token=… shows the otpauth QR + manual
-key once, then invalidates the token. TTL defaults to 20 minutes.
+.totp_secret (mode 600). GET /setup/qr?token=… shows a primary otpauth://
+deep-link button, a large manual base32 key, and an optional collapsed QR
+once, then invalidates the token. TTL defaults to 20 minutes.
+
+Camera QR scan is unreliable on real iPhones — prefer the otpauth button
+or Enter a setup key / 輸入設定密鑰. Open the enroll URL in the phone browser.
 
 Usage (from voice-chat/):
   .venv/bin/python -m app.totp_qr
@@ -456,11 +460,27 @@ def format_manual_key(secret: str) -> str:
     return " ".join(clean[i : i + 4] for i in range(0, len(clean), 4))
 
 
-def render_setup_page(template: str, secret: str, otpauth: str) -> str:
-    """Embed otpauth QR + grouped manual key. otpauth must be otpauth://totp/…."""
-    markup = qr_markup(require_otpauth_payload(otpauth))
+def _html_attr_escape(value: str) -> str:
+    """Escape a string for use inside a double-quoted HTML attribute."""
     return (
-        template.replace("__QR_MARKUP__", markup)
+        value.replace("&", "&amp;")
+        .replace('"', "&quot;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+    )
+
+
+def render_setup_page(template: str, secret: str, otpauth: str) -> str:
+    """Embed otpauth deep link, grouped manual key, and optional QR.
+
+    otpauth must be otpauth://totp/… — used as the primary CTA href so iPhone
+    can open Authenticator without a camera scan.
+    """
+    uri = require_otpauth_payload(otpauth)
+    markup = qr_markup(uri)
+    return (
+        template.replace("__OTPAUTH_URI__", _html_attr_escape(uri))
+        .replace("__QR_MARKUP__", markup)
         .replace("__MANUAL_KEY__", format_manual_key(secret))
         .replace("__MANUAL_KEY_RAW__", secret.strip())
         .replace("__ISSUER__", totp_gate.ISSUER)
@@ -484,8 +504,9 @@ def main(argv: list[str] | None = None) -> int:
             continue
         if args[i] in {"-h", "--help"}:
             print(
-                "Mint a one-time Authenticator QR page link.\n"
+                "Mint a one-time Authenticator enroll page link.\n"
                 "  python -m app.totp_qr [--base URL] [--ttl SECONDS]\n"
+                "Open the URL on the phone browser; tap otpauth or paste the key.\n"
                 "Requires LINGOCOACH_TOTP_SECRET / TOTP_SECRET / .totp_secret.\n"
                 "URL from LINGOCOACH_PUBLIC_BASE or LINGOCOACH_DOMAIN + port."
             )

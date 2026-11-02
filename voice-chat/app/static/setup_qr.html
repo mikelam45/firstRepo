@@ -33,7 +33,8 @@
       padding-bottom: max(24px, env(safe-area-inset-bottom));
     }
     .mark { font-weight: 700; letter-spacing: 0.01em; font-size: 1.35rem; margin: 0 0 8px; }
-    .lede { margin: 0 0 16px; line-height: 1.45; font-size: 1.05rem; }
+    .lede { margin: 0 0 8px; line-height: 1.45; font-size: 1.05rem; }
+    .lede-zh { margin: 0 0 16px; color: var(--muted); font-size: 0.95rem; line-height: 1.45; }
     .muted { color: var(--muted); margin: 0 0 16px; line-height: 1.45; }
     .warn {
       margin: 0 0 20px;
@@ -44,6 +45,31 @@
       color: var(--muted);
       font-size: 0.92rem;
       line-height: 1.4;
+    }
+    .otpauth-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 56px;
+      margin: 0 0 8px;
+      border: 0;
+      border-radius: 14px;
+      background: var(--accent);
+      color: var(--accent-ink);
+      padding: 14px 18px;
+      font-weight: 700;
+      font-size: 1.1rem;
+      text-decoration: none;
+      text-align: center;
+      line-height: 1.3;
+    }
+    .otpauth-btn:active { filter: brightness(0.92); }
+    .otpauth-sub {
+      margin: 0;
+      color: var(--muted);
+      font-size: 0.88rem;
+      line-height: 1.4;
+      text-align: center;
     }
     .panel {
       margin: 0 0 24px;
@@ -89,13 +115,13 @@
     .key {
       flex: 1;
       margin: 0;
-      padding: 16px;
+      padding: 18px 16px;
       border-radius: 12px;
       border: 1px solid var(--line);
       background: #0c121c;
       font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
-      font-size: 1.2rem;
-      letter-spacing: 0.1em;
+      font-size: 1.35rem;
+      letter-spacing: 0.12em;
       word-break: break-all;
       line-height: 1.55;
       user-select: all;
@@ -124,11 +150,35 @@
       font-size: 0.88rem;
       line-height: 1.4;
     }
-    .qr-section-title {
-      margin: 0 0 8px;
-      font-size: 0.95rem;
-      font-weight: 600;
+    .advanced {
+      margin: 0 0 20px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: var(--bg-2);
+      padding: 0;
+    }
+    .advanced > summary {
+      cursor: pointer;
+      list-style: none;
+      padding: 12px 14px;
       color: var(--muted);
+      font-size: 0.9rem;
+      font-weight: 600;
+      user-select: none;
+    }
+    .advanced > summary::-webkit-details-marker { display: none; }
+    .advanced > summary::before {
+      content: "▸ ";
+      color: var(--muted);
+    }
+    .advanced[open] > summary::before { content: "▾ "; }
+    .advanced-body {
+      padding: 0 14px 14px;
+      border-top: 1px solid var(--line);
+    }
+    .advanced-body .muted {
+      margin: 12px 0;
+      font-size: 0.88rem;
     }
     .qr-wrap {
       align-self: center;
@@ -145,11 +195,12 @@
     .qr-wrap .qr-img,
     .qr-wrap img,
     .qr-wrap svg {
-      width: min(320px, 72vw);
+      width: min(280px, 68vw);
       max-width: 100%;
       height: auto;
       aspect-ratio: 1 / 1;
       display: block;
+      margin: 0 auto;
       background: #ffffff;
       color-scheme: only light;
       forced-color-adjust: none;
@@ -160,9 +211,9 @@
       shape-rendering: crispEdges;
     }
     .scan-tip {
-      margin: 0 0 20px;
+      margin: 0;
       color: var(--muted);
-      font-size: 0.88rem;
+      font-size: 0.85rem;
       line-height: 1.4;
       text-align: center;
     }
@@ -173,8 +224,9 @@
       min-height: 48px;
       border: 0;
       border-radius: 999px;
-      background: var(--accent);
-      color: var(--accent-ink);
+      background: transparent;
+      color: var(--ink);
+      border: 1px solid var(--line);
       padding: 0 16px;
       font-weight: 600;
       text-decoration: none;
@@ -185,31 +237,38 @@
 <body>
   <div class="phone">
     <p class="mark">LingoCoach</p>
-    <p class="lede">Add <strong>__ISSUER__:__ACCOUNT__</strong> in Google Authenticator.</p>
+    <p class="lede">Add <strong>__ISSUER__:__ACCOUNT__</strong> — tap below to open Authenticator. Do not use the camera.</p>
+    <p class="lede-zh">點一下開啟 Authenticator（不要用相機掃描 QR）。</p>
     <p class="warn">This link works once. After you leave or refresh, it will not open again. Finish setup (or copy the key) before you leave.</p>
 
+    <a class="otpauth-btn" id="otpauth-link" href="__OTPAUTH_URI__">Open in Authenticator<br><span style="font-weight:600;font-size:0.9rem;opacity:0.92">點一下開啟 Authenticator</span></a>
+    <p class="otpauth-sub">Opens Google Authenticator / Password apps with the account ready — no camera scan.</p>
+
     <section class="panel" aria-labelledby="manual-title">
-      <h2 class="panel-title" id="manual-title">Enter a setup key <span class="badge">Recommended</span></h2>
+      <h2 class="panel-title" id="manual-title">Enter a setup key / 輸入設定密鑰 <span class="badge">Backup</span></h2>
       <ol class="steps">
-        <li>Open <strong>Google Authenticator</strong> on your phone.</li>
-        <li>Tap <strong>+</strong> (lower right).</li>
-        <li>Choose <strong>Enter a setup key</strong> (not “Scan a QR code”).</li>
-        <li>Account name: <strong>__ACCOUNT__</strong> (or __ISSUER__:__ACCOUNT__).</li>
-        <li>Paste or type the key below. Leave type as <strong>Time based</strong>.</li>
-        <li>Tap <strong>Add</strong>. Then continue to unlock with the 6-digit code.</li>
+        <li>Open <strong>Google Authenticator</strong> → tap <strong>+</strong>.</li>
+        <li>Choose <strong>Enter a setup key</strong> / <strong>輸入設定密鑰</strong> (not Scan a QR code).</li>
+        <li>Account: <strong>__ACCOUNT__</strong> (or __ISSUER__:__ACCOUNT__). Type: <strong>Time based</strong>.</li>
+        <li>Paste the key below (Copy). Spaces are optional.</li>
+        <li>Tap <strong>Add</strong>, then unlock with the 6-digit code.</li>
       </ol>
       <p class="key-label">Your setup key (base32)</p>
       <div class="key-row">
         <p class="key" id="manual">__MANUAL_KEY__</p>
         <button type="button" class="copy" id="copy-key" data-raw="__MANUAL_KEY_RAW__">Copy</button>
       </div>
-      <p class="account-hint">Spaces are optional. Authenticator ignores them when you paste.</p>
+      <p class="account-hint">If the button above did nothing, this key always works.</p>
     </section>
 
-    <p class="qr-section-title">Optional: scan a QR code</p>
-    <p class="muted">Only if your camera works. In Authenticator choose <strong>+ → Scan a QR code</strong> — not the iPhone Camera app (that opens this webpage).</p>
-    <div class="qr-wrap">__QR_MARKUP__</div>
-    <p class="scan-tip">Hold Authenticator steady over the PNG (bright screen). If scan fails, use the setup key above — that always works.</p>
+    <details class="advanced">
+      <summary>Advanced: show QR image (optional / 相機常失敗)</summary>
+      <div class="advanced-body">
+        <p class="muted">Camera scan often fails on iPhone. Prefer the button or setup key above. If you still try: Authenticator → <strong>+ → Scan a QR code</strong> — not the iPhone Camera app.</p>
+        <div class="qr-wrap">__QR_MARKUP__</div>
+        <p class="scan-tip">Prefer the otpauth button or manual key — do not rely on camera scan.</p>
+      </div>
+    </details>
 
     <a class="primary" href="/login">Continue to unlock</a>
   </div>

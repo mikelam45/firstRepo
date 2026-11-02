@@ -97,16 +97,22 @@ cd ~/lingocoach/voice-chat
 # equivalent: .venv/bin/python -m app.totp_setup --qr-link
 ```
 
-That prints `https://103-195-5-86.as-cloud-xip.com:8066/setup/qr?token=…` (shape: `/setup/qr?token=<high-entropy>`). Open it **once** on the phone (Safari is fine for viewing).
+That prints `https://103-195-5-86.as-cloud-xip.com:8066/setup/qr?token=…` (shape: `/setup/qr?token=<high-entropy>`). Open it **once on the phone browser** (Safari). Do **not** point the camera / Google Authenticator scanner at a computer monitor.
 
-**Preferred — Enter a setup key (unblocks even if the camera fails):**
+**Primary — tap otpauth (no camera):**
 
-1. Open **Google Authenticator** → **+** → **Enter a setup key** (not Scan a QR code, not the iPhone Camera app).
+1. On the phone, open the enroll URL in Safari.
+2. Tap **Open in Authenticator / 點一下開啟 Authenticator** — iOS opens Google Authenticator (or another otpauth handler) with the account ready.
+3. Confirm Add, then open `/login` and enter the 6-digit code.
+
+**Backup — Enter a setup key / 輸入設定密鑰:**
+
+1. Google Authenticator → **+** → **Enter a setup key** (not Scan a QR code).
 2. Account: `unlock` (or `LingoCoach:unlock`). Type: **Time based**.
-3. Paste the large base32 key from the page (Copy button). Spaces are optional.
-4. Tap **Add**, then open `/login` and enter the 6-digit code.
+3. Paste the large base32 key (Copy). Spaces are optional.
+4. Tap **Add**, then `/login`.
 
-**Optional QR:** Authenticator → **+ → Scan a QR code** over the PNG on the page (otpauth://totp/…, not a website). After restart/deploy, remint with `./lingocoachctl.sh qr` so you get a fresh page. The token is stored **hashed** in gitignored `voice-chat/.totp_qr_token` (mode 600), expires in ~20 minutes, and is **invalidated after the first successful page load**. A refresh or second visit returns 404.
+**Optional QR** is collapsed under Advanced (camera scan often fails on iPhone). After restart/deploy, remint with `./lingocoachctl.sh qr`. The token is stored **hashed** in gitignored `voice-chat/.totp_qr_token` (mode 600), expires in ~20 minutes, and is **invalidated after the first successful page load**. A refresh or second visit returns 404.
 
 When `LINGOCOACH_TOTP_SECRET` / `TOTP_SECRET` / `.totp_secret` is absent, the gate stays off (open access). On a public VPS, keep the secret set.
 

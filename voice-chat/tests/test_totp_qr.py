@@ -188,6 +188,7 @@ def test_setup_qr_valid_once_then_gone(monkeypatch, tmp_path):
     _enable(monkeypatch, tmp_path)
     raw, _exp = totp_qr.mint_enroll_token()
     client = TestClient(app)
+    expected = totp_gate.provisioning_uri(TEST_SECRET)
 
     first = client.get("/setup/qr", params={"token": raw})
     assert first.status_code == 200
@@ -195,13 +196,20 @@ def test_setup_qr_valid_once_then_gone(monkeypatch, tmp_path):
     assert "LingoCoach" in body
     assert "works once" in body.lower() or "This link works once" in body
     assert TEST_SECRET in body
-    assert "otpauth://totp/" in totp_gate.provisioning_uri(TEST_SECRET)
-    # Manual setup key is the primary path.
-    assert "Enter a setup key" in body
-    assert "Recommended" in body
+    assert expected.startswith("otpauth://totp/")
+    # Primary CTA: otpauth:// deep link (no camera).
+    assert 'id="otpauth-link"' in body
+    assert f'href="{expected}"' in body or f'href="{expected.replace("&", "&amp;")}"' in body
+    assert "Open in Authenticator" in body
+    assert "點一下開啟 Authenticator" in body
+    assert "Do not use the camera" in body or "不要用相機" in body
+    # Manual setup key is the backup path.
+    assert "Enter a setup key" in body or "輸入設定密鑰" in body
     assert "Copy" in body
     assert totp_qr.format_manual_key(TEST_SECRET) in body
-    # Default is segno PNG data-URL (SVG only as fallback).
+    # QR is optional / collapsed under Advanced.
+    assert "<details" in body
+    assert "Advanced" in body
     qr_chunk = body.split('class="qr-wrap"', 1)[1].split("</div>", 1)[0]
     assert 'src="data:image/png;base64,' in qr_chunk
     _assert_qr_markup_scannable(qr_chunk)
@@ -212,6 +220,27 @@ def test_setup_qr_valid_once_then_gone(monkeypatch, tmp_path):
     assert second.status_code == 404
     assert TEST_SECRET not in second.text
     assert not totp_qr.token_file_path().is_file()
+
+
+def test_setup_page_includes_otpauth_href(monkeypatch, tmp_path):
+    """Enroll HTML must expose the provisioning URI as an otpauth:// link."""
+    _enable(monkeypatch, tmp_path)
+    raw, _ = totp_qr.mint_enroll_token()
+    client = TestClient(app)
+    response = client.get("/setup/qr", params={"token": raw})
+    assert response.status_code == 200
+    body = response.text
+    expected = pyotp.TOTP(TEST_SECRET).provisioning_uri(
+        name=totp_gate.ACCOUNT, issuer_name=totp_gate.ISSUER
+    )
+    assert expected.startswith("otpauth://totp/")
+    # href may HTML-escape & as &amp;
+    escaped = expected.replace("&", "&amp;")
+    assert f'href="{escaped}"' in body or f'href="{expected}"' in body
+    assert 'id="otpauth-link"' in body
+    assert "/setup/qr?token=" not in body
+    # Deep link must not be an https enroll URL.
+    assert 'href="https://' not in body.split('id="otpauth-link"', 1)[1].split(">", 1)[0]
 
 
 def test_otpauth_uri_google_authenticator_shape():
@@ -392,24 +421,27 @@ def test_qr_markup_falls_back_to_svg_when_png_fails(monkeypatch):
 
 
 def test_setup_page_qr_payload_is_otpauth(monkeypatch, tmp_path, qr_decoder_ready):
-    """End-to-end: /setup/qr HTML QR was built from otpauth://totp/ modules."""
+    """End-to-end: optional QR still encodes otpauth; primary path is the link."""
     _enable(monkeypatch, tmp_path)
     raw, _ = totp_qr.mint_enroll_token()
     client = TestClient(app)
     response = client.get("/setup/qr", params={"token": raw})
     assert response.status_code == 200
     body = response.text
-    qr_chunk = body.split('class="qr-wrap"', 1)[1].split("</div>", 1)[0]
-    _assert_qr_markup_scannable(qr_chunk)
-    assert "Enter a setup key" in body
-    assert totp_qr.format_manual_key(TEST_SECRET) in body
     expected = pyotp.TOTP(TEST_SECRET).provisioning_uri(
         name=totp_gate.ACCOUNT, issuer_name="LingoCoach"
     )
     assert expected.startswith("otpauth://totp/")
+    escaped = expected.replace("&", "&amp;")
+    assert f'href="{escaped}"' in body or f'href="{expected}"' in body
+    assert "Enter a setup key" in body or "輸入設定密鑰" in body
+    assert totp_qr.format_manual_key(TEST_SECRET) in body
     assert "/setup/qr?token=" not in body
+    # Optional advanced QR (still generated) must decode to the same URI.
+    assert 'class="qr-wrap"' in body
+    qr_chunk = body.split('class="qr-wrap"', 1)[1].split("</div>", 1)[0]
+    _assert_qr_markup_scannable(qr_chunk)
     assert totp_qr.qr_encoded_payload(expected).startswith("otpauth://totp/")
-    # Page PNG must decode to the same otpauth URI (release gate).
     png = _png_from_markup(qr_chunk)
     decoded, used = _decode_qr_png(png)
     assert used == qr_decoder_ready or used
