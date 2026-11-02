@@ -1,9 +1,14 @@
 """TOTP unlock gate for the voice-chat UI and API.
 
-Secret sources (never logged), first match wins:
+Secret sources (never logged), first match wins — one canonical loader
+used by both ``/setup/qr`` (setup key + otpauth URI) and verify:
 1. LINGOCOACH_TOTP_SECRET (base32) — preferred
 2. TOTP_SECRET (base32) — alias
 3. voice-chat/.totp_secret (gitignored), mode 600
+
+Values are normalized (strip quotes/spaces/padding, uppercase RFC 4648
+base32) before use so the on-page key matches ``pyotp.TOTP(secret).verify``.
+Algorithm is SHA1 / 6 digits / 30s with valid_window=2 (UTC).
 
 When none are set, the gate is off (local/dev open access) and the process
 logs "TOTP not configured". On a VPS, put the secret in ~/lingocoach.env so
@@ -13,12 +18,14 @@ On HTTPS (LINGOCOACH_HTTPS=1 / X-Forwarded-Proto), the cookie also sets Secure.
 
 from __future__ import annotations
 
+import binascii
 import hashlib
 import hmac
 import logging
 import os
 import secrets
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pyotp
@@ -29,6 +36,11 @@ COOKIE_NAME = "lc_session"
 SESSION_MAX_AGE = 7 * 24 * 3600
 ISSUER = "LingoCoach"
 ACCOUNT = "unlock"
+DIGITS = 6
+PERIOD_SECONDS = 30
+# ±2 steps (60–90s): VPS clock vs iPhone NTP; pyotp default valid_window=0 is too tight.
+VALID_WINDOW = 2
+_BASE32_ALPHABET = frozenset("ABCDEFGHIJKLMNOPQRSTUVWXYZ234567")
 
 _ROOT = Path(__file__).resolve().parents[1]
 _SECRET_FILE = _ROOT / ".totp_secret"
@@ -52,30 +64,73 @@ def reset_for_tests() -> None:
     _configured = False
 
 
+def normalize_secret(raw: str | None) -> str:
+    """Canonical base32 secret used by both /setup/qr and verify.
+
+    Env files and systemd EnvironmentFile often wrap values in quotes or
+    keep grouped spaces / ``=`` padding. Google Authenticator's "Enter a
+    setup key" ignores spaces and padding; pyotp.TOTP(raw).verify() does
+    not — quotes, spaces, or extra ``=`` raise ``binascii.Error`` (the
+    login page then shows "That code is not valid").
+    """
+    if not raw:
+        return ""
+    text = str(raw).strip().replace("\r", "")
+    if len(text) >= 2 and text[0] == text[-1] and text[0] in {'"', "'"}:
+        text = text[1:-1].strip()
+    compact = "".join(ch for ch in text.upper() if not ch.isspace()).rstrip("=")
+    return "".join(ch for ch in compact if ch in _BASE32_ALPHABET)
+
+
+def _totp(secret: str) -> pyotp.TOTP:
+    """SHA1 / 6 digits / 30s — same parameters as the otpauth URI."""
+    return pyotp.TOTP(
+        secret,
+        digits=DIGITS,
+        digest=hashlib.sha1,
+        interval=PERIOD_SECONDS,
+        name=ACCOUNT,
+        issuer=ISSUER,
+    )
+
+
+def _now_utc() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def _try_enable(raw: str, source: str) -> bool:
+    """Normalize and cache ``raw``. Never logs the secret."""
+    global _secret, _enabled
+    secret = normalize_secret(raw)
+    if not secret:
+        if str(raw).strip():
+            logger.warning("TOTP %s secret ignored (not valid base32).", source)
+        return False
+    _secret = secret
+    _enabled = True
+    logger.info("TOTP gate enabled (%s secret).", source)
+    return True
+
+
 def ensure_configured() -> bool:
-    """Load secret once. Returns True when the gate is active."""
+    """Load secret once from env, then ``.totp_secret``. Returns True when on.
+
+    Same loader for the QR/setup-key page and ``/api/totp/verify``. First
+    match wins: ``LINGOCOACH_TOTP_SECRET``, ``TOTP_SECRET``, then the file.
+    """
     global _secret, _enabled, _just_created, _configured
     if _configured:
         return _enabled
     _configured = True
-    raw = (
-        os.environ.get("LINGOCOACH_TOTP_SECRET", "").strip()
-        or os.environ.get("TOTP_SECRET", "").strip()
-    )
-    if raw:
-        _secret = raw
-        _enabled = True
-        logger.info("TOTP gate enabled (env secret).")
+    raw = os.environ.get("LINGOCOACH_TOTP_SECRET", "") or os.environ.get("TOTP_SECRET", "")
+    if _try_enable(raw, "env"):
         return True
     if _SECRET_FILE.is_file():
         try:
-            text = _SECRET_FILE.read_text(encoding="utf-8").strip()
+            text = _SECRET_FILE.read_text(encoding="utf-8")
         except OSError:
             text = ""
-        if text:
-            _secret = text
-            _enabled = True
-            logger.info("TOTP gate enabled (secret file).")
+        if _try_enable(text, "file"):
             return True
     _secret = None
     _enabled = False
@@ -105,10 +160,10 @@ def provisioning_uri(secret: str | None = None) -> str:
 
     pyotp omits algorithm/digits/period when they are the defaults. We keep
     them explicit so Google Authenticator and other apps see the same values
-    as pyotp.TOTP(secret) (must not change the generated codes).
+    as verify (must not change the generated codes).
     """
-    value = secret if secret is not None else (_secret or "")
-    totp = pyotp.TOTP(value)
+    value = normalize_secret(secret if secret is not None else (_secret or ""))
+    totp = _totp(value)
     uri = totp.provisioning_uri(name=ACCOUNT, issuer_name=ISSUER)
     if "algorithm=" not in uri:
         uri += "&algorithm=SHA1"
@@ -144,14 +199,25 @@ def current_secret() -> str | None:
 
 
 def verify_code(code: str) -> bool:
+    """Accept the current 6-digit code, plus ±VALID_WINDOW steps.
+
+    Strips whitespace/punctuation so a pasted ``123 456`` still works.
+    Uses timezone-aware UTC (Google Authenticator is Unix time, not VPS TZ).
+    """
     ensure_configured()
     if not _secret:
         return False
     digits = "".join(ch for ch in str(code) if ch.isdigit())
-    if len(digits) != 6:
+    if len(digits) != DIGITS:
         return False
-    totp = pyotp.TOTP(_secret)
-    return bool(totp.verify(digits, valid_window=1))
+    try:
+        totp = _totp(_secret)
+        return bool(
+            totp.verify(digits, for_time=_now_utc(), valid_window=VALID_WINDOW)
+        )
+    except (binascii.Error, ValueError, TypeError):
+        logger.warning("TOTP verify failed (secret/code not usable)")
+        return False
 
 
 def _signing_key(secret: str) -> bytes:

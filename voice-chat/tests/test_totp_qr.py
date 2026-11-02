@@ -636,6 +636,64 @@ def test_setup_page_qr_payload_is_otpauth(monkeypatch, tmp_path, qr_decoder_read
 def test_format_manual_key_groups_base32():
     assert totp_qr.format_manual_key(TEST_SECRET) == "JBSW Y3DP EHPK 3PXP"
     assert totp_qr.format_manual_key("abcd") == "ABCD"
+    assert totp_qr.format_manual_key(f'"{TEST_SECRET}"') == "JBSW Y3DP EHPK 3PXP"
+    assert totp_qr.format_manual_key("JBSW Y3DP EHPK 3PXP") == "JBSW Y3DP EHPK 3PXP"
+
+
+def _parse_setup_key(body: str) -> str:
+    """Secret shown on /setup/qr: Copy data-raw and the grouped visible key."""
+    raw_m = re.search(r'data-raw="([A-Z2-7]+)"', body)
+    assert raw_m, "setup page must expose data-raw canonical secret"
+    raw = raw_m.group(1)
+    vis_m = re.search(r'id="manual">([^<]+)</p>', body)
+    assert vis_m, "setup page must show grouped #manual key"
+    grouped = re.sub(r"\s+", "", vis_m.group(1))
+    assert grouped == raw
+    return raw
+
+
+def test_setup_qr_rendered_secret_verifies_via_totp_gate(monkeypatch, tmp_path):
+    """The exact secret rendered on /setup/qr must verify via TotpGate /api/totp/verify.
+
+    Mints the enroll page, parses the setup key from HTML, generates
+    pyotp.TOTP(secret).now() and ±1 window codes, POSTs verify, expects 200
+    and the session cookie. Same path a phone would use after typing the key.
+    """
+    _enable(monkeypatch, tmp_path)
+    token, _ = totp_qr.mint_enroll_token()
+    client = TestClient(app)
+    page = client.get("/setup/qr", params={"token": token})
+    assert page.status_code == 200
+    secret = _parse_setup_key(page.text)
+    assert secret == TEST_SECRET
+    totp = pyotp.TOTP(secret, digits=6, interval=30)
+    now = totp_gate._now_utc()
+    for offset in (-1, 0, 1):
+        assert totp_gate.verify_code(totp.at(now, offset))
+    response = client.post("/api/totp/verify", json={"code": totp.now()})
+    assert response.status_code == 200
+    assert response.json() == {"ok": True}
+    assert totp_gate.COOKIE_NAME in response.cookies
+    set_cookie = response.headers.get("set-cookie") or ""
+    assert totp_gate.COOKIE_NAME in set_cookie
+
+
+def test_quoted_env_setup_key_verifies_through_api(monkeypatch, tmp_path):
+    """systemd-style quoted env secret: page key still matches /api/totp/verify."""
+    totp_gate.reset_for_tests()
+    monkeypatch.setenv("LINGOCOACH_TOTP_SECRET", f'"{TEST_SECRET}"')
+    totp_gate.ensure_configured()
+    totp_qr.reset_for_tests(tmp_path / ".totp_qr_token")
+    assert totp_gate.current_secret() == TEST_SECRET
+    token, _ = totp_qr.mint_enroll_token()
+    client = TestClient(app)
+    page = client.get("/setup/qr", params={"token": token})
+    assert page.status_code == 200
+    secret = _parse_setup_key(page.text)
+    assert secret == TEST_SECRET
+    response = client.post("/api/totp/verify", json={"code": pyotp.TOTP(secret).now()})
+    assert response.status_code == 200
+    assert totp_gate.COOKIE_NAME in response.cookies
 
 
 def test_setup_page_forbids_camera_as_ga_handoff(monkeypatch, tmp_path):
@@ -768,6 +826,7 @@ def test_cli_remint_prints_distinct_urls(monkeypatch, tmp_path, capsys):
     assert token1 != token2
     assert TEST_SECRET not in out1 and TEST_SECRET not in out2
     assert "previous enroll URLs are now invalid" in out2
+    assert "Does not rotate the TOTP secret" in out2
     # Only the latest token is accepted.
     assert totp_qr.consume_enroll_token(token1) is False
     assert totp_qr.consume_enroll_token(token2) is True

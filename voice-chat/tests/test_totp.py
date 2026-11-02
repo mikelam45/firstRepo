@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import pyotp
+import pytest
 from fastapi.testclient import TestClient
 
 from app import totp_gate
+from app.totp_setup import main as totp_setup_main
 from app.main import app
 
 # Fixed test-only base32 secret (not a production value).
@@ -209,3 +211,93 @@ def test_static_assets_gated_when_enabled(monkeypatch):
     client = TestClient(app)
     response = client.get("/static/styles.css")
     assert response.status_code == 401
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        '"JBSWY3DPEHPK3PXP"',
+        "'JBSWY3DPEHPK3PXP'",
+        "JBSW Y3DP EHPK 3PXP",
+        "jbswy3dpehpk3pxp",
+        "JBSWY3DPEHPK3PXP====",
+        "  JBSWY3DPEHPK3PXP \n",
+    ],
+)
+def test_normalize_secret_strips_quotes_spaces_padding(raw):
+    assert totp_gate.normalize_secret(raw) == TEST_SECRET
+
+
+def test_messy_env_secret_verifies_like_clean_secret(monkeypatch):
+    """Quoted/spaced env values must verify the same codes GA would mint."""
+    totp_gate.reset_for_tests()
+    monkeypatch.setenv("LINGOCOACH_TOTP_SECRET", f'"{TEST_SECRET}"')
+    monkeypatch.setattr(
+        totp_gate, "_SECRET_FILE", totp_gate._SECRET_FILE.with_name(".totp_secret_test_missing")
+    )
+    totp_gate.ensure_configured()
+    assert totp_gate.current_secret() == TEST_SECRET
+    code = pyotp.TOTP(TEST_SECRET).now()
+    assert totp_gate.verify_code(code)
+    client = TestClient(app)
+    response = client.post("/api/totp/verify", json={"code": code})
+    assert response.status_code == 200
+
+
+def test_env_secret_wins_over_file(monkeypatch, tmp_path):
+    totp_gate.reset_for_tests()
+    other = pyotp.random_base32()
+    secret_file = tmp_path / ".totp_secret"
+    secret_file.write_text(other + "\n", encoding="utf-8")
+    monkeypatch.setattr(totp_gate, "_SECRET_FILE", secret_file)
+    monkeypatch.setenv("LINGOCOACH_TOTP_SECRET", TEST_SECRET)
+    totp_gate.ensure_configured()
+    assert totp_gate.current_secret() == TEST_SECRET
+    env_code = pyotp.TOTP(TEST_SECRET).now()
+    file_code = pyotp.TOTP(other).now()
+    assert totp_gate.verify_code(env_code)
+    if file_code != env_code:
+        assert not totp_gate.verify_code(file_code)
+
+
+def test_verify_accepts_plus_minus_two_windows(monkeypatch):
+    _enable(monkeypatch)
+    totp = totp_gate._totp(TEST_SECRET)
+    now = totp_gate._now_utc()
+    for offset in (-2, -1, 0, 1, 2):
+        assert totp_gate.verify_code(totp.at(now, offset))
+    assert not totp_gate.verify_code(totp.at(now, -3))
+    assert not totp_gate.verify_code(totp.at(now, 3))
+
+
+def test_verify_strips_spaces_in_submitted_code(monkeypatch):
+    _enable(monkeypatch)
+    code = pyotp.TOTP(TEST_SECRET).now()
+    spaced = f" {code[:3]} {code[3:]} "
+    client = TestClient(app)
+    response = client.post("/api/totp/verify", json={"code": spaced})
+    assert response.status_code == 200
+    assert totp_gate.COOKIE_NAME in response.cookies
+
+
+def test_totp_setup_uses_env_not_divergent_file(monkeypatch, tmp_path, capsys):
+    """CLI enroll helper must print the same secret the running gate verifies."""
+    totp_gate.reset_for_tests()
+    other = pyotp.random_base32()
+    secret_file = tmp_path / ".totp_secret"
+    secret_file.write_text(other + "\n", encoding="utf-8")
+    monkeypatch.setattr(totp_gate, "_SECRET_FILE", secret_file)
+    monkeypatch.setenv("LINGOCOACH_TOTP_SECRET", TEST_SECRET)
+    assert totp_setup_main([]) == 0
+    out = capsys.readouterr().out
+    assert totp_gate.provisioning_uri(TEST_SECRET) in out
+    assert totp_gate.provisioning_uri(other) not in out
+    assert "does not rotate this secret" in out.lower()
+
+
+def test_login_page_invalid_copy_mentions_time_and_allows_spaces(monkeypatch):
+    _enable(monkeypatch)
+    html = TestClient(app).get("/login").text
+    assert 'maxlength="6"' not in html
+    assert "30-second" in html
+    assert "agree on the time" in html

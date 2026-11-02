@@ -97,7 +97,7 @@ cd ~/lingocoach/voice-chat
 # equivalent: .venv/bin/python -m app.totp_setup --qr-link
 ```
 
-That prints `https://103-195-5-86.as-cloud-xip.com:8066/setup/qr?token=…` (shape: `/setup/qr?token=<high-entropy>`). Every `qr` / `new-qr` call mints a **new** random `?token=` (overwrites hashed `.totp_qr_token` and invalidates any previous enroll URL immediately). Open the **latest** URL **once on the Mac** (Chrome). Leave the page open (do not refresh).
+That prints `https://103-195-5-86.as-cloud-xip.com:8066/setup/qr?token=…` (shape: `/setup/qr?token=<high-entropy>`). Every `qr` / `new-qr` call mints a **new** random `?token=` (overwrites hashed `.totp_qr_token` and invalidates any previous enroll URL immediately). **`qr` does not rotate the TOTP secret** — only the URL token changes; the setup key on the page is the same secret `/login` verifies. Re-enroll in Google Authenticator only if you change `LINGOCOACH_TOTP_SECRET` / `.totp_secret`. Open the **latest** URL **once on the Mac** (Chrome). Leave the page open (do not refresh).
 
 **Primary — Enter a setup key in Google Authenticator (do not use iPhone Camera):**
 

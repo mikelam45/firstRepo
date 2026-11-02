@@ -49,6 +49,7 @@ cd ~/lingocoach/voice-chat
 .venv/bin/python -m app.totp_qr
 # or: .venv/bin/python -m app.totp_setup --qr-link
 # Prints: https://103-195-5-86.as-cloud-xip.com:8066/setup/qr?token=…
+# qr remints the URL token only; it does not rotate the TOTP secret.
 ```
 
 Open that URL **on the Mac** (Chrome). Leave the page open. On the iPhone, open **Google Authenticator** → **+** → **Enter a setup key** / **輸入設定密鑰**. Account: `LingoCoach`. Paste the huge setup key (Copy). Type: **Time based** / **基於時間** → Add. Do **not** scan with the iPhone Camera app: Camera opens Apple Passwords / 安全金鑰, not Google Authenticator. If GA shows 「請改用相機」, ignore that and use the setup key. Secondary: Google Authenticator → **+** → **Scan a QR code** (in-app, not Camera) pointed at the white SVG QR. If you opened the URL on the iPhone, tap **Open in Google Authenticator**; iOS may still offer Passwords — Cancel and use the setup key. Then go to `/login` and enter the 6-digit code. Do not leave `/setup/qr` without a token — it is not a permanent public page.

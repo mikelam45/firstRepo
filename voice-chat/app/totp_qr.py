@@ -5,7 +5,10 @@ Every CLI mint (``python -m app.totp_qr`` / ``./lingocoachctl.sh qr`` /
 ``secrets.token_urlsafe``, stores only its hash + expiry next to
 .totp_secret (mode 600), and immediately invalidates any previous token.
 Never reuses an unexpired record; never derives the token from the TOTP
-secret. GET /setup/qr?token=… shows a huge grouped setup key (primary:
+secret. **Does not rotate the TOTP secret** — only the enroll URL token
+changes; the setup key / otpauth URI stay the secret already loaded by
+``totp_gate`` (same canonical loader as ``/api/totp/verify``).
+GET /setup/qr?token=… shows a huge grouped setup key (primary:
 Google Authenticator → + → Enter a setup key / 輸入設定密鑰), a secondary
 otpauth:// SVG-module QR for GA’s in-app scanner / Android, and an
 otpauth:// deep link if the page is opened on the phone. First successful
@@ -540,8 +543,14 @@ def qr_markup(otpauth: str) -> str:
 
 
 def format_manual_key(secret: str) -> str:
-    """Group base32 into 4-char chunks for easier phone typing."""
-    clean = "".join(ch for ch in secret.strip().upper() if ch.isalnum())
+    """Group the canonical base32 secret into 4-char chunks for typing.
+
+    Uses ``totp_gate.normalize_secret`` so the visible key (and Copy) is
+    the same secret ``verify_code`` checks.
+    """
+    clean = totp_gate.normalize_secret(secret)
+    if not clean:
+        clean = "".join(ch for ch in secret.strip().upper() if ch.isalnum())
     return " ".join(clean[i : i + 4] for i in range(0, len(clean), 4))
 
 
@@ -563,11 +572,12 @@ def render_setup_page(template: str, secret: str, otpauth: str) -> str:
     """
     uri = require_otpauth_payload(otpauth)
     markup = qr_markup(uri)
+    canonical = totp_gate.normalize_secret(secret) or secret.strip()
     return (
         template.replace("__OTPAUTH_URI__", _html_attr_escape(uri))
         .replace("__QR_MARKUP__", markup)
-        .replace("__MANUAL_KEY__", format_manual_key(secret))
-        .replace("__MANUAL_KEY_RAW__", secret.strip())
+        .replace("__MANUAL_KEY__", format_manual_key(canonical))
+        .replace("__MANUAL_KEY_RAW__", _html_attr_escape(canonical))
         .replace("__ISSUER__", totp_gate.ISSUER)
         .replace("__ACCOUNT__", totp_gate.ACCOUNT)
     )
@@ -594,6 +604,7 @@ def main(argv: list[str] | None = None) -> int:
                 "Open the URL on Mac Chrome. In Google Authenticator: + → "
                 "Enter a setup key / 輸入設定密鑰 (do not use iPhone Camera).\n"
                 "Requires LINGOCOACH_TOTP_SECRET / TOTP_SECRET / .totp_secret.\n"
+                "Remints the URL token only; does not rotate the TOTP secret.\n"
                 "URL from LINGOCOACH_PUBLIC_BASE or LINGOCOACH_DOMAIN + port."
             )
             return 0
@@ -618,6 +629,7 @@ def main(argv: list[str] | None = None) -> int:
         f"Fresh one-time token minted (len={len(raw)}); "
         "previous enroll URLs are now invalid."
     )
+    print("Does not rotate the TOTP secret (only the URL token).")
     print(f"Expires in ~{max(0, exp - int(time.time()))}s; works once (first successful page load).")
     print(
         "Open on Mac Chrome. In Google Authenticator: + → Enter a setup key "

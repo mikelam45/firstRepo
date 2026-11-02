@@ -441,6 +441,7 @@ cmd_qr() {
   echo "LingoCoach: minting a NEW one-time Authenticator QR enroll link…"
   echo "  Public base: ${base}"
   echo "  Always remints (never reuses ?token=); previous links invalidated immediately."
+  echo "  Does not rotate the TOTP secret (only the URL token)."
   echo "  TTL ≈ 20 minutes; single use (first successful page load)."
   echo "  Open on Mac Chrome. Google Authenticator → + → Enter a setup key"
   echo "  (do not use iPhone Camera — it opens Apple Passwords / 安全金鑰, not GA)."
