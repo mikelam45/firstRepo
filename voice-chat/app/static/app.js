@@ -1,5 +1,5 @@
-import { IllustratedPortrait, Portrait, englishVisemes, pinyinVisemes } from "./face.js?v=20261102-voices";
-import { applyLine, beginPlayback, clampRate, coachDelivery, coachProsody, playbackPlan, shouldRetrySpeech, unlockUtteranceSpec } from "./speech.js?v=20261102-voices";
+import { IllustratedPortrait, Portrait, englishVisemes, pinyinVisemes } from "./face.js?v=20261102-natural";
+import { applyLine, beginPlayback, clampRate, coachDelivery, coachProsody, naturalizeLine, playbackPlan, shouldRetrySpeech, unlockUtteranceSpec } from "./speech.js?v=20261102-natural";
 import { collectTranscript, recognitionLanguage, transcriptPiece } from "./transcript.js";
 
 const I18N = {
@@ -1789,7 +1789,8 @@ function runMouth(shapes, mood, token, lineLang, rate) {
 }
 
 function speakText(text, lineLang, who, visemes, mood) {
-  const spoken = String(text || "").trim();
+  const raw = String(text || "").trim();
+  const spoken = naturalizeLine(raw) || raw;
   if (!spoken) return;
   const token = ++speakToken;
   window.clearTimeout(speakTimer);

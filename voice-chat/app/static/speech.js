@@ -40,15 +40,51 @@ export function unlockUtteranceSpec() {
   return { text: " ", lang: "en-US", volume: 0.01, rate: 1, pitch: 1 };
 }
 
+/** speechSynthesis pitch/rate outside this band sounds sped-up or chipmunked. */
+export const NATURAL_PITCH = { min: 0.96, max: 1.05 };
+export const NATURAL_RATE = { min: 0.96, max: 1.04 };
+
+export function naturalPitch(pitch) {
+  const n = clampPitch(pitch);
+  return Math.min(NATURAL_PITCH.max, Math.max(NATURAL_PITCH.min, n));
+}
+
+export function naturalRate(rate) {
+  const n = clampRate(rate);
+  return Math.min(NATURAL_RATE.max, Math.max(NATURAL_RATE.min, n));
+}
+
 export function applyLine(utterance, { lang, rate, pitch, voice } = {}) {
   utterance.lang = lang || "en-US";
   utterance.volume = 1;
-  utterance.rate = clampRate(rate);
-  utterance.pitch = clampPitch(pitch);
+  utterance.rate = naturalRate(rate);
+  utterance.pitch = naturalPitch(pitch);
   if (voice) {
     try { utterance.voice = voice; } catch (err) { /* lang is already set; still speak */ }
   }
   return utterance;
+}
+
+const STAGE_DIRECTION = /^(?:smiles?|laughs?|sighs?|pauses?|whispers?|softly|quietly|giggles?|chuckles?|nods?|beats?|aside|clears throat|stage direction)$/i;
+
+/** Drop SSML and stage directions. Leave normal sentences alone so the mouth still matches. */
+export function naturalizeLine(text) {
+  let spoken = String(text ?? "");
+  if (!spoken.trim()) return "";
+  spoken = spoken.replace(/<\/?[a-zA-Z][^>]*>/g, " ");
+  const isStage = (inner) => {
+    const body = String(inner || "").trim();
+    return STAGE_DIRECTION.test(body) || /\b(laughs?|smiles?|sighs?|whispers?|giggles?|pauses?)\b/i.test(body);
+  };
+  spoken = spoken.replace(/\*([^*]{1,60})\*/g, (all, inner) => isStage(inner) ? " " : all);
+  spoken = spoken.replace(/\[([^\]]{1,60})\]/g, (all, inner) => isStage(inner) ? " " : all);
+  spoken = spoken.replace(/\(([^)]{1,48})\)/g, (all, inner) => isStage(inner) ? " " : all);
+  // A missing space after .?! gives speechSynthesis a real sentence break.
+  // Chinese punctuation already pauses, so those lines stay unchanged.
+  spoken = spoken.replace(/([.!?])(?=[A-Za-z])/g, "$1 ");
+  spoken = spoken.replace(/[ \t]{2,}/g, " ");
+  spoken = spoken.replace(/\s+([,;，、])/g, "$1");
+  return spoken.trim();
 }
 
 export function shouldRetrySpeech(error, attempt) {
@@ -58,24 +94,27 @@ export function shouldRetrySpeech(error, attempt) {
 }
 
 /**
- * Four coaches, four timbres. Pitch and rate always differ, so a device with
- * only one female voice still separates them. Preferred installed voices:
- * - Chloe: sweet younger en-GB (Google UK English Female, else Samantha). Higher pitch.
- * - Amelia: a different English woman, en-US when Chloe took en-GB. Lower pitch.
- * - Mei: zh-CN when the line is Mandarin; otherwise a third English woman (en-AU / en-IN / en-NZ / en-ZA).
- * - Celine: zh-HK / yue when the line is Cantonese; otherwise a fourth voice (en-AU, else another en-GB).
- * A missing list never throws and never means "stay silent". Cantonese does not fall back to zh-CN.
+ * Four people, chosen by installed voice first. Pitch and rate stay near 1 so
+ * speechSynthesis does not chipmunk or slow them into a robot.
+ * - Chloe: warm younger en-GB (Google UK English Female, Serena, enhanced). Pitch 1.03, rate 1.00.
+ * - Amelia: another English woman, en-US premium/Google US when Chloe took UK. Pitch 1.00, rate 0.98.
+ * - Mei: zh-CN neural (Xiaoxiao / Ting-Ting) for Mandarin; otherwise a third English woman. Pitch 1.01, rate 1.02.
+ * - Celine: zh-HK (Sin-Ji) for Cantonese, never Mandarin; otherwise a fourth English voice. Pitch 0.98, rate 0.97.
+ * One shared voice still separates them by lang plus these small offsets.
+ * A missing list never throws and never means "stay silent".
  */
 export const COACH_TIMBRE = {
-  chloe: { pitch: 1.16, rate: 1.02, lang: "en-GB" },
-  amelia: { pitch: 0.92, rate: 0.96, lang: "en-US" },
-  mei: { pitch: 1.04, rate: 1, lang: "en-AU" },
-  celine: { pitch: 0.84, rate: 0.9, lang: "en-GB" },
+  chloe: { pitch: 1.03, rate: 1, lang: "en-GB" },
+  amelia: { pitch: 1, rate: 0.98, lang: "en-US" },
+  mei: { pitch: 1.01, rate: 1.02, lang: "en-AU" },
+  celine: { pitch: 0.98, rate: 0.97, lang: "en-GB" },
 };
 
+const ROBOT_VOICE = /\b(fred|albert|zarvox|bad news|bahh|bells|boing|bubbles|cellos|deranged|hysterical|junior|pipe|princess|trinoids|whisper|superstar|kathy)\b/i;
+const QUALITY_NAME = /neural|premium|enhanced|natural|google|siri|samantha|karen|moira|serena|fiona|victoria|allison|aria|jenny|libby|sonia|kate|xiaoxiao|ting-?ting|sin-?ji|huihui|meijia|shelley/i;
+
 const COACH_IDS = ["chloe", "amelia", "mei", "celine"];
-const SWEET_GB = /google uk english female|uk english female|samantha|serena|kate|fiona|moira|victoria|karen/i;
-const FEMALE_NAME = /female|woman|samantha|victoria|karen|moira|fiona|serena|kate|libby|sonia|aria|jenny|tessa|zira|hazel|susan|allison|ava|emma|emily|joanna|salli|kimberly|kendra|nicole|natasha|veena|xiaoxiao|huihui|yaoyao|sinji|tingting|meijia|shelley|kathy/i;
+const FEMALE_NAME = /female|woman|samantha|victoria|karen|moira|fiona|serena|kate|libby|sonia|aria|jenny|tessa|zira|hazel|susan|allison|ava|emma|emily|joanna|salli|kimberly|kendra|nicole|natasha|veena|xiaoxiao|huihui|yaoyao|sin-?ji|ting-?ting|meijia|shelley/i;
 
 function normalizeCoach(coachId) {
   const id = String(coachId || "").toLowerCase();
@@ -121,6 +160,20 @@ function pickBest(records, scoreFn, used) {
   return best;
 }
 
+function qualityScore(rec) {
+  if (ROBOT_VOICE.test(rec.name)) return -300;
+  let score = 0;
+  if (/neural/i.test(rec.name)) score += 60;
+  if (/premium/i.test(rec.name)) score += 50;
+  if (/enhanced|natural/i.test(rec.name)) score += 45;
+  if (/siri/i.test(rec.name)) score += 40;
+  if (/google/i.test(rec.name)) score += 36;
+  if (QUALITY_NAME.test(rec.name)) score += 12;
+  if (/compact/i.test(rec.name)) score -= 80;
+  if (rec.female) score += 25;
+  return score;
+}
+
 function isEnglish(lang) {
   return lang === "en" || lang.startsWith("en-");
 }
@@ -144,29 +197,33 @@ function assignEnglish(records) {
     return picked;
   };
   const chloe = take((rec) => {
-    let score = rec.female ? 80 : 0;
+    let score = qualityScore(rec);
     if (rec.lang.startsWith("en-gb")) score += 40;
-    if (SWEET_GB.test(rec.name)) score += 30;
-    if (/google uk english female|uk english female/i.test(rec.name)) score += 15;
-    else if (/samantha/i.test(rec.name)) score += 8;
+    if (/google uk english female|uk english female/i.test(rec.name)) score += 55;
+    else if (/serena/i.test(rec.name)) score += 36;
+    else if (/fiona|kate/i.test(rec.name)) score += 24;
+    else if (/samantha/i.test(rec.name)) score += 10;
     return score;
   });
   const amelia = take((rec) => {
-    let score = rec.female ? 80 : 0;
-    if (rec.lang.startsWith("en-us")) score += 40;
-    if (rec.lang.startsWith("en-gb") && SWEET_GB.test(rec.name)) score -= 10;
+    let score = qualityScore(rec);
+    if (rec.lang.startsWith("en-us")) score += 45;
+    if (/google us english|samantha|victoria|allison|ava/i.test(rec.name)) score += 18;
+    if (rec.lang.startsWith("en-gb") && /google uk english female|serena|fiona/i.test(rec.name)) score -= 20;
     return score;
   });
   const mei = take((rec) => {
-    let score = rec.female ? 80 : 0;
-    if (/^en-(au|nz|in|za)/.test(rec.lang)) score += 40;
+    let score = qualityScore(rec);
+    if (/^en-(au|nz|in|za)/.test(rec.lang)) score += 45;
+    if (/karen|moira|fiona/i.test(rec.name)) score += 16;
     return score;
   });
   const celine = take((rec) => {
-    let score = rec.female ? 80 : 0;
-    if (rec.lang.startsWith("en-au")) score += 40;
-    else if (rec.lang.startsWith("en-gb")) score += 28;
-    else if (rec.lang.startsWith("en-ie")) score += 20;
+    let score = qualityScore(rec);
+    if (rec.lang.startsWith("en-ie") || /moira/i.test(rec.name)) score += 42;
+    else if (rec.lang.startsWith("en-au")) score += 24;
+    else if (rec.lang.startsWith("en-gb")) score += 22;
+    if (/serena|fiona|samantha|karen/i.test(rec.name)) score += 8;
     return score;
   });
   return { chloe, amelia, mei, celine, pool: "en" };
@@ -181,10 +238,10 @@ function assignMandarin(records) {
     if (picked) used.add(picked.raw);
     return picked;
   };
-  const mei = take((rec) => (rec.female ? 40 : 0) + (/xiaoxiao|huihui|yaoyao|tingting|xiaoyi/i.test(rec.name) ? 30 : 0));
-  const chloe = take((rec) => (rec.female ? 20 : 0) + (SWEET_GB.test(rec.name) ? 5 : 0));
-  const amelia = take((rec) => (rec.female ? 20 : 0));
-  const celine = take((rec) => (rec.female ? 20 : 0));
+  const mei = take((rec) => qualityScore(rec) + (/xiaoxiao|huihui|yaoyao|ting-?ting|xiaoyi/i.test(rec.name) ? 36 : 0));
+  const chloe = take((rec) => qualityScore(rec));
+  const amelia = take((rec) => qualityScore(rec));
+  const celine = take((rec) => qualityScore(rec));
   return { chloe, amelia, mei, celine, pool: "cmn" };
 }
 
@@ -197,10 +254,10 @@ function assignCantonese(records) {
     if (picked) used.add(picked.raw);
     return picked;
   };
-  const celine = take((rec) => (rec.female ? 40 : 0) + (/sinji|sin-ji|meijia/i.test(rec.name) ? 30 : 0));
-  const chloe = take((rec) => (rec.female ? 20 : 0));
-  const amelia = take((rec) => (rec.female ? 20 : 0));
-  const mei = take((rec) => (rec.female ? 20 : 0));
+  const celine = take((rec) => qualityScore(rec) + (/sin-?ji|meijia/i.test(rec.name) ? 36 : 0));
+  const chloe = take((rec) => qualityScore(rec));
+  const amelia = take((rec) => qualityScore(rec));
+  const mei = take((rec) => qualityScore(rec));
   return { chloe, amelia, mei, celine, pool: "yue" };
 }
 
@@ -219,7 +276,9 @@ function fallbackLang(coachId, lineLang, pool) {
 export function coachProsody(coachId, baseRate) {
   const timbre = COACH_TIMBRE[normalizeCoach(coachId)];
   const base = Number.isFinite(Number(baseRate)) && Number(baseRate) > 0 ? Number(baseRate) : 1;
-  return { pitch: timbre.pitch, rate: clampRate(base * timbre.rate) };
+  // Large rate changes are what made the coaches sound synthetic. Beginner
+  // 0.85 is lifted into the same natural band as everyone else.
+  return { pitch: naturalPitch(timbre.pitch), rate: naturalRate(base * timbre.rate) };
 }
 
 /** Voice, lang, pitch, and rate for one coach. Always returns a speakable line. */

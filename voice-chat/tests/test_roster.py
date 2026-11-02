@@ -125,7 +125,7 @@ def test_picker_script_hides_retired_coaches():
         assert hidden not in script
     assert "CHOOSABLE_IDS" in script
     assert "amelia" in script and "mei" in script and "chloe" in script and "celine" in script
-    assert "app.js?v=20261102-voices" in page
+    assert "app.js?v=20261102-natural" in page
 
 
 def test_face_mesh_stays_mouth_only_with_sharp_brows():
