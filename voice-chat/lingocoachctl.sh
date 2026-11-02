@@ -374,7 +374,8 @@ cmd_qr() {
 }
 
 usage() {
-  sed -n '2,13p' "$0"
+  # Prefer SCRIPT_DIR: $0 may be relative and break after cd.
+  sed -n '2,13p' "${SCRIPT_DIR}/lingocoachctl.sh"
 }
 
 cmd="${1:-}"
