@@ -86,15 +86,18 @@ Or use `~/lingocoach/voice-chat/.env` with mode `600` (also gitignored). Do not 
 
 ```bash
 cd ~/lingocoach/voice-chat
-# Prefer PUBLIC_BASE, else DOMAIN + HTTPS_PORT (example = this VPS):
+# Preferred helper (uses LINGOCOACH_PUBLIC_BASE / DOMAIN from env or ~/lingocoach.env;
+# default base https://103-195-5-86.as-cloud-xip.com:8066):
+./lingocoachctl.sh qr
+# alias: ./lingocoachctl.sh new-qr
+
+# Or call the module directly:
 # export LINGOCOACH_PUBLIC_BASE=https://103-195-5-86.as-cloud-xip.com:8066
-# or: export LINGOCOACH_DOMAIN=103-195-5-86.as-cloud-xip.com
-#     export LINGOCOACH_HTTPS_PORT=8066
-.venv/bin/python -m app.totp_qr
+# .venv/bin/python -m app.totp_qr
 # equivalent: .venv/bin/python -m app.totp_setup --qr-link
 ```
 
-That prints `https://103-195-5-86.as-cloud-xip.com:8066/setup/qr?token=…` (shape: `/setup/qr?token=<high-entropy>`). Open it once on the phone, scan with Google Authenticator, then use `/login`. The token is stored **hashed** in gitignored `voice-chat/.totp_qr_token` (mode 600), expires in ~20 minutes, and is **invalidated after the first successful page load**. A refresh or second visit returns 404.
+That prints `https://103-195-5-86.as-cloud-xip.com:8066/setup/qr?token=…` (shape: `/setup/qr?token=<high-entropy>`). Open it once on the phone, scan with Google Authenticator, then use `/login`. The token is stored **hashed** in gitignored `voice-chat/.totp_qr_token` (mode 600), expires in ~20 minutes, and is **invalidated after the first successful page load**. A refresh or second visit returns 404. Re-run `./lingocoachctl.sh qr` anytime you need a fresh link.
 
 When `LINGOCOACH_TOTP_SECRET` / `TOTP_SECRET` / `.totp_secret` is absent, the gate stays off (open access). On a public VPS, keep the secret set.
 
@@ -104,7 +107,7 @@ From `voice-chat/`:
 
 ```bash
 cd ~/lingocoach/voice-chat
-chmod +x deploy-vps.sh restart.sh run-local.sh
+chmod +x deploy-vps.sh lingocoachctl.sh restart.sh run-local.sh
 ./deploy-vps.sh
 ```
 
@@ -112,11 +115,14 @@ That builds the Podman image from `Containerfile` and runs:
 
 `0.0.0.0:8066` → container port 8066.
 
-Optional long-running systemd (user quadlet):
+Optional long-running systemd:
 
 ```bash
+# Recommended (venv + uvicorn unit — survives reboot; no Podman required):
 ./deploy-vps.sh --systemd
-# logs: journalctl --user -u lingocoach.service -f
+# alias: ./deploy-vps.sh --install-service
+# Podman quadlet instead:
+./deploy-vps.sh --podman --systemd
 ```
 
 If Podman is not installed yet, `./deploy-vps.sh` falls back to `./restart.sh` (venv + uvicorn), same as the Mac.
@@ -190,7 +196,7 @@ sudo ufw allow 8066/tcp
 sudo ufw enable
 
 cd ~/lingocoach/voice-chat
-chmod +x deploy-vps.sh restart.sh run-local.sh
+chmod +x deploy-vps.sh lingocoachctl.sh restart.sh run-local.sh
 
 # Domain: already in ~/lingocoach.env (see §3), or export here instead:
 # export LINGOCOACH_DOMAIN=103-195-5-86.as-cloud-xip.com
@@ -200,17 +206,19 @@ chmod +x deploy-vps.sh restart.sh run-local.sh
 # export LINGOCOACH_INTERNAL_PORT=18066
 
 ./deploy-vps.sh --https
-# durable unit + HTTPS:
-# ./deploy-vps.sh --https --systemd
+# Recommended durable path (venv systemd unit + Caddy; survives reboot):
+./deploy-vps.sh --https --systemd
 ```
 
 What `--https` does:
 
-1. Starts the app (Podman or `./restart.sh`) bound to **`127.0.0.1:18066`** only (so Caddy can bind public **8066**).
+1. Starts the app (Podman, `./restart.sh`, or **systemd unit** with `--systemd`) bound to **`127.0.0.1:18066`** only (so Caddy can bind public **8066**).
 2. Sets `LINGOCOACH_HTTPS=1` so the TOTP `lc_session` cookie gets the **Secure** flag (and trusts `X-Forwarded-Proto` from the proxy).
 3. Renders `Caddyfile.template` → `/etc/caddy/Caddyfile` with your domain and ports (validates with `caddy validate`).
 4. Enables/reloads Caddy. Caddy obtains a Let's Encrypt certificate (HTTP-01 on **:80**), serves **`https://YOUR_DOMAIN:8066/`**, and redirects plain **HTTP :80** → that HTTPS URL.
 5. Does **not** enable HSTS (HSTS would push browsers to `:443`, which this layout does not serve).
+
+**Why `--systemd`:** a bare `./deploy-vps.sh --https` backgrounds uvicorn with `nohup`. If that process dies, **Caddy stays up and clients see 502**. The venv unit (`lingocoach.service`) restarts the app on failure and after reboot.
 
 Visit **`https://YOUR_DOMAIN:8066/`** (login at `/login`). For the example host:
 
@@ -233,11 +241,112 @@ Template: `voice-chat/Caddyfile.template` (placeholders only; no hardcoded “de
 
 **Migrating from an older 443-only Caddy layout:** re-run `./deploy-vps.sh --https` with `LINGOCOACH_DOMAIN` set. The new Caddyfile listens on **8066** for TLS and moves the app to **18066**. Open **8066/tcp** (and **80**); you no longer need public **443** for this pattern. If a previous HTTP-only app was published on public 8066, stop it first (the script’s Podman/restart path does this).
 
-## 5. Health check
+## 5. systemd service (venv + uvicorn)
+
+Use this after (or instead of) a one-shot `nohup` HTTPS deploy so the **app** survives reboot and restarts on crash. **Caddy** remains the distro unit `caddy.service` (separate).
+
+Paths assume the usual clone at `~/lingocoach` (as root that is `/root/lingocoach`).
+
+### Install / enable (first time or after pull)
+
+```bash
+cd ~/lingocoach
+git pull origin cursor/enhance-lingocoach-prd-aecd
+cd voice-chat
+chmod +x deploy-vps.sh lingocoachctl.sh restart.sh run-local.sh
+
+# Preferred: deploy + install unit + Caddy in one shot
+./deploy-vps.sh --https --systemd
+
+# Or install/refresh the unit only (app on 127.0.0.1:18066):
+./lingocoachctl.sh install
+# alias via deploy:
+# ./deploy-vps.sh --install-service
+# ./deploy-vps.sh --systemd
+```
+
+As **root** the unit is installed system-wide:
+
+```bash
+# installed to: /etc/systemd/system/lingocoach.service
+systemctl enable --now lingocoach.service
+journalctl -u lingocoach.service -f
+```
+
+As a **non-root** user (user unit + linger for reboot survival):
+
+```bash
+# installed to: ~/.config/systemd/user/lingocoach.service
+systemctl --user enable --now lingocoach.service
+sudo loginctl enable-linger "$USER"
+journalctl --user -u lingocoach.service -f
+```
+
+Unit essentials (HTTPS layout):
+
+| Key | Value |
+|-----|--------|
+| WorkingDirectory | `~/lingocoach/voice-chat` (absolute path written at install) |
+| EnvironmentFile | `~/lingocoach.env` (mode 600; secrets not printed) |
+| Environment | `PORT=18066`, `HOST=127.0.0.1`, `LINGOCOACH_HTTPS=1` |
+| ExecStart | `.venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 18066` |
+| Restart | `on-failure` |
+
+Podman quadlet (optional): `./deploy-vps.sh --podman --systemd` still installs `lingocoach.container` under `~/.config/containers/systemd/`.
+
+### start / stop / restart / qr
+
+```bash
+cd ~/lingocoach/voice-chat
+
+./lingocoachctl.sh start      # ensure venv/deps, start unit; reminds if Caddy is down
+./lingocoachctl.sh stop       # stop app unit only (Caddy stays up)
+./lingocoachctl.sh stop-all   # stop app + caddy.service
+./lingocoachctl.sh restart
+./lingocoachctl.sh status
+./lingocoachctl.sh qr         # mint a fresh one-time Authenticator QR URL (~20 min, single use)
+# alias: ./lingocoachctl.sh new-qr
+
+# Or raw systemctl (root / system unit):
+sudo systemctl start lingocoach.service
+sudo systemctl stop lingocoach.service
+sudo systemctl restart lingocoach.service
+```
+
+`stop` leaves Caddy running on purpose (TLS front-end). Use `stop-all` when you want both down. `qr` prints only the enroll URL (never the TOTP secret).
+
+### status check
+
+```bash
+cd ~/lingocoach/voice-chat
+./lingocoachctl.sh status
+```
+
+Prints clear **OK/FAIL** for:
+
+1. `lingocoach.service` active
+2. `curl -fsS http://127.0.0.1:18066/health`
+3. `caddy.service` active
+4. optional external `https://103-195-5-86.as-cloud-xip.com:8066/health` (short timeout; failure often means cloud firewall, not a dead app)
+
+Manual equivalents:
+
+```bash
+systemctl is-active lingocoach.service    # or: systemctl --user is-active lingocoach.service
+curl -fsS --connect-timeout 3 --max-time 5 http://127.0.0.1:18066/health
+systemctl is-active caddy
+curl -fsS --connect-timeout 3 --max-time 8 \
+  https://103-195-5-86.as-cloud-xip.com:8066/health
+```
+
+## 6. Health check
 
 On the VPS:
 
 ```bash
+# Prefer the combined status helper (unit + health + Caddy):
+cd ~/lingocoach/voice-chat && ./lingocoachctl.sh status
+
 # HTTP-only deploy:
 curl -fsS http://127.0.0.1:8066/health
 # HTTPS deploy (app on internal port):
@@ -331,8 +440,10 @@ Keep **:80** open for Let’s Encrypt. Re-run deploy after changing `LINGOCOACH_
 cd ~/lingocoach
 git pull origin cursor/enhance-lingocoach-prd-aecd
 cd voice-chat
-./deploy-vps.sh
-# HTTPS again (keeps Caddy + localhost bind on 18066):
-# LINGOCOACH_DOMAIN=103-195-5-86.as-cloud-xip.com ./deploy-vps.sh --https
-# or: systemctl --user restart lingocoach.service
+# Durable HTTPS (reinstalls/refreshes unit + Caddy):
+./deploy-vps.sh --https --systemd
+# Or restart the already-installed unit after a code-only change:
+./lingocoachctl.sh restart
+# (root) systemctl restart lingocoach.service
+# (user)  systemctl --user restart lingocoach.service
 ```

@@ -13,10 +13,12 @@
 # This checkout listens on 8066 (Mac run-local.sh uses the same port).
 #
 # HTTP-only (default below): publish on 0.0.0.0:8066.
-# HTTPS (Caddy on public :8066): ./deploy-vps.sh --https [--systemd] rewrites
+# HTTPS (Caddy on public :8066): ./deploy-vps.sh --https --podman --systemd rewrites
 # PublishPort to 127.0.0.1:18066:8066 and sets Environment=LINGOCOACH_HTTPS=1 so
 # the app sets Secure on lc_session behind the proxy. Caddy owns public 8066/tcp
 # (TLS); keep 18066 closed to the internet; leave 80/tcp open for ACME HTTP-01.
+# For the usual venv HTTPS path (no Podman), use lingocoach.service instead:
+#   ./deploy-vps.sh --https --systemd
 
 [Container]
 Image=localhost/lingocoach:revOct23

@@ -10,14 +10,17 @@
 #
 # Usage (from voice-chat/ on the VPS):
 #   ./deploy-vps.sh              # build + run (podman) or restart.sh
-#   ./deploy-vps.sh --systemd    # also install the quadlet unit
+#   ./deploy-vps.sh --systemd    # durable venv unit (or Podman quadlet with --podman)
+#   ./deploy-vps.sh --install-service  # alias for --systemd (venv unit)
 #   ./deploy-vps.sh --local      # force restart.sh path (no container)
 #   ./deploy-vps.sh --https      # Caddy TLS on :8066 → 127.0.0.1:18066
+#   ./deploy-vps.sh --https --systemd   # recommended: unit + Caddy (survives reboot)
 #   LINGOCOACH_DOMAIN=103-195-5-86.as-cloud-xip.com ./deploy-vps.sh --https
 #   PORT=8066 ./deploy-vps.sh
 #
 # HTTPS public URL form: https://DOMAIN:HTTPS_PORT/  (default HTTPS_PORT=8066)
 # ACME HTTP-01 still needs port 80 open. App binds loopback INTERNAL_PORT (18066).
+# Day-2 ops: ./lingocoachctl.sh start|stop|restart|status|stop-all|qr
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$SCRIPT_DIR"
@@ -29,17 +32,18 @@ HTTPS_PORT="${LINGOCOACH_HTTPS_PORT:-${HTTPS_PORT:-8066}}"
 INTERNAL_PORT="${LINGOCOACH_INTERNAL_PORT:-${INTERNAL_PORT:-18066}}"
 IMAGE="${LINGOCOACH_IMAGE:-lingocoach:revOct23}"
 CONTAINER_NAME="${LINGOCOACH_CONTAINER:-lingocoach}"
-MODE="auto" # auto | podman | local | systemd
+MODE="auto" # auto | podman | local
+INSTALL_SERVICE=0
 HTTPS=0
 
 for arg in "$@"; do
   case "$arg" in
-    --systemd) MODE="systemd" ;;
+    --systemd|--install-service) INSTALL_SERVICE=1 ;;
     --local) MODE="local" ;;
     --podman) MODE="podman" ;;
     --https) HTTPS=1 ;;
     -h|--help)
-      sed -n '2,20p' "${SCRIPT_DIR}/deploy-vps.sh"
+      sed -n '2,22p' "${SCRIPT_DIR}/deploy-vps.sh"
       exit 0
       ;;
     *)
@@ -408,7 +412,9 @@ run_podman() {
   health_check
 }
 
-install_systemd() {
+# Install Podman quadlet user unit (rootless). Prefer install_venv_systemd for
+# the venv HTTPS path the operator actually runs.
+install_systemd_quadlet() {
   local unit_src unit_dir unit_dst env_file="" host publish app_port
   unit_src="$(pwd)/lingocoach.container"
   unit_dir="${HOME}/.config/containers/systemd"
@@ -455,14 +461,14 @@ install_systemd() {
     echo "LingoCoach: create ${HOME}/lingocoach.env (mode 600) before enable."
   fi
 
-  echo "LingoCoach: building image for systemd unit…"
+  echo "LingoCoach: building image for systemd quadlet…"
   if ! podman build \
     --network=host \
     --dns "${LINGOCOACH_BUILD_DNS1:-8.8.8.8}" \
     --dns "${LINGOCOACH_BUILD_DNS2:-1.1.1.1}" \
     -t "$IMAGE" .; then
-    echo "LingoCoach: Podman build failed; cannot install systemd unit without an image." >&2
-    echo "  Use: ./deploy-vps.sh --https --local" >&2
+    echo "LingoCoach: Podman build failed; cannot install quadlet without an image." >&2
+    echo "  Use venv unit instead: ./deploy-vps.sh --https --systemd" >&2
     exit 1
   fi
 
@@ -471,8 +477,25 @@ install_systemd() {
   # Restart so a previous public bind is replaced with the new PublishPort.
   systemctl --user restart lingocoach.service
   health_check
-  echo "LingoCoach: systemd user unit lingocoach.service is active (PublishPort=${publish})."
+  echo "LingoCoach: systemd user quadlet lingocoach.service is active (PublishPort=${publish})."
   echo "  Logs: journalctl --user -u lingocoach.service -f"
+}
+
+# Install native systemd unit for venv + uvicorn (survives reboot; no Podman).
+# Root → /etc/systemd/system; otherwise user unit under ~/.config/systemd/user.
+install_venv_systemd() {
+  local host app_port
+  host="$(bind_host)"
+  app_port="$(app_host_port)"
+  echo "LingoCoach: installing venv systemd unit (uvicorn on ${host}:${app_port})…"
+  [[ -x ./lingocoachctl.sh ]] || chmod +x ./lingocoachctl.sh
+  if [[ "$HTTPS" -eq 1 ]]; then
+    LINGOCOACH_HTTPS=1 HOST="$host" PORT="$app_port" ./lingocoachctl.sh install
+  else
+    LINGOCOACH_HTTPS=0 HOST="$host" PORT="$app_port" ./lingocoachctl.sh install
+  fi
+  health_check
+  echo "LingoCoach: day-2 ops → ./lingocoachctl.sh status|restart|stop|stop-all|qr"
 }
 
 # --- entry ---
@@ -493,38 +516,48 @@ if [[ "$HTTPS" -eq 1 ]]; then
   unset _early_domain
 fi
 
-case "$MODE" in
-  local)
-    run_local
-    ;;
-  systemd)
+# --systemd / --install-service: durable unit instead of nohup.
+# Default = venv unit (matches ./deploy-vps.sh --https). Quadlet only with --podman.
+if [[ "$INSTALL_SERVICE" -eq 1 ]]; then
+  if [[ "$MODE" == "podman" || ( "$MODE" == "auto" && "${LINGOCOACH_USE_PODMAN:-0}" == "1" ) ]]; then
     if ! command -v podman >/dev/null 2>&1; then
-      echo "Podman required for --systemd. Install: sudo apt-get install -y podman" >&2
+      echo "Podman required for --systemd --podman. Or omit --podman for the venv unit." >&2
       exit 1
     fi
-    install_systemd
-    ;;
-  podman)
-    if ! command -v podman >/dev/null 2>&1; then
-      echo "Podman not found." >&2
-      exit 1
-    fi
-    run_podman
-    ;;
-  auto)
-    # Prefer venv on VPS HTTPS deploys: Podman build DNS is often broken
-    # (pypi.org / deb.debian.org). Force containers with --podman / --systemd.
-    if [[ "$HTTPS" -eq 1 && "${LINGOCOACH_USE_PODMAN:-0}" != "1" ]]; then
-      echo "LingoCoach: HTTPS auto path uses venv (skip Podman). Force image: --podman"
+    install_systemd_quadlet
+  else
+    # Force local/venv path when installing the native unit.
+    MODE="local"
+    install_venv_systemd
+  fi
+else
+  case "$MODE" in
+    local)
       run_local
-    elif command -v podman >/dev/null 2>&1; then
+      ;;
+    podman)
+      if ! command -v podman >/dev/null 2>&1; then
+        echo "Podman not found." >&2
+        exit 1
+      fi
       run_podman
-    else
-      echo "LingoCoach: Podman not installed; falling back to ./restart.sh"
-      run_local
-    fi
-    ;;
-esac
+      ;;
+    auto)
+      # Prefer venv on VPS HTTPS deploys: Podman build DNS is often broken
+      # (pypi.org / deb.debian.org). Force containers with --podman.
+      if [[ "$HTTPS" -eq 1 && "${LINGOCOACH_USE_PODMAN:-0}" != "1" ]]; then
+        echo "LingoCoach: HTTPS auto path uses venv (skip Podman). Force image: --podman"
+        echo "LingoCoach: tip — make it durable: ./deploy-vps.sh --https --systemd"
+        run_local
+      elif command -v podman >/dev/null 2>&1; then
+        run_podman
+      else
+        echo "LingoCoach: Podman not installed; falling back to ./restart.sh"
+        run_local
+      fi
+      ;;
+  esac
+fi
 
 if [[ "$HTTPS" -eq 1 ]]; then
   install_caddy_https

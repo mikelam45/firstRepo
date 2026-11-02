@@ -1,0 +1,44 @@
+# LingoCoach app (venv + uvicorn). Caddy stays as distro caddy.service.
+#
+# HTTPS layout (default in this unit): app on 127.0.0.1:18066, Caddy TLS on :8066.
+# Install via:
+#   ./deploy-vps.sh --https --systemd
+#   # or: ./lingocoachctl.sh install
+#
+# Root on VPS (~ → /root):
+#   sudo cp /path/to/rendered.service /etc/systemd/system/lingocoach.service
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now lingocoach.service
+#
+# Non-root (user unit + linger):
+#   mkdir -p ~/.config/systemd/user
+#   cp rendered.service ~/.config/systemd/user/lingocoach.service
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now lingocoach.service
+#   sudo loginctl enable-linger "$USER"
+#
+# Placeholders __WORKING_DIR__ / __ENV_FILE__ / __HOST__ / __PORT__ /
+# __HTTPS_ENV__ / __WANTED_BY__ are filled by deploy-vps.sh / lingocoachctl.sh.
+# Do not enable this template file as-is.
+
+[Unit]
+Description=LingoCoach voice chat (uvicorn)
+Documentation=file:%h/lingocoach/voice-chat/DEPLOY-VPS.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=__WORKING_DIR__
+EnvironmentFile=-__ENV_FILE__
+Environment=PORT=__PORT__
+Environment=HOST=__HOST__
+__HTTPS_ENV__
+ExecStart=__WORKING_DIR__/.venv/bin/python -m uvicorn app.main:app --host __HOST__ --port __PORT__
+Restart=on-failure
+RestartSec=5
+# Give uvicorn a moment to finish in-flight requests on stop/restart.
+TimeoutStopSec=20
+
+[Install]
+WantedBy=__WANTED_BY__
