@@ -4,9 +4,12 @@
 # Usage (from voice-chat/ on the VPS):
 #   ./lingocoachctl.sh install|start|stop|restart|status|stop-all|qr|new-qr
 #
+# start/restart/install wait for loopback /health (up to ~45–60s) and dump
+# journalctl -u lingocoach on failure (Type=simple is active before bind).
 # stop      — stop app unit only (Caddy keeps serving; upstream may 502)
 # stop-all  — stop app unit and caddy.service
-# status    — OK/FAIL for unit, loopback /health, caddy, optional public URL
+# status    — OK/FAIL for unit, loopback /health, caddy, optional public URL;
+#             briefly retries /health when the unit is already active
 # qr        — mint a fresh one-time Authenticator QR enroll URL (~20 min TTL)
 # new-qr    — alias for qr
 #
@@ -161,6 +164,51 @@ ensure_venv() {
   fi
 }
 
+# Loopback health URL for the app unit (always 127.0.0.1; public traffic is via Caddy).
+health_url() {
+  printf 'http://127.0.0.1:%s/health' "${INTERNAL_PORT}"
+}
+
+# Dump recent unit journal lines (system or user) for start/health failures.
+dump_unit_journal() {
+  local lines="${1:-40}"
+  echo "LingoCoach: recent journal for ${UNIT_NAME} (last ${lines} lines):" >&2
+  if use_system_unit; then
+    if is_root; then
+      journalctl -u "$UNIT_NAME" -n "$lines" --no-pager >&2 || true
+    else
+      sudo journalctl -u "$UNIT_NAME" -n "$lines" --no-pager >&2 || true
+    fi
+  else
+    journalctl --user -u "$UNIT_NAME" -n "$lines" --no-pager >&2 || true
+  fi
+}
+
+# Wait until loopback /health succeeds (uvicorn Type=simple is "active" before bind).
+# Usage: wait_for_health [max_seconds]
+wait_for_health() {
+  local max="${1:-45}"
+  local url try
+  url="$(health_url)"
+  echo "LingoCoach: waiting for ${url} (up to ${max}s)…"
+  for ((try = 1; try <= max; try++)); do
+    if curl -fsS --connect-timeout 1 --max-time 2 "$url" >/dev/null 2>&1; then
+      echo "LingoCoach: health OK (${url})"
+      return 0
+    fi
+    # Bail early if the unit already exited (crash/import error).
+    if ! systemctl_app is-active --quiet "$UNIT_NAME" 2>/dev/null; then
+      echo "LingoCoach: ${UNIT_NAME} is not active while waiting for health." >&2
+      dump_unit_journal 40
+      return 1
+    fi
+    sleep 1
+  done
+  echo "LingoCoach: health check failed for ${url} after ${max}s" >&2
+  dump_unit_journal 40
+  return 1
+}
+
 render_unit() {
   local out="$1"
   local host="${HOST:-127.0.0.1}"
@@ -238,6 +286,9 @@ cmd_install() {
     echo "LingoCoach: user unit enabled. Logs: journalctl --user -u ${UNIT_NAME} -f"
   fi
 
+  # Type=simple reports active before uvicorn binds; wait for /health.
+  wait_for_health 60 || return 1
+
   if command -v systemctl >/dev/null 2>&1; then
     if ! systemctl_caddy is-active --quiet caddy 2>/dev/null; then
       echo "LingoCoach: caddy.service is not active. For HTTPS:"
@@ -254,12 +305,14 @@ cmd_start() {
   if ! systemctl_app cat "$UNIT_NAME" >/dev/null 2>&1; then
     echo "LingoCoach: unit not installed; running install…"
     cmd_install
-    return 0
+    return $?
   fi
   # Free port from any leftover nohup process before start.
   PORT="${PORT:-$INTERNAL_PORT}" force_stop_port || true
   systemctl_app start "$UNIT_NAME"
   echo "LingoCoach: started ${UNIT_NAME}"
+  # Type=simple is active before bind; wait so status is not a false FAIL.
+  wait_for_health 45 || return 1
   if ! systemctl_caddy is-active --quiet caddy 2>/dev/null; then
     echo "LingoCoach: remind — enable Caddy for HTTPS: sudo systemctl enable --now caddy"
   fi
@@ -288,10 +341,11 @@ cmd_stop_all() {
 cmd_restart() {
   if ! systemctl_app cat "$UNIT_NAME" >/dev/null 2>&1; then
     cmd_install
-    return 0
+    return $?
   fi
   systemctl_app restart "$UNIT_NAME"
   echo "LingoCoach: restarted ${UNIT_NAME}"
+  wait_for_health 45 || return 1
 }
 
 ok_fail() {
@@ -305,8 +359,10 @@ ok_fail() {
 
 cmd_status() {
   local rc_unit=1 rc_health=1 rc_caddy=1 rc_ext=1
-  local domain url
+  local domain url try
   local overall=0
+  # Brief retry when unit is active but uvicorn has not bound yet (start already waits).
+  local health_retries=8
 
   echo "LingoCoach status"
   echo "-----------------"
@@ -317,9 +373,20 @@ cmd_status() {
   ok_fail "systemd ${UNIT_NAME} active" "$rc_unit"
   [[ "$rc_unit" -eq 0 ]] || overall=1
 
-  if curl -fsS --connect-timeout 3 --max-time 5 \
-    "http://127.0.0.1:${INTERNAL_PORT}/health" >/dev/null 2>&1; then
-    rc_health=0
+  if [[ "$rc_unit" -eq 0 ]]; then
+    for ((try = 1; try <= health_retries; try++)); do
+      if curl -fsS --connect-timeout 1 --max-time 2 \
+        "http://127.0.0.1:${INTERNAL_PORT}/health" >/dev/null 2>&1; then
+        rc_health=0
+        break
+      fi
+      sleep 1
+    done
+  else
+    if curl -fsS --connect-timeout 3 --max-time 5 \
+      "http://127.0.0.1:${INTERNAL_PORT}/health" >/dev/null 2>&1; then
+      rc_health=0
+    fi
   fi
   ok_fail "curl http://127.0.0.1:${INTERNAL_PORT}/health" "$rc_health"
   [[ "$rc_health" -eq 0 ]] || overall=1
@@ -345,7 +412,11 @@ cmd_status() {
     echo "  note: external HTTPS failed (firewall/DNS/cert). Local checks above matter more for 502."
   fi
 
-  if [[ "$rc_unit" -eq 0 ]]; then
+  if [[ "$rc_unit" -eq 0 && "$rc_health" -ne 0 ]]; then
+    echo
+    echo "  note: unit active but /health failed — recent journal:"
+    dump_unit_journal 40
+  elif [[ "$rc_unit" -eq 0 ]]; then
     echo
     systemctl_app --no-pager --full status "$UNIT_NAME" 2>&1 | head -n 12 || true
   fi
@@ -375,7 +446,7 @@ cmd_qr() {
 
 usage() {
   # Prefer SCRIPT_DIR: $0 may be relative and break after cd.
-  sed -n '2,13p' "${SCRIPT_DIR}/lingocoachctl.sh"
+  sed -n '2,16p' "${SCRIPT_DIR}/lingocoachctl.sh"
 }
 
 cmd="${1:-}"

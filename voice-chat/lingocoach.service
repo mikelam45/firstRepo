@@ -28,6 +28,10 @@ After=network-online.target
 Wants=network-online.target
 
 [Service]
+# Type=simple: systemd marks the unit active as soon as ExecStart is forked.
+# uvicorn is not sd_notify-aware, so do not use Type=notify. Readiness is
+# enforced by lingocoachctl.sh (wait for http://127.0.0.1:PORT/health after
+# start/restart/install) rather than ExecStartPre (which cannot wait on self).
 Type=simple
 WorkingDirectory=__WORKING_DIR__
 EnvironmentFile=-__ENV_FILE__

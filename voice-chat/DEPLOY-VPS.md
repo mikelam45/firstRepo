@@ -290,6 +290,7 @@ Unit essentials (HTTPS layout):
 | EnvironmentFile | `~/lingocoach.env` (mode 600; secrets not printed) |
 | Environment | `PORT=18066`, `HOST=127.0.0.1`, `LINGOCOACH_HTTPS=1` |
 | ExecStart | `.venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 18066` |
+| Type | `simple` (uvicorn is not sd_notify; readiness is via ctl `/health` wait) |
 | Restart | `on-failure` |
 
 Podman quadlet (optional): `./deploy-vps.sh --podman --systemd` still installs `lingocoach.container` under `~/.config/containers/systemd/`.
@@ -299,10 +300,10 @@ Podman quadlet (optional): `./deploy-vps.sh --podman --systemd` still installs `
 ```bash
 cd ~/lingocoach/voice-chat
 
-./lingocoachctl.sh start      # ensure venv/deps, start unit; reminds if Caddy is down
+./lingocoachctl.sh start      # start unit, then wait for /health (up to ~45s)
 ./lingocoachctl.sh stop       # stop app unit only (Caddy stays up)
 ./lingocoachctl.sh stop-all   # stop app + caddy.service
-./lingocoachctl.sh restart
+./lingocoachctl.sh restart    # restart unit, then wait for /health
 ./lingocoachctl.sh status
 ./lingocoachctl.sh qr         # mint a fresh one-time Authenticator QR URL (~20 min, single use)
 # alias: ./lingocoachctl.sh new-qr
@@ -313,7 +314,9 @@ sudo systemctl stop lingocoach.service
 sudo systemctl restart lingocoach.service
 ```
 
-`stop` leaves Caddy running on purpose (TLS front-end). Use `stop-all` when you want both down. `qr` prints only the enroll URL (never the TOTP secret).
+`start` / `restart` / `install` wait for `http://127.0.0.1:18066/health` after systemd reports the unit active (`Type=simple` is active before uvicorn binds). On timeout or crash they print `journalctl -u lingocoach -n 40`. Prefer the ctl over raw `systemctl start` when you want that readiness check.
+
+`stop` leaves Caddy running on purpose (TLS front-end). Use `stop-all` when you want both down. `qr` prints only the enroll URL (never the TOTP secret). Treat any enroll URL pasted into chat as burned: remint with `./lingocoachctl.sh qr`.
 
 ### status check
 
@@ -325,9 +328,11 @@ cd ~/lingocoach/voice-chat
 Prints clear **OK/FAIL** for:
 
 1. `lingocoach.service` active
-2. `curl -fsS http://127.0.0.1:18066/health`
+2. `curl -fsS http://127.0.0.1:18066/health` (retries a few seconds if the unit is already active)
 3. `caddy.service` active
 4. optional external `https://103-195-5-86.as-cloud-xip.com:8066/health` (short timeout; failure often means cloud firewall, not a dead app)
+
+If the unit is active but loopback `/health` still fails after the short retry, `status` dumps recent journal lines. Prefer `./lingocoachctl.sh start` (which already waits) over racing `status` immediately after a raw `systemctl start`.
 
 Manual equivalents:
 
