@@ -22,7 +22,7 @@ That binds the app to `127.0.0.1:18066` and puts **Caddy** in front on **`https:
 
 ## TOTP unlock gate (optional locally, recommended on a VPS)
 
-When a TOTP secret is configured, unauthenticated browsers are sent to `/login` and API calls return `401` until a valid 6-digit authenticator code sets an HttpOnly session cookie (`lc_session`, 7 days).
+When a TOTP secret is configured, unauthenticated browsers are sent to `/login` and API calls return `401` until a valid 6-digit authenticator code sets an HttpOnly session cookie (`lc_session`). The cookie is a **sliding 40-minute idle timeout**: each authenticated request remints it, so using the coach does not kick you out at a hard 40 minutes from login. After 40 minutes with no request, the next HTML page goes to `/login` and APIs return `401` (`session_expired`). Use **登出 / Logout** (POST `/logout`) to clear the cookie immediately.
 
 **Env vars (never commit):** `LINGOCOACH_TOTP_SECRET` (preferred) or `TOTP_SECRET` — base32. Or a local file `voice-chat/.totp_secret` (gitignored, mode 600).
 
@@ -54,4 +54,4 @@ cd ~/lingocoach/voice-chat
 
 Open that URL **on the Mac** (Chrome). Leave the page open. On the iPhone, open **Google Authenticator** → **+** → **Enter a setup key** / **輸入設定密鑰**. Account: `LingoCoach`. Paste the huge setup key (Copy). Type: **Time based** / **基於時間** → Add. Do **not** scan with the iPhone Camera app: Camera opens Apple Passwords / 安全金鑰, not Google Authenticator. If GA shows 「請改用相機」, ignore that and use the setup key. Secondary: Google Authenticator → **+** → **Scan a QR code** (in-app, not Camera) pointed at the white SVG QR. If you opened the URL on the iPhone, tap **Open in Google Authenticator**; iOS may still offer Passwords — Cancel and use the setup key. Then go to `/login` and enter the 6-digit code. Do not leave `/setup/qr` without a token — it is not a permanent public page.
 
-Open `http://127.0.0.1:8066/login` (or `https://YOUR_DOMAIN:8066/login` on a VPS with `--https`), enter the current code, then use the coach as usual. On HTTPS deploys the session cookie `lc_session` is HttpOnly **and Secure**.
+Open `http://127.0.0.1:8066/login` (or `https://YOUR_DOMAIN:8066/login` on a VPS with `--https`), enter the current code, then use the coach as usual. On HTTPS deploys the session cookie `lc_session` is HttpOnly **and Secure**. The portal header has **登出 / Logout**; idle sessions expire after 40 minutes.

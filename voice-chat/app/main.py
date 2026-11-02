@@ -62,6 +62,30 @@ def request_is_https(request: Request) -> bool:
     return True
 
 
+def _session_cookie_flags(request: Request) -> dict:
+    return {
+        "httponly": True,
+        "samesite": "lax",
+        "secure": request_is_https(request),
+        "path": "/",
+    }
+
+
+def attach_session_cookie(response, request: Request, token: str) -> None:
+    """Set lc_session with the sliding idle Max-Age. Never logs the token."""
+    response.set_cookie(
+        key=totp_gate.COOKIE_NAME,
+        value=token,
+        max_age=totp_gate.SESSION_MAX_AGE_S,
+        **_session_cookie_flags(request),
+    )
+
+
+def clear_session_cookie(response, request: Request) -> None:
+    """Expire lc_session with the same path/secure/samesite as attach."""
+    response.delete_cookie(key=totp_gate.COOKIE_NAME, **_session_cookie_flags(request))
+
+
 if "pytest" not in sys.modules:
     if ensure_openrouter_key():
         logger.info(
@@ -82,10 +106,15 @@ class TotpMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
         token = request.cookies.get(totp_gate.COOKIE_NAME)
         if totp_gate.session_valid(token):
-            return await call_next(request)
+            response = await call_next(request)
+            fresh = totp_gate.mint_session_token()
+            if fresh:
+                attach_session_cookie(response, request, fresh)
+            return response
         wants_html = "text/html" in (request.headers.get("accept") or "")
+        error = totp_gate.session_error(token)
         if path.startswith("/api/") or not wants_html:
-            return JSONResponse({"error": "auth_required"}, status_code=401)
+            return JSONResponse({"error": error}, status_code=401)
         return RedirectResponse(url="/login", status_code=303)
 
 
@@ -150,15 +179,22 @@ async def totp_verify(request: Request):
     if not token:
         return JSONResponse({"error": "totp_disabled"}, status_code=404)
     response = JSONResponse({"ok": True})
-    response.set_cookie(
-        key=totp_gate.COOKIE_NAME,
-        value=token,
-        max_age=totp_gate.SESSION_MAX_AGE,
-        httponly=True,
-        samesite="lax",
-        secure=request_is_https(request),
-        path="/",
-    )
+    attach_session_cookie(response, request, token)
+    return response
+
+
+@app.post("/logout")
+def logout(request: Request):
+    """Clear lc_session and send the browser back to /login."""
+    response = RedirectResponse(url="/login", status_code=303)
+    clear_session_cookie(response, request)
+    return response
+
+
+@app.post("/api/totp/logout")
+def totp_logout(request: Request):
+    response = JSONResponse({"ok": True})
+    clear_session_cookie(response, request)
     return response
 
 

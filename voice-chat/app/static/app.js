@@ -109,6 +109,7 @@ const I18N = {
     orPayment: "Not connected. OpenRouter says this account has no credits (402). The key is not shown.",
     orUnreachable: "Not connected. Connection error. This server cannot reach OpenRouter. Check the network, then press Check again.",
     orRecheck: "Check",
+    logout: "Logout",
   },
   cmn: {
     drill: "今天的雅思口语练习",
@@ -217,6 +218,7 @@ const I18N = {
     orPayment: "未连接。OpenRouter 返回 402：账户没有额度。密钥不会显示。",
     orUnreachable: "未连接。连接错误。这台服务器连不上 OpenRouter。请检查网络，然后再按检查。",
     orRecheck: "检查",
+    logout: "登出",
   },
   yue: {
     drill: "今日嘅雅思口試練習",
@@ -325,6 +327,7 @@ const I18N = {
     orPayment: "未連線。OpenRouter 話呢個帳戶冇餘額（402）。金鑰唔會顯示。",
     orUnreachable: "未連線。連線錯誤。呢部伺服器連唔到 OpenRouter。請檢查網絡，然後再撳檢查。",
     orRecheck: "檢查",
+    logout: "登出",
   },
 };
 
@@ -535,6 +538,12 @@ function view() {
   return homeView();
 }
 
+function logoutControl() {
+  return `<form class="logout-form" method="post" action="/logout">
+    <button class="icon-btn logout-btn" type="submit" aria-label="登出 / Logout">${esc(t("logout"))}</button>
+  </form>`;
+}
+
 function homeView() {
   const who = partner();
   const plan = loadPlan();
@@ -545,6 +554,7 @@ function homeView() {
       <div class="grow"></div>
       <button class="icon-btn" type="button" data-act="history">${esc(t("history"))}</button>
       <button class="icon-btn" type="button" data-act="settings" aria-label="${esc(t("settings"))}">⚙</button>
+      ${logoutControl()}
     </header>
     <main class="home">
       <div class="stage">
@@ -583,6 +593,7 @@ function dailyView() {
       <button class="icon-btn" type="button" data-act="home">${esc(t("back"))}</button>
       <div class="grow"><h1>${esc(who.name)}</h1><div class="small muted">${esc(title)}</div></div>
       <button class="icon-btn" type="button" data-act="settings">⚙</button>
+      ${logoutControl()}
     </header>
     ${teacher ? "" : `<div class="chips" role="tablist">
       ${scenes.map((item) => `<button class="chip" type="button" data-act="scenario" data-id="${esc(item.id)}" aria-pressed="${item.id === sc.id}">${esc(item.title[support] || item.title.en)}</button>`).join("")}
@@ -698,6 +709,7 @@ function ieltsView() {
       <button class="icon-btn" type="button" data-act="home">${esc(t("back"))}</button>
       <div class="grow"><h1>${esc(who.name)}</h1><div class="small muted">${esc(t("part"))} ${esc(session.part)} · ${esc(session.kind)}</div></div>
       <div class="clock" id="clock">${esc(clockText())}</div>
+      ${logoutControl()}
     </header>
     <div class="stage large"><canvas id="face" class="face" width="480" height="640" aria-label="${esc(who.name)}, 27"></canvas></div>
     <div class="row" style="padding:0 16px"><strong>${esc(who.name)}</strong><span class="muted">${esc(who.city)} · 27</span><button class="ghost" type="button" data-act="partners" ${session.kind === "mock" && (session.phase === "part2_prep" || session.phase === "part2_speak") ? "disabled" : ""}>${esc(t("change"))}</button></div>
@@ -786,6 +798,7 @@ function settingsSheet() {
     <p class="small muted">${esc(t("historyLoss"))}</p>
     <p class="small muted">${esc(t("adult"))}</p>
     <button class="primary" type="button" data-act="save-settings">${esc(t("save"))}</button>
+    ${logoutControl()}
   </section>`;
 }
 
@@ -796,7 +809,7 @@ function selectField(name, label, values, current, names) {
 
 function historyView() {
   const rows = state.history.length ? state.history.map((item) => `<article class="card"><strong>${esc(item.task || item.track)}</strong><div class="muted">${esc(item.partner || "")} · ${esc(item.date || "")}</div><div>${esc(item.summary || "")}</div></article>`).join("") : `<p>${esc(t("emptyHistory"))}</p>`;
-  return `<header class="top"><button class="icon-btn" type="button" data-act="home">${esc(t("back"))}</button><h1>${esc(t("history"))}</h1></header><main class="history">${rows}<p class="small muted">${esc(t("weak"))}</p></main>`;
+  return `<header class="top"><button class="icon-btn" type="button" data-act="home">${esc(t("back"))}</button><h1 class="grow">${esc(t("history"))}</h1>${logoutControl()}</header><main class="history">${rows}<p class="small muted">${esc(t("weak"))}</p></main>`;
 }
 
 function clockText() {
@@ -1116,6 +1129,7 @@ async function postTurn(history) {
     markLearnerError(t("network"));
     return;
   }
+  if (redirectIfSessionGone(response)) return;
   if (response.status === 429) {
     markLearnerError(t("tooMany"));
     return;
@@ -2118,6 +2132,7 @@ async function reviewLatest(part, promptId, text, speechMs) {
       learner_text: text,
     }),
   });
+  if (redirectIfSessionGone(response)) return;
   if (!response.ok) {
     state.notice = t("retry");
     session.loading = false;
@@ -2205,6 +2220,7 @@ async function finishMock() {
         learner_text: group.text,
       }),
     });
+    if (redirectIfSessionGone(response)) return;
     if (response.ok) {
       const review = await response.json();
       session.reviews.push(review);
@@ -2364,6 +2380,14 @@ function paintOpenRouterBar() {
   footer.dataset.reason = checking ? "checking" : ok ? "ok" : (openRouterKnownReason(llm.reason) ? llm.reason : "unreachable");
 }
 
+function redirectIfSessionGone(response) {
+  if (response && response.status === 401) {
+    window.location.replace("/login");
+    return true;
+  }
+  return false;
+}
+
 async function checkOpenRouter() {
   const token = ++llmToken;
   rememberFields();
@@ -2372,6 +2396,7 @@ async function checkOpenRouter() {
   let next = { phase: "done", connected: false, reason: "unreachable" };
   try {
     const response = await fetch("/api/openrouter/status");
+    if (redirectIfSessionGone(response)) return;
     const data = await response.json();
     if (data && data.connected === true) next = { phase: "done", connected: true, reason: "" };
     else if (data && openRouterKnownReason(data.reason)) {
@@ -2387,6 +2412,7 @@ async function checkOpenRouter() {
 
 async function boot() {
   const response = await fetch("/api/catalogue");
+  if (redirectIfSessionGone(response)) return;
   state.catalogue = await response.json();
   state.provider = state.catalogue.key_loaded ? "openrouter" : "fixture";
   try {

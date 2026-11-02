@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pyotp
 import pytest
 from fastapi.testclient import TestClient
@@ -90,6 +92,8 @@ def test_valid_code_sets_session_and_unlocks(monkeypatch):
     # Local HTTP: Secure must stay off so the browser stores lc_session.
     set_cookie = response.headers.get("set-cookie") or ""
     assert "Secure" not in set_cookie
+    assert totp_gate.SESSION_MAX_AGE_S == 40 * 60
+    assert "Max-Age=2400" in set_cookie or "max-age=2400" in set_cookie.lower()
 
     catalogue = client.get("/api/catalogue")
     assert catalogue.status_code == 200
@@ -301,3 +305,114 @@ def test_login_page_invalid_copy_mentions_time_and_allows_spaces(monkeypatch):
     assert 'maxlength="6"' not in html
     assert "30-second" in html
     assert "agree on the time" in html
+
+
+def test_session_cookie_max_age_is_forty_minutes(monkeypatch):
+    _enable(monkeypatch)
+    client = TestClient(app)
+    code = pyotp.TOTP(TEST_SECRET).now()
+    response = client.post("/api/totp/verify", json={"code": code})
+    assert response.status_code == 200
+    set_cookie = response.headers.get("set-cookie") or ""
+    assert totp_gate.COOKIE_NAME in set_cookie
+    assert "Max-Age=2400" in set_cookie or "max-age=2400" in set_cookie.lower()
+    assert totp_gate.SESSION_MAX_AGE_S == 40 * 60
+
+
+def test_session_invalid_after_idle_timeout(monkeypatch):
+    """Signed cookie expires after 40 minutes of idle time (no remint)."""
+    _enable(monkeypatch)
+    client = TestClient(app, follow_redirects=False)
+    t0 = 1_700_000_000
+    monkeypatch.setattr(totp_gate, "_now_ts", lambda: t0)
+    code = pyotp.TOTP(TEST_SECRET).now()
+    login = client.post("/api/totp/verify", json={"code": code})
+    assert login.status_code == 200
+    token = login.cookies.get(totp_gate.COOKIE_NAME)
+    assert token
+    assert totp_gate.session_valid(token)
+
+    monkeypatch.setattr(totp_gate, "_now_ts", lambda: t0 + totp_gate.SESSION_MAX_AGE_S + 1)
+    assert not totp_gate.session_valid(token)
+    html = client.get("/", headers={"Accept": "text/html"})
+    assert html.status_code == 303
+    assert html.headers.get("location") == "/login"
+    api = client.get("/api/catalogue")
+    assert api.status_code == 401
+    assert api.json()["error"] == "session_expired"
+
+
+def test_idle_timeout_slides_on_authenticated_request(monkeypatch):
+    """Active use remints lc_session so 40 minutes is idle, not wall-clock from login."""
+    _enable(monkeypatch)
+    client = TestClient(app)
+    t0 = 1_700_000_000
+    monkeypatch.setattr(totp_gate, "_now_ts", lambda: t0)
+    code = pyotp.TOTP(TEST_SECRET).now()
+    assert client.post("/api/totp/verify", json={"code": code}).status_code == 200
+
+    monkeypatch.setattr(totp_gate, "_now_ts", lambda: t0 + 30 * 60)
+    mid = client.get("/api/catalogue")
+    assert mid.status_code == 200
+    set_cookie = mid.headers.get("set-cookie") or ""
+    assert "Max-Age=2400" in set_cookie or "max-age=2400" in set_cookie.lower()
+
+    monkeypatch.setattr(totp_gate, "_now_ts", lambda: t0 + 55 * 60)
+    assert client.get("/api/catalogue").status_code == 200
+
+    monkeypatch.setattr(totp_gate, "_now_ts", lambda: t0 + 55 * 60 + totp_gate.SESSION_MAX_AGE_S + 1)
+    late = client.get("/api/catalogue")
+    assert late.status_code == 401
+    assert late.json()["error"] == "session_expired"
+
+
+def test_logout_clears_cookie_and_gates_again(monkeypatch):
+    _enable(monkeypatch)
+    client = TestClient(app, follow_redirects=False)
+    code = pyotp.TOTP(TEST_SECRET).now()
+    login = client.post("/api/totp/verify", json={"code": code})
+    assert login.status_code == 200
+    assert client.get("/api/catalogue").status_code == 200
+
+    out = client.post("/logout")
+    assert out.status_code == 303
+    assert out.headers.get("location") == "/login"
+    set_cookie = out.headers.get("set-cookie") or ""
+    assert totp_gate.COOKIE_NAME in set_cookie
+    assert "Max-Age=0" in set_cookie or "max-age=0" in set_cookie.lower()
+
+    assert client.get("/api/catalogue").status_code == 401
+    home = client.get("/", headers={"Accept": "text/html"})
+    assert home.status_code == 303
+    assert home.headers.get("location") == "/login"
+
+
+def test_api_logout_clears_cookie(monkeypatch):
+    _enable(monkeypatch)
+    client = TestClient(app)
+    code = pyotp.TOTP(TEST_SECRET).now()
+    assert client.post("/api/totp/verify", json={"code": code}).status_code == 200
+    response = client.post("/api/totp/logout")
+    assert response.status_code == 200
+    assert response.json() == {"ok": True}
+    set_cookie = response.headers.get("set-cookie") or ""
+    assert totp_gate.COOKIE_NAME in set_cookie
+    assert "Max-Age=0" in set_cookie or "max-age=0" in set_cookie.lower()
+    assert client.get("/api/catalogue").status_code == 401
+
+
+def test_logout_without_cookie_still_redirects(monkeypatch):
+    _enable(monkeypatch)
+    client = TestClient(app, follow_redirects=False)
+    response = client.post("/logout")
+    assert response.status_code == 303
+    assert response.headers.get("location") == "/login"
+
+
+def test_portal_js_has_visible_logout_control():
+    js = (Path(__file__).resolve().parents[1] / "app" / "static" / "app.js").read_text(encoding="utf-8")
+    assert 'action="/logout"' in js
+    assert "登出" in js
+    assert 'logout: "Logout"' in js
+    assert "logoutControl()" in js
+    assert "function logoutControl" in js

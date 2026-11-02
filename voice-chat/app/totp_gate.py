@@ -14,6 +14,13 @@ When none are set, the gate is off (local/dev open access) and the process
 logs "TOTP not configured". On a VPS, put the secret in ~/lingocoach.env so
 the gate stays on. Session cookie is HttpOnly after a valid 6-digit code.
 On HTTPS (LINGOCOACH_HTTPS=1 / X-Forwarded-Proto), the cookie also sets Secure.
+
+``lc_session`` is a sliding **40-minute idle timeout** (``SESSION_MAX_AGE_S``).
+The cookie value is a signed expiry timestamp; each authenticated HTML/API
+request remints it so active use stays signed in. After 40 minutes without a
+request, the next HTML hit 303s to ``/login`` and APIs return 401
+``session_expired``. POST ``/logout`` (or ``/api/totp/logout``) clears the
+cookie. Never log the secret or the session token.
 """
 
 from __future__ import annotations
@@ -33,7 +40,9 @@ import pyotp
 logger = logging.getLogger("lingocoach")
 
 COOKIE_NAME = "lc_session"
-SESSION_MAX_AGE = 7 * 24 * 3600
+# Sliding idle timeout: each authenticated request remints the signed cookie.
+SESSION_MAX_AGE_S = 40 * 60
+SESSION_MAX_AGE = SESSION_MAX_AGE_S
 ISSUER = "LingoCoach"
 ACCOUNT = "unlock"
 DIGITS = 6
@@ -96,6 +105,11 @@ def _totp(secret: str) -> pyotp.TOTP:
 
 def _now_utc() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def _now_ts() -> int:
+    """Unix seconds for session mint/expiry. Tests patch this, not time.time."""
+    return int(time.time())
 
 
 def _try_enable(raw: str, source: str) -> bool:
@@ -228,7 +242,7 @@ def mint_session_token() -> str | None:
     ensure_configured()
     if not _secret:
         return None
-    exp = int(time.time()) + SESSION_MAX_AGE
+    exp = _now_ts() + SESSION_MAX_AGE_S
     payload = str(exp)
     sig = hmac.new(_signing_key(_secret), payload.encode("utf-8"), hashlib.sha256).hexdigest()
     return f"{payload}.{sig}"
@@ -243,10 +257,17 @@ def session_valid(token: str | None) -> bool:
         exp = int(payload)
     except (ValueError, AttributeError):
         return False
-    if exp < int(time.time()):
+    if exp < _now_ts():
         return False
     expected = hmac.new(_signing_key(_secret), payload.encode("utf-8"), hashlib.sha256).hexdigest()
     return hmac.compare_digest(expected, sig)
+
+
+def session_error(token: str | None) -> str:
+    """Reason for a failed gate check. Never logs the token."""
+    if token:
+        return "session_expired"
+    return "auth_required"
 
 
 def new_nonce() -> str:
@@ -256,7 +277,9 @@ def new_nonce() -> str:
 PUBLIC_EXACT = {
     "/health",
     "/login",
+    "/logout",
     "/api/totp/verify",
+    "/api/totp/logout",
     "/api/totp/setup",
     "/setup/qr",
 }

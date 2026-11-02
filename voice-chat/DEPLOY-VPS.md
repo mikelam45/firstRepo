@@ -103,7 +103,7 @@ The portal banner means:
 
 Do **not** copy `/Users/mikelam/firstRepo/openrouter_key/.env_voice_chat` as a path on the VPS. Copy only the key **value** into `~/lingocoach.env`. Quotes are optional. Mode `600`. The journal logs the character count only.
 
-**TOTP enroll:** add the same base32 secret (or the printed `otpauth://` URI from `python -m app.totp_setup`) in Google Authenticator / Authy / 1Password as issuer **LingoCoach**. After deploy, open `/login` on your public URL, enter the 6-digit code, then the coach unlocks (HttpOnly cookie, 7 days; **Secure** when HTTPS is enabled).
+**TOTP enroll:** add the same base32 secret (or the printed `otpauth://` URI from `python -m app.totp_setup`) in Google Authenticator / Authy / 1Password as issuer **LingoCoach**. After deploy, open `/login` on your public URL, enter the 6-digit code, then the coach unlocks (HttpOnly cookie, **sliding 40-minute idle timeout**; **Secure** when HTTPS is enabled). Active use remints `lc_session` on each authenticated request. After 40 minutes idle, the next HTML request 303s to `/login` and APIs return `401 session_expired`. **登出 / Logout** (POST `/logout`) clears the cookie. Pull + restart the app to pick this up — no Authenticator re-enroll.
 
 **One-time enroll page (Mac Chrome → Google Authenticator setup key):** the secret/QR is **not** left on a permanent public URL. On the VPS, with the app already serving HTTPS and `LINGOCOACH_TOTP_SECRET` set:
 

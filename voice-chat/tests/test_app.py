@@ -178,7 +178,7 @@ def test_openrouter_status_without_key_skips_the_network(monkeypatch):
     assert "OPENROUTER_API_KEY=" not in blob
     page = (STATIC / "index.html").read_text(encoding="utf-8")
     script = (STATIC / "app.js").read_text(encoding="utf-8")
-    assert 'src="/static/app.js?v=20261102-or-status"' in page
+    assert 'src="/static/app.js?v=20261102-logout"' in page
     assert "OpenRouter LLM connectivity check" in script
     assert "Put OPENROUTER_API_KEY in ~/lingocoach.env or voice-chat/.env" in script
     assert "The Mac path /Users/mikelam/firstRepo/openrouter_key/.env_voice_chat does not exist on this server" in script
