@@ -1,4 +1,5 @@
-import { IllustratedPortrait, Portrait, englishVisemes, pinyinVisemes } from "./face.js?v=20261102-expr";
+import { IllustratedPortrait, Portrait, englishVisemes, pinyinVisemes } from "./face.js?v=20261102-voices";
+import { applyLine, beginPlayback, clampRate, coachDelivery, coachProsody, playbackPlan, shouldRetrySpeech, unlockUtteranceSpec } from "./speech.js?v=20261102-voices";
 import { collectTranscript, recognitionLanguage, transcriptPiece } from "./transcript.js";
 
 const I18N = {
@@ -34,7 +35,7 @@ const I18N = {
     noMic: "No microphone found.",
     noCantoneseMic: "Cantonese recognition isn’t available in this browser. Type in Cantonese.",
     noVoice: "No matching voice is installed on this device.",
-    noCantoneseVoice: "No Cantonese voice is installed, so this line stays silent instead of using Mandarin. The mouth can still move.",
+    noCantoneseVoice: "No Cantonese voice is installed, so this line uses the coach's English voice instead of Mandarin.",
     noSynth: "This browser has no speech synthesis. Typing still works.",
     micInsecure: "The browser blocks speech recognition on this address. Open",
     micUnsupported: "This browser has no speech recognition. You can type instead.",
@@ -147,7 +148,7 @@ const I18N = {
     noMic: "没有找到麦克风。",
     noCantoneseMic: "这个浏览器不能识别粤语。请用粤语打字。",
     noVoice: "这台设备没有对应的语音。",
-    noCantoneseVoice: "这台设备没有粤语语音，所以这句不会用普通话读出来。嘴仍然可以动。",
+    noCantoneseVoice: "这台设备没有粤语语音，所以这句改用教练的英语语音，而不是普通话。",
     noSynth: "这个浏览器不能朗读。打字仍然可以用。",
     micInsecure: "这个地址不能用语音识别，因为它不是本机安全页面。请打开",
     micUnsupported: "这个浏览器没有语音识别。你可以打字。",
@@ -260,7 +261,7 @@ const I18N = {
     noMic: "搵唔到咪。",
     noCantoneseMic: "呢個瀏覽器認唔到廣東話。請打廣東話。",
     noVoice: "呢部機冇對應嘅語音。",
-    noCantoneseVoice: "呢部機冇廣東話語音，所以呢句唔會用普通話讀出嚟。個嘴仍然可以郁。",
+    noCantoneseVoice: "呢部機冇廣東話語音，所以呢句改用教練嘅英語語音，唔會用普通話。",
     noSynth: "呢個瀏覽器唔識朗讀。打字仍然用到。",
     micInsecure: "呢個地址用唔到語音識別，因為佢唔係本機安全頁面。請打開",
     micUnsupported: "呢個瀏覽器冇語音識別。你可以打字。",
@@ -387,6 +388,12 @@ let speakToken = 0;
 let speakTimer = 0;
 let mouthTimer = 0;
 let activeUtterance = null;
+let queuedKind = null;
+let speechUnlocked = false;
+let unlockUtterance = null;
+let speechKeepAlive = 0;
+let audioCtx = null;
+let audioUnlocked = false;
 let micEngineStarted = false;
 let micStopRequested = false;
 let micHeard = false;
@@ -859,6 +866,9 @@ function clockText() {
   return `${minutes}:${seconds}`;
 }
 
+app.addEventListener("pointerdown", () => { unlockSpeech(); }, true);
+app.addEventListener("keydown", () => { unlockSpeech(); }, true);
+
 app.addEventListener("click", (event) => {
   const el = eventElement(event);
   const mic = el?.closest?.("#mic");
@@ -1095,9 +1105,11 @@ function saveOpen() {
 }
 
 async function submitField() {
+  unlockSpeech();
   const field = document.querySelector("#field");
   const text = (field?.value || composerDraft || "").trim();
   if (!text || state.daily?.loading || state.ielts?.loading) return;
+  stopSpeaking();
   stopMic();
   if (state.screen === "ielts") {
     clearDraft();
@@ -1454,6 +1466,7 @@ function armRecognizer() {
 }
 
 function startMic() {
+  unlockSpeech();
   const block = micBlock();
   if (block === "insecure") {
     showStatus(`${t("micInsecure")} ${localhostHref()}`, true);
@@ -1478,9 +1491,10 @@ function startMic() {
   micStopRequested = false;
   state.micMessage = "";
   const synth = window.speechSynthesis;
-  const wasSpeaking = Boolean(
+  const wasSpeaking = queuedKind === "line" && Boolean(
     state.speaking || activeUtterance || speakTimer || (synth && (synth.speaking || synth.pending))
   );
+  const waitForPrime = queuedKind === "unlock" && Boolean(synth && (synth.speaking || synth.pending));
   stopSpeaking();
   markListening();
   const begin = () => {
@@ -1491,10 +1505,8 @@ function startMic() {
       idleFace();
       return;
     }
-    const again = window.speechSynthesis;
-    if (again) {
-      try { again.cancel(); } catch (err) { /* idle */ }
-    }
+    // stopSpeaking already stopped a coach line. Another cancel() while idle
+    // makes Chrome drop the next reply, and it would also cut the unlock blip.
     try {
       if (recognizer) {
         try {
@@ -1514,7 +1526,7 @@ function startMic() {
       idleFace();
     }
   };
-  if (wasSpeaking) micStartTimer = window.setTimeout(begin, 250);
+  if (wasSpeaking || waitForPrime) micStartTimer = window.setTimeout(begin, 250);
   else begin();
 }
 
@@ -1548,109 +1560,20 @@ if (window.speechSynthesis) {
   setTimeout(refreshVoices, 400);
 }
 
-function voiceCode(voice) {
-  return String(voice?.lang || "").toLowerCase().replaceAll("_", "-");
-}
-
-function isCantoneseVoice(voice) {
-  const code = voiceCode(voice);
-  if (!code || code.startsWith("zh-cn") || code.startsWith("zh-tw") || code.startsWith("zh-hans")) return false;
-  return code.startsWith("zh-hk") || code.startsWith("yue");
-}
-
-function isNamedFemaleVoice(name) {
-  return /female|woman|samantha|victoria|karen|moira|fiona|serena|kate|libby|sonia|aria|jenny|tessa|zira|hazel|susan|allison|ava|emma|emily|joanna|salli|kimberly|kendra|nicole|natasha|veena|xiaoxiao|huihui|yaoyao|sinji|tingting|meijia/i.test(name || "");
-}
-
-function isNamedMaleVoice(name) {
-  return /\bmale\b|daniel|alex|rishi|\btom\b|david|mark|james|george|fred|bruce|aaron|guy|matthew|justin|joey|brian|eric|oliver|thomas/i.test(name || "");
-}
-
-/** Prefer sweet, younger-sounding female names (Chloe / women) over generic or older voices. */
-function youngSweetFemaleBonus(name) {
-  const n = name || "";
-  // Explicit young/sweet English female voices (Chrome, macOS, Edge, etc.)
-  if (/google uk english female|uk english female|microsoft zira|zira|samantha|karen|victoria|tessa|fiona|aria|jenny|moira|serena|kate|libby|sonia|hazel|susan|allison|ava|emma|emily|joanna|salli|kimberly|kendra|nicole|natasha/i.test(n)) {
-    return 3;
-  }
-  if (/female|woman/i.test(n)) return 2;
-  if (isNamedFemaleVoice(n)) return 1;
-  return 0;
-}
-
-function byGender(list, person) {
-  const wantMale = person?.gender === "man";
-  const score = (voice) => {
-    const name = voice?.name || "";
-    const isFemale = isNamedFemaleVoice(name);
-    const isMale = !isFemale && isNamedMaleVoice(name);
-    let base = 1;
-    if (wantMale && isMale) base = 2;
-    else if (!wantMale && isFemale) base = 2;
-    else if (wantMale && isFemale) base = 0;
-    else if (!wantMale && isMale) base = 0;
-    if (!wantMale) base += youngSweetFemaleBonus(name);
-    return base;
-  };
-  return [...list].sort((a, b) => score(b) - score(a) || String(a.name || "").localeCompare(String(b.name || "")));
-}
-
-function voiceFor(lineLang, who) {
-  const person = who || partner() || {};
-  const list = (window.speechSynthesis?.getVoices?.() || voices || []).filter((voice) => voice && voice.lang);
-  if (list.length) voices = list;
-  const lang = lineLang || "en";
-  if (lang === "yue") {
-    const pool = list.filter((voice) => isCantoneseVoice(voice));
-    return pool.length ? byGender(pool, person)[0] : null;
-  }
-  if (lang === "cmn") {
-    const pool = list.filter((voice) => {
-      const code = voiceCode(voice);
-      return code.startsWith("zh-cn") || code.startsWith("cmn");
-    });
-    if (pool.length) return byGender(pool, person)[0];
-    return list.find((voice) => voice.default) || list[0] || null;
-  }
-  const english = list.filter((voice) => {
-    const code = voiceCode(voice);
-    return code === "en" || code.startsWith("en-");
-  });
-  // Chloe is a London teacher: prefer a sweet en-GB female voice when one exists.
-  const preferGb = person?.id === "chloe" || state.settings.accent !== "en-US";
-  const prefer = preferGb ? "en-gb" : "en-us";
-  const exact = english.filter((voice) => voiceCode(voice).startsWith(prefer));
-  if (exact.length) {
-    const ranked = byGender(exact, person);
-    if (person?.id === "chloe") {
-      const sweetGb = ranked.find((voice) => youngSweetFemaleBonus(voice.name) > 0);
-      if (sweetGb) return sweetGb;
-    } else {
-      return ranked[0];
+function refreshVoiceList(synth) {
+  try {
+    const listed = synth?.getVoices?.() || voices || [];
+    const usable = [];
+    for (const voice of listed) {
+      try {
+        if (voice && voice.lang) usable.push(voice);
+      } catch (err) { /* a voice the platform will not describe */ }
     }
+    if (usable.length) voices = usable;
+    return usable;
+  } catch (err) {
+    return voices || [];
   }
-  if (english.length) {
-    const ranked = byGender(english, person);
-    if (person?.id === "chloe" || person?.gender === "woman") {
-      const sweet = ranked.find((voice) => youngSweetFemaleBonus(voice.name) > 0);
-      if (sweet) return sweet;
-    }
-    return ranked[0];
-  }
-  return list.find((voice) => voice.default) || list[0] || null;
-}
-
-function utterancePitch(person) {
-  if (person?.gender === "man") return 1;
-  // Slightly brighter for women / Chloe without going cartoonish.
-  return person?.id === "chloe" ? 1.12 : 1.08;
-}
-
-function utteranceLang(lineLang, voice) {
-  if (lineLang === "yue") return isCantoneseVoice(voice) ? voice.lang : "zh-HK";
-  if (lineLang === "cmn") return voiceCode(voice).startsWith("zh-cn") || voiceCode(voice).startsWith("cmn") ? voice.lang : "zh-CN";
-  if (voice && (voiceCode(voice) === "en" || voiceCode(voice).startsWith("en-"))) return voice.lang;
-  return state.settings.accent === "en-US" ? "en-US" : "en-GB";
 }
 
 function shapesFor(text, lineLang, visemes) {
@@ -1697,7 +1620,10 @@ function speakPractice() {
 
 function finishMouth() {
   window.clearInterval(mouthTimer);
+  window.clearInterval(speechKeepAlive);
+  speechKeepAlive = 0;
   state.speaking = null;
+  if (queuedKind === "line") queuedKind = null;
   if (!face) return;
   try {
     face.setViseme("sil");
@@ -1707,17 +1633,99 @@ function finishMouth() {
   }
 }
 
+function userGestureActive() {
+  const activation = typeof navigator !== "undefined" ? navigator.userActivation : null;
+  if (!activation) return true;
+  return Boolean(activation.isActive);
+}
+
+function unlockAudioContext() {
+  const AC = window.AudioContext || window.webkitAudioContext;
+  if (!AC) return;
+  try {
+    if (!audioCtx) audioCtx = new AC();
+    if (audioCtx.state === "suspended") audioCtx.resume().catch(() => {});
+    if (audioUnlocked) return;
+    const buffer = audioCtx.createBuffer(1, 1, 22050);
+    const source = audioCtx.createBufferSource();
+    source.buffer = buffer;
+    source.connect(audioCtx.destination);
+    source.start(0);
+    audioUnlocked = true;
+  } catch (err) {
+    /* speechSynthesis unlock still runs */
+  }
+}
+
+function unlockSpeech() {
+  unlockAudioContext();
+  const synth = window.speechSynthesis;
+  if (!synth) return;
+  try { if (synth.paused) synth.resume(); } catch (err) { /* keep going */ }
+  if (speechUnlocked) return;
+  const spec = unlockUtteranceSpec();
+  const prime = new SpeechSynthesisUtterance(spec.text);
+  prime.volume = spec.volume;
+  prime.rate = spec.rate;
+  prime.pitch = spec.pitch;
+  prime.lang = spec.lang;
+  const clearPrime = (event) => {
+    if (unlockUtterance !== prime) return;
+    unlockUtterance = null;
+    if (queuedKind === "unlock") queuedKind = null;
+    if (event?.error === "not-allowed") speechUnlocked = false;
+  };
+  prime.onend = clearPrime;
+  prime.onerror = clearPrime;
+  unlockUtterance = prime;
+  try {
+    synth.speak(prime);
+    if (queuedKind !== "line") queuedKind = "unlock";
+    speechUnlocked = true;
+  } catch (err) {
+    unlockUtterance = null;
+    if (queuedKind === "unlock") queuedKind = null;
+  }
+}
+
 function stopSpeaking() {
   speakToken += 1;
   window.clearTimeout(speakTimer);
   window.clearInterval(mouthTimer);
+  window.clearInterval(speechKeepAlive);
+  speechKeepAlive = 0;
+  const preserveUnlock = queuedKind === "unlock";
   activeUtterance = null;
-  const synth = window.speechSynthesis;
-  if (synth) {
-    try { synth.cancel(); } catch (err) { /* already idle */ }
-    try { if (synth.paused) synth.resume(); } catch (err) { /* Chrome leaves the engine paused */ }
+  if (!preserveUnlock) {
+    queuedKind = null;
+    const synth = window.speechSynthesis;
+    if (synth && (synth.speaking || synth.pending)) {
+      try { synth.cancel(); } catch (err) { /* already idle */ }
+      try { if (synth.paused) synth.resume(); } catch (err) { /* Chrome leaves the engine paused */ }
+    }
   }
   finishMouth();
+}
+
+function armSpeechKeepAlive(token) {
+  window.clearInterval(speechKeepAlive);
+  speechKeepAlive = window.setInterval(() => {
+    if (token !== speakToken) {
+      window.clearInterval(speechKeepAlive);
+      speechKeepAlive = 0;
+      return;
+    }
+    const synth = window.speechSynthesis;
+    if (!synth || !synth.speaking) {
+      window.clearInterval(speechKeepAlive);
+      speechKeepAlive = 0;
+      return;
+    }
+    try {
+      synth.pause();
+      synth.resume();
+    } catch (err) { /* long lines still try to finish */ }
+  }, 10000);
 }
 
 const VOWEL_HOLD = { aa: 2.6, E: 2.15, I: 1.75, O: 2.45, U: 2.05 };
@@ -1787,17 +1795,33 @@ function speakText(text, lineLang, who, visemes, mood) {
   window.clearTimeout(speakTimer);
   window.clearInterval(mouthTimer);
   const synth = window.speechSynthesis;
-  if (synth) {
-    try { synth.cancel(); } catch (err) { /* idle */ }
-    try { if (synth.paused) synth.resume(); } catch (err) { /* Chrome pause bug */ }
+  const plan = playbackPlan(synth, {
+    preserveUnlock: queuedKind === "unlock",
+    userActivated: userGestureActive(),
+  });
+  if (plan.cancel && synth) {
+    try { synth.cancel(); } catch (err) { /* replace the line that is already playing */ }
+    queuedKind = null;
+    activeUtterance = null;
+    try { if (plan.resume || synth.paused) synth.resume(); } catch (err) { /* Chrome pause bug */ }
+  } else if (plan.resume && synth) {
+    try { synth.resume(); } catch (err) { /* Chrome pause bug */ }
   }
   const person = who || partner() || { id: state.settings.partner, gender: "woman" };
   const lang = lineLang || "en";
   const shapes = shapesFor(spoken, lang, visemes);
-  const rate = sessionRate || (state.settings.level === "beginner" ? 0.85 : 1);
+  const baseRate = clampRate(sessionRate || (state.settings.level === "beginner" ? 0.85 : 1));
+  const prosody = coachProsody(person.id, baseRate);
+  const rate = prosody.rate;
   state.speaking = { text: spoken, lineLang: lang, partner_id: person.id, visemes: shapes, mood: mood || "happy" };
-  const mouth = runMouth(shapes, mood, token, lang, rate);
+  let mouth;
+  try {
+    mouth = runMouth(shapes, mood, token, lang, rate);
+  } catch (err) {
+    mouth = { total: 800, endAt: performance.now() + 800, sync() {} };
+  }
   let said = false;
+  let retries = 0;
   const finishWhenReady = () => {
     if (token !== speakToken) return;
     const left = mouth.endAt - performance.now();
@@ -1811,14 +1835,12 @@ function speakText(text, lineLang, who, visemes, mood) {
     if (synthNow) {
       try { voices = synthNow.getVoices() || voices; } catch (err) { /* keep the last list */ }
     }
-    const voice = voiceFor(lang, person);
-    if (lang === "yue" && !isCantoneseVoice(voice)) {
-      const message = t("noCantoneseVoice");
-      state.notice = message;
-      showStatus(message, true);
-      document.querySelectorAll("button.speak").forEach((button) => { button.title = message; });
-      finishWhenReady();
-      return;
+    const listedNow = refreshVoiceList(synthNow);
+    let delivery = null;
+    try {
+      delivery = coachDelivery(listedNow, { coachId: person.id, lineLang: lang, baseRate });
+    } catch (err) {
+      delivery = null;
     }
     if (!synthNow) {
       announce(t("noSynth"));
@@ -1826,45 +1848,87 @@ function speakText(text, lineLang, who, visemes, mood) {
       return;
     }
     const utterance = new SpeechSynthesisUtterance(spoken);
-    activeUtterance = utterance;
-    utterance.lang = utteranceLang(lang, voice);
-    if (voice && (lang !== "yue" || isCantoneseVoice(voice))) {
-      try { utterance.voice = voice; } catch (err) { /* lang is already set; still speak */ }
-    }
-    utterance.rate = rate;
-    utterance.pitch = utterancePitch(person);
-    utterance.onend = finishWhenReady;
-    utterance.onerror = finishWhenReady;
+    applyLine(utterance, {
+      lang: delivery?.lang || (lang === "cmn" ? "zh-CN" : "en-GB"),
+      rate: delivery?.rate || rate,
+      pitch: delivery?.pitch || prosody.pitch,
+      voice: delivery?.voice || null,
+    });
+    let heardBoundary = false;
+    const startedAt = performance.now();
     utterance.onboundary = (event) => {
       if (token !== speakToken) return;
+      heardBoundary = true;
       if (event.name && event.name !== "word" && event.name !== "sentence") return;
       const idx = event.charIndex || 0;
       if (idx <= 0) return;
       mouth.sync(idx, spoken.length);
     };
-    try {
-      if (synthNow.paused) synthNow.resume();
-      synthNow.speak(utterance);
-      if (synthNow.paused) synthNow.resume();
-    } catch (err) {
+    const retryLine = () => {
+      retries += 1;
+      said = false;
+      queuedKind = null;
+      activeUtterance = null;
+      window.clearTimeout(speakTimer);
+      speakTimer = window.setTimeout(say, 80);
+    };
+    utterance.onend = () => {
+      if (token !== speakToken) return;
+      // Chrome reports a cancel-swallowed utterance as an immediate end with no audio.
+      const swallowed = !heardBoundary && performance.now() - startedAt < 50;
+      const alive = Boolean(synthNow.speaking || synthNow.pending);
+      if (swallowed && !alive && shouldRetrySpeech("interrupted", retries)) {
+        retryLine();
+        return;
+      }
+      finishWhenReady();
+    };
+    utterance.onerror = (event) => {
+      if (token !== speakToken) return;
+      const reason = event?.error || "";
+      const alive = Boolean(synthNow.speaking || synthNow.pending);
+      if (shouldRetrySpeech(reason, retries) && !alive) {
+        retryLine();
+        return;
+      }
+      finishWhenReady();
+    };
+    activeUtterance = utterance;
+    const started = beginPlayback(synthNow, utterance);
+    if (!started.spoke) {
+      activeUtterance = null;
       announce(t("noSynth"));
       finishWhenReady();
+      return;
     }
+    queuedKind = "line";
+    armSpeechKeepAlive(token);
   };
   const listed = synth?.getVoices?.() || [];
-  const delay = listed.length ? 60 : 300;
-  speakTimer = window.setTimeout(say, delay);
-  if (synth && !listed.length) {
+  const voicesReady = listed.some((voice) => voice && voice.lang);
+  if (!voicesReady && synth) {
+    // Unlock already ran on Send/mic. Wait for the voice list, then speak.
+    // Speaking with an empty list is silent on Chrome and would need a cancel.
+    const kick = () => {
+      if (token !== speakToken || said) return;
+      say();
+    };
+    speakTimer = window.setTimeout(kick, Math.max(plan.delayMs, 300));
     try {
       synth.addEventListener("voiceschanged", () => {
         if (token !== speakToken || said) return;
         if (!(synth.getVoices() || []).length) return;
         window.clearTimeout(speakTimer);
-        speakTimer = window.setTimeout(say, 60);
+        if (plan.delayMs > 0) speakTimer = window.setTimeout(kick, plan.delayMs);
+        else kick();
       }, { once: true });
     } catch (err) {
       /* the timeout still speaks */
     }
+  } else if (plan.delayMs > 0) {
+    speakTimer = window.setTimeout(say, plan.delayMs);
+  } else {
+    say();
   }
 }
 

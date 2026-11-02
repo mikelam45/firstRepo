@@ -107,6 +107,23 @@ function blendedShape(current, next, amount) {
   return out;
 }
 
+/** Pose used while a portrait is speaking or idle. Speak mode is mouth-only. */
+export function expressionPose(mode, moodName, viseme, nextViseme, blend) {
+  const speaking = mode === "speak";
+  const mood = MOODS[mode === "listen" ? "listen" : moodName] || MOODS.neutral;
+  const amount = speaking ? (blend || 0) : 0;
+  const shape = blendedShape(viseme, nextViseme, amount);
+  return {
+    open: shape.open,
+    round: shape.round,
+    wide: shape.wide,
+    jaw: speaking ? 0 : shape.jaw,
+    press: shape.press,
+    smile: speaking ? 0 : mood.smile,
+    brow: speaking ? 0 : mood.brow,
+  };
+}
+
 function follow(shown, target, dt, reduce) {
   const step = Math.max(0, dt);
   for (const key of Object.keys(target)) {
@@ -360,9 +377,8 @@ export class Portrait {
   }
 
   frame(now, dt) {
-    const mood = MOODS[this.mode === "listen" ? "listen" : this.mood] || MOODS.neutral;
     const speaking = this.mode === "speak";
-    const shape = blendedShape(this.viseme, this.nextViseme, speaking ? this.blend || 0 : 0);
+    const pose = expressionPose(this.mode, this.mood, this.viseme, this.nextViseme, this.blend);
     const nodTarget = speaking || this.reduceMotion
       ? 0
       : this.mode === "listen"
@@ -380,15 +396,14 @@ export class Portrait {
     }
     // Speak mode is mouth-only: no smile/brow/cheek/chin so the brow mesh stays sharp.
     // Photo frames (mouth-open / smile / eyes-semi / brow) blend in the shader for blink/speak/smile.
-    const smile = speaking ? 0 : mood.smile;
     const target = {
-      open: shape.open,
-      round: shape.round,
-      wide: shape.wide,
-      jaw: speaking ? 0 : shape.jaw,
-      press: shape.press,
-      smile,
-      brow: speaking ? 0 : mood.brow,
+      open: pose.open,
+      round: pose.round,
+      wide: pose.wide,
+      jaw: pose.jaw,
+      press: pose.press,
+      smile: pose.smile,
+      brow: pose.brow,
       look: this.lookTarget,
       nod: nodTarget,
       blink,
@@ -824,9 +839,8 @@ export class IllustratedPortrait {
   }
 
   frame(now, dt) {
-    const mood = MOODS[this.mode === "listen" ? "listen" : this.mood] || MOODS.neutral;
     const speaking = this.mode === "speak";
-    const shape = blendedShape(this.viseme, this.nextViseme, speaking ? this.blend || 0 : 0);
+    const pose = expressionPose(this.mode, this.mood, this.viseme, this.nextViseme, this.blend);
     if (this.blinkStart < 0 && now >= this.nextBlink) {
       this.blinkStart = now;
       this.nextBlink = now + 2400 + Math.random() * 2800;
@@ -838,15 +852,14 @@ export class IllustratedPortrait {
       else this.blinkStart = -1;
     }
     const nod = this.reduceMotion || speaking ? 0 : this.mode === "listen" ? Math.sin(now / 620) * 0.045 : 0;
-    const smile = speaking ? 0 : mood.smile;
     const target = {
-      open: shape.open,
-      round: shape.round,
-      wide: shape.wide,
-      jaw: speaking ? 0 : shape.jaw,
-      press: shape.press,
-      smile,
-      brow: speaking ? 0 : mood.brow,
+      open: pose.open,
+      round: pose.round,
+      wide: pose.wide,
+      jaw: pose.jaw,
+      press: pose.press,
+      smile: pose.smile,
+      brow: pose.brow,
       blink,
       nod,
     };
