@@ -122,10 +122,10 @@ class OpenRouterProvider:
 
 
 def resolve_provider():
-    from app.keyfile import ensure_openrouter_key
+    from app.keyfile import current_openrouter_key, ensure_openrouter_key
 
     ensure_openrouter_key()
-    key = os.environ.get("OPENROUTER_API_KEY", "").strip()
+    key = current_openrouter_key()
     if not key:
         return FixtureProvider()
     return OpenRouterProvider(key)

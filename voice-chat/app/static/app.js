@@ -103,8 +103,10 @@ const I18N = {
     orCheck: "OpenRouter LLM connectivity check",
     orChecking: "Checking…",
     orConnected: "Connected",
-    orNoKey: "Not connected. No OpenRouter key. Put it in /Users/mikelam/firstRepo/openrouter_key/.env_voice_chat and restart ./run-local.sh from voice-chat.",
+    orNoKey: "Not connected. No OpenRouter key. Put OPENROUTER_API_KEY in ~/lingocoach.env or voice-chat/.env (mode 600), then restart lingocoach.service on the VPS or ./run-local.sh on a Mac. The key is not shown.",
+    orPath: "Not connected. Key file not found. On Linux use ~/lingocoach.env or voice-chat/.env. The Mac path /Users/mikelam/firstRepo/openrouter_key/.env_voice_chat does not exist on this server. Create the file, then restart. The key is not shown.",
     orRejected: "Not connected. Wrong key. OpenRouter rejected it. The key is not shown.",
+    orPayment: "Not connected. OpenRouter says this account has no credits (402). The key is not shown.",
     orUnreachable: "Not connected. Connection error. This server cannot reach OpenRouter. Check the network, then press Check again.",
     orRecheck: "Check",
   },
@@ -209,8 +211,10 @@ const I18N = {
     orCheck: "OpenRouter 大模型连通检查",
     orChecking: "正在检查…",
     orConnected: "已连接",
-    orNoKey: "未连接。没有 OpenRouter 密钥。请把它放在 /Users/mikelam/firstRepo/openrouter_key/.env_voice_chat，然后在 voice-chat 里重新运行 ./run-local.sh。",
+    orNoKey: "未连接。没有 OpenRouter 密钥。请把 OPENROUTER_API_KEY 放在 ~/lingocoach.env 或 voice-chat/.env（权限 600），然后在 VPS 上重启 lingocoach.service，或在 Mac 上重新运行 ./run-local.sh。密钥不会显示。",
+    orPath: "未连接。找不到密钥文件。在 Linux 上请用 ~/lingocoach.env 或 voice-chat/.env。Mac 路径 /Users/mikelam/firstRepo/openrouter_key/.env_voice_chat 在这台服务器上不存在。建好文件后请重启。密钥不会显示。",
     orRejected: "未连接。密钥不对。OpenRouter 拒绝了它。密钥不会显示。",
+    orPayment: "未连接。OpenRouter 返回 402：账户没有额度。密钥不会显示。",
     orUnreachable: "未连接。连接错误。这台服务器连不上 OpenRouter。请检查网络，然后再按检查。",
     orRecheck: "检查",
   },
@@ -315,8 +319,10 @@ const I18N = {
     orCheck: "OpenRouter 大模型連線檢查",
     orChecking: "檢查緊…",
     orConnected: "已連線",
-    orNoKey: "未連線。冇 OpenRouter 金鑰。請放喺 /Users/mikelam/firstRepo/openrouter_key/.env_voice_chat，然後喺 voice-chat 重新行 ./run-local.sh。",
+    orNoKey: "未連線。冇 OpenRouter 金鑰。請把 OPENROUTER_API_KEY 放喺 ~/lingocoach.env 或 voice-chat/.env（權限 600），然後喺 VPS 重啟 lingocoach.service，或喺 Mac 重新行 ./run-local.sh。金鑰唔會顯示。",
+    orPath: "未連線。搵唔到金鑰檔。Linux 請用 ~/lingocoach.env 或 voice-chat/.env。Mac 路徑 /Users/mikelam/firstRepo/openrouter_key/.env_voice_chat 喺呢部伺服器唔存在。建好檔之後請重啟。金鑰唔會顯示。",
     orRejected: "未連線。金鑰唔啱。OpenRouter 拒絕咗。金鑰唔會顯示。",
+    orPayment: "未連線。OpenRouter 話呢個帳戶冇餘額（402）。金鑰唔會顯示。",
     orUnreachable: "未連線。連線錯誤。呢部伺服器連唔到 OpenRouter。請檢查網絡，然後再撳檢查。",
     orRecheck: "檢查",
   },
@@ -2302,9 +2308,15 @@ function reqAsPromise(request) {
   });
 }
 
+function openRouterKnownReason(reason) {
+  return reason === "no_key" || reason === "path" || reason === "auth" || reason === "payment" || reason === "unreachable";
+}
+
 function openRouterReason(reason) {
   if (reason === "no_key") return t("orNoKey");
+  if (reason === "path") return t("orPath");
   if (reason === "auth") return t("orRejected");
+  if (reason === "payment") return t("orPayment");
   if (reason === "unreachable") return t("orUnreachable");
   return t("orUnreachable");
 }
@@ -2321,7 +2333,7 @@ function openRouterBar() {
   const checking = llm.phase !== "done";
   const ok = !checking && llm.connected;
   const cls = checking ? "wait" : ok ? "ok" : "bad";
-  const reason = checking ? "checking" : ok ? "ok" : (llm.reason === "no_key" || llm.reason === "auth" || llm.reason === "unreachable" ? llm.reason : "unreachable");
+  const reason = checking ? "checking" : ok ? "ok" : (openRouterKnownReason(llm.reason) ? llm.reason : "unreachable");
   return `<footer class="llm-status" role="status" aria-live="polite" data-connected="${checking ? "pending" : ok ? "true" : "false"}" data-reason="${esc(reason)}">
     <p class="llm-copy"><span class="llm-label">${esc(t("orCheck"))}</span> <span class="llm-result ${cls}">${esc(openRouterStatusText())}</span></p>
     <button class="ghost" type="button" data-act="or-status">${esc(t("orRecheck"))}</button>
@@ -2349,7 +2361,7 @@ function paintOpenRouterBar() {
   copy.className = `llm-result ${checking ? "wait" : ok ? "ok" : "bad"}`;
   copy.textContent = openRouterStatusText();
   footer.dataset.connected = checking ? "pending" : ok ? "true" : "false";
-  footer.dataset.reason = checking ? "checking" : ok ? "ok" : (llm.reason === "no_key" || llm.reason === "auth" || llm.reason === "unreachable" ? llm.reason : "unreachable");
+  footer.dataset.reason = checking ? "checking" : ok ? "ok" : (openRouterKnownReason(llm.reason) ? llm.reason : "unreachable");
 }
 
 async function checkOpenRouter() {
@@ -2362,7 +2374,7 @@ async function checkOpenRouter() {
     const response = await fetch("/api/openrouter/status");
     const data = await response.json();
     if (data && data.connected === true) next = { phase: "done", connected: true, reason: "" };
-    else if (data && (data.reason === "no_key" || data.reason === "auth" || data.reason === "unreachable")) {
+    else if (data && openRouterKnownReason(data.reason)) {
       next = { phase: "done", connected: false, reason: data.reason };
     }
   } catch (err) {

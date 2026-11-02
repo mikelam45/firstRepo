@@ -62,7 +62,9 @@ def test_routes_are_the_pinned_openrouter_ids():
     assert ROUTES["review"]["fallback"] == "deepseek/deepseek-v4-flash"
 
 
-def test_empty_key_uses_fixture():
+def test_empty_key_uses_fixture(monkeypatch):
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    monkeypatch.delenv("LINGOCOACH_ENV_FILE", raising=False)
     assert resolve_provider().name == "fixture"
 
 

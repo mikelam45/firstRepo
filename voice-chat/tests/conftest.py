@@ -1,3 +1,4 @@
+import os
 import sys
 from pathlib import Path
 
@@ -6,6 +7,16 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
+
+
+@pytest.fixture(autouse=True)
+def _clear_openrouter_key():
+    """Do not let a test key leak into later fixture-provider cases."""
+    os.environ.pop("OPENROUTER_API_KEY", None)
+    os.environ.pop("LINGOCOACH_ENV_FILE", None)
+    yield
+    os.environ.pop("OPENROUTER_API_KEY", None)
+    os.environ.pop("LINGOCOACH_ENV_FILE", None)
 
 
 @pytest.fixture(autouse=True)

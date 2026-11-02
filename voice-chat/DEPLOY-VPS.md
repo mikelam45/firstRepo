@@ -80,6 +80,29 @@ chmod 600 ~/lingocoach.env
 
 Or use `~/lingocoach/voice-chat/.env` with mode `600` (also gitignored). Do not paste keys or TOTP secrets into chat or commit them.
 
+**OpenRouter connectivity check:** `GET /api/openrouter/status` never returns the key. systemd `EnvironmentFile=` reads `~/lingocoach.env` **only when the unit starts**, and it **skips** lines that begin with `export ` (invalid variable name). The app also reads `~/lingocoach.env` and `voice-chat/.env` itself and strips wrapping quotes/spaces the same way the TOTP secret does, so `export OPENROUTER_API_KEY="…"` still works after this process is running.
+
+After editing the key file, restart so systemd and the process agree:
+
+```bash
+cd ~/lingocoach/voice-chat
+./lingocoachctl.sh restart
+# root:  sudo systemctl restart lingocoach.service
+# user:  systemctl --user restart lingocoach.service
+```
+
+The portal banner means:
+
+| Banner | Cause |
+|--------|--------|
+| no key | file exists but has no usable `OPENROUTER_API_KEY=` line |
+| key file not found | `~/lingocoach.env` / `voice-chat/.env` missing (the Mac path `/Users/mikelam/…` does not exist on Linux) |
+| 金鑰唔啱 / wrong key | OpenRouter **401/403** — real auth rejection, not a missing file |
+| 402 / no credits | OpenRouter **402** (account credits), not a wrong key |
+| connection error | timeout, DNS, or OpenRouter 5xx |
+
+Do **not** copy `/Users/mikelam/firstRepo/openrouter_key/.env_voice_chat` as a path on the VPS. Copy only the key **value** into `~/lingocoach.env`. Quotes are optional. Mode `600`. The journal logs the character count only.
+
 **TOTP enroll:** add the same base32 secret (or the printed `otpauth://` URI from `python -m app.totp_setup`) in Google Authenticator / Authy / 1Password as issuer **LingoCoach**. After deploy, open `/login` on your public URL, enter the 6-digit code, then the coach unlocks (HttpOnly cookie, 7 days; **Secure** when HTTPS is enabled).
 
 **One-time enroll page (Mac Chrome → Google Authenticator setup key):** the secret/QR is **not** left on a permanent public URL. On the VPS, with the app already serving HTTPS and `LINGOCOACH_TOTP_SECRET` set:

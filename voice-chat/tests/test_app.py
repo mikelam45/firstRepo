@@ -134,6 +134,8 @@ class _StatusClient:
         assert headers["Authorization"].startswith("Bearer ")
         token = headers["Authorization"].split(" ", 1)[1]
         assert token not in url
+        assert not token.startswith('"') and not token.endswith("'")
+        self.seen_token = token
         if self.mode == "timeout":
             raise httpx.TimeoutException("timed out")
         if self.mode == "network":
@@ -165,6 +167,7 @@ def test_openrouter_status_without_key_skips_the_network(monkeypatch):
     response = client.get("/api/openrouter/status")
     assert response.status_code == 200
     assert response.json() == {"connected": False, "reason": "no_key"}
+    assert set(response.json()) <= {"connected", "reason"}
     assert "OPENROUTER_API_KEY=" not in response.text
     assert "sk-or-" not in response.text
     blob = "\n".join(
@@ -175,10 +178,12 @@ def test_openrouter_status_without_key_skips_the_network(monkeypatch):
     assert "OPENROUTER_API_KEY=" not in blob
     page = (STATIC / "index.html").read_text(encoding="utf-8")
     script = (STATIC / "app.js").read_text(encoding="utf-8")
-    assert 'src="/static/app.js?v=20261023-chloe-voice"' in page
+    assert 'src="/static/app.js?v=20261102-or-status"' in page
     assert "OpenRouter LLM connectivity check" in script
-    assert "Not connected. No OpenRouter key. Put it in /Users/mikelam/firstRepo/openrouter_key/.env_voice_chat and restart ./run-local.sh from voice-chat." in script
+    assert "Put OPENROUTER_API_KEY in ~/lingocoach.env or voice-chat/.env" in script
+    assert "The Mac path /Users/mikelam/firstRepo/openrouter_key/.env_voice_chat does not exist on this server" in script
     assert "Not connected. Wrong key. OpenRouter rejected it. The key is not shown." in script
+    assert "OpenRouter says this account has no credits (402)" in script
     assert "Not connected. Connection error. This server cannot reach OpenRouter. Check the network, then press Check again." in script
     nokeys = [line for line in script.splitlines() if line.strip().startswith("orNoKey:")]
     assert len(nokeys) == 3
@@ -186,8 +191,69 @@ def test_openrouter_status_without_key_skips_the_network(monkeypatch):
         assert "Connection error" not in line
         assert "连接错误" not in line
         assert "連線錯誤" not in line
+        assert "Wrong key" not in line
+        assert "密钥不对" not in line
+        assert "金鑰唔啱" not in line
+    rejected = [line for line in script.splitlines() if line.strip().startswith("orRejected:")]
+    assert len(rejected) == 3
+    assert "金鑰唔啱" in "".join(rejected)
+    paths = [line for line in script.splitlines() if line.strip().startswith("orPath:")]
+    assert len(paths) == 3
+    for line in paths:
+        assert "Wrong key" not in line
+        assert "金鑰唔啱" not in line
+        assert "lingocoach.env" in line
+    payments = [line for line in script.splitlines() if line.strip().startswith("orPayment:")]
+    assert len(payments) == 3
+    for line in payments:
+        assert "Wrong key" not in line
+        assert "金鑰唔啱" not in line
     assert 'data-act="or-status"' in script
     assert "/api/openrouter/status" in script
+
+
+def test_openrouter_status_path_when_env_file_missing(monkeypatch, tmp_path):
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    missing = tmp_path / "absent.env"
+    monkeypatch.setenv("LINGOCOACH_ENV_FILE", str(missing))
+    monkeypatch.setattr("app.keyfile._candidates", lambda: [missing])
+    def forbid(*args, **kwargs):
+        raise AssertionError("OpenRouter must not be contacted without a key")
+
+    monkeypatch.setattr("app.main.httpx.Client", forbid)
+    response = client.get("/api/openrouter/status")
+    assert response.status_code == 200
+    assert response.json() == {"connected": False, "reason": "path"}
+    assert "OPENROUTER_API_KEY=" not in response.text
+    assert "sk-or-" not in response.text
+
+
+def test_openrouter_status_strips_quoted_env_before_probe(monkeypatch, caplog):
+    secret = "sk-or-quoted-status"
+    monkeypatch.setenv("OPENROUTER_API_KEY", f'"{secret}"')
+    monkeypatch.delenv("LINGOCOACH_ENV_FILE", raising=False)
+    seen = {}
+
+    class Client(_StatusClient):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self.mode = "ok"
+            self.code = 200
+
+        def get(self, url, headers=None):
+            response = super().get(url, headers=headers)
+            seen["token"] = self.seen_token
+            return response
+
+    monkeypatch.setattr("app.main.httpx.Client", Client)
+    with caplog.at_level(logging.INFO, logger="lingocoach"):
+        response = client.get("/api/openrouter/status")
+    assert response.json() == {"connected": True}
+    assert seen["token"] == secret
+    assert secret not in response.text
+    assert f'"{secret}"' not in caplog.text
+    assert secret not in caplog.text
+    assert "Bearer" not in caplog.text
 
 
 def test_openrouter_status_maps_auth_timeout_and_ok(monkeypatch, caplog):
@@ -197,9 +263,11 @@ def test_openrouter_status_maps_auth_timeout_and_ok(monkeypatch, caplog):
         ("ok", 200, {"connected": True}),
         ("auth", 401, {"connected": False, "reason": "auth"}),
         ("auth", 403, {"connected": False, "reason": "auth"}),
+        ("payment", 402, {"connected": False, "reason": "payment"}),
         ("timeout", 0, {"connected": False, "reason": "unreachable"}),
         ("network", 500, {"connected": False, "reason": "unreachable"}),
         ("other", 500, {"connected": False, "reason": "unreachable"}),
+        ("other", 429, {"connected": False, "reason": "unreachable"}),
     ]
     for mode, code, expected in cases:
         _install_status_client(monkeypatch, mode, code)
@@ -207,9 +275,12 @@ def test_openrouter_status_maps_auth_timeout_and_ok(monkeypatch, caplog):
             response = client.get("/api/openrouter/status")
         assert response.status_code == 200
         assert response.json() == expected
+        assert set(response.json()) <= {"connected", "reason"}
         assert secret not in response.text
         assert "secret-account" not in response.text
         assert secret not in caplog.text
         assert "Bearer" not in caplog.text
         assert "secret-account" not in caplog.text
+        if expected.get("reason") == "payment":
+            assert "auth" not in response.text
         caplog.clear()

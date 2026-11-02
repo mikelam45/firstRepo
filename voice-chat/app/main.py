@@ -23,7 +23,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.coach import ServiceError, handle_turn, validate_request
-from app.keyfile import ensure_openrouter_key
+from app.keyfile import current_openrouter_key, ensure_openrouter_key, missing_key_reason
 from app.ielts_prompts import DIAGNOSTIC, gloss_for, public_bank
 from app.ielts_review import handle_review, validate_review_request
 from app.ielts_writing import PROMPTS as WRITING_PROMPTS
@@ -66,7 +66,7 @@ if "pytest" not in sys.modules:
     if ensure_openrouter_key():
         logger.info(
             "OpenRouter key is available (%s characters).",
-            len(os.environ.get("OPENROUTER_API_KEY", "").strip()),
+            len(current_openrouter_key()),
         )
     else:
         logger.info("No OpenRouter key. Replies use offline examples.")
@@ -175,16 +175,19 @@ def totp_setup():
 def openrouter_status() -> dict:
     """Say whether OpenRouter accepts the configured key.
 
-    The body is only booleans and a short reason. The key, account payload,
-    and response body never leave this function.
+    The body is only booleans and a short reason (no_key / path / auth /
+    payment / unreachable). The key, account payload, and response body
+    never leave this function.
     """
     if not ensure_openrouter_key():
-        logger.info("openrouter_status status=- reason=no_key")
-        return {"connected": False, "reason": "no_key"}
-    key = os.environ.get("OPENROUTER_API_KEY", "").strip()
+        reason = missing_key_reason()
+        logger.info("openrouter_status status=- reason=%s", reason)
+        return {"connected": False, "reason": reason}
+    key = current_openrouter_key()
     if not key:
-        logger.info("openrouter_status status=- reason=no_key")
-        return {"connected": False, "reason": "no_key"}
+        reason = missing_key_reason()
+        logger.info("openrouter_status status=- reason=%s", reason)
+        return {"connected": False, "reason": reason}
     return _probe_openrouter(key)
 
 
@@ -209,6 +212,9 @@ def _probe_openrouter(key: str) -> dict:
     if status_code in (401, 403):
         logger.info("openrouter_status status=%s reason=auth", status_code)
         return {"connected": False, "reason": "auth"}
+    if status_code == 402:
+        logger.info("openrouter_status status=402 reason=payment")
+        return {"connected": False, "reason": "payment"}
     logger.info("openrouter_status status=%s reason=unreachable", status_code)
     return {"connected": False, "reason": "unreachable"}
 
