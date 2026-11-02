@@ -32,8 +32,9 @@ import qrcode
 
 from app import totp_gate
 
-# Phone cameras (Google Authenticator) scan raster QR far more reliably than
-# CSS-scaled SVG. Target ~260–320 CSS px with a solid white quiet zone.
+# Default QR is pure SVG (no Pillow / no libjpeg). Target ≥280 CSS px with a
+# solid white quiet zone and crispEdges so modules stay hard for cameras.
+# Optional PNG path uses Pillow when installed; not required on the VPS.
 # Critical: QR *modules* encode otpauth://totp/… only — never the HTTPS
 # /setup/qr?token=… page URL (iPhone Camera would open that as a webpage).
 QR_BOX_SIZE = 10
@@ -233,14 +234,23 @@ def _qr_factory(otpauth: str) -> qrcode.QRCode:
     return qr
 
 
-def qr_png_data_url(otpauth: str) -> str:
-    """High-contrast black-on-white PNG as a data URL (Pillow).
+def pillow_available() -> bool:
+    """True when Pillow is importable (optional; not in requirements)."""
+    try:
+        import PIL  # noqa: F401
+    except ImportError:
+        return False
+    return True
 
-    Preferred for Google Authenticator camera scans: fixed modules, solid
-    quiet zone, no SVG anti-alias / CSS-shrink blur. Payload is always
-    otpauth://totp/… (never the /setup/qr HTTPS enroll link).
+
+def qr_png_data_url(otpauth: str) -> str:
+    """High-contrast black-on-white PNG as a data URL (optional Pillow).
+
+    Used only when Pillow is installed. Default VPS path is SVG via
+    qr_svg_markup / qr_markup so Python 3.14 hosts need no libjpeg-dev.
+    Payload is always otpauth://totp/… (never the /setup/qr HTTPS enroll link).
     """
-    from PIL import Image
+    from PIL import Image  # optional dependency
 
     qr = _qr_factory(otpauth)
     img = qr.make_image(fill_color="black", back_color="white").convert("RGB")
@@ -260,44 +270,61 @@ def qr_png_data_url(otpauth: str) -> str:
 
 
 def qr_svg_markup(otpauth: str) -> str:
-    """Fallback SVG QR with white background + black modules (no Pillow)."""
-    from qrcode.image.svg import SvgPathImage
+    """Pure-Python SVG QR: white quiet zone + black modules (no Pillow).
 
+    Builds rects from the qrcode matrix so pip install on Python 3.14 never
+    needs to compile Pillow/libjpeg. Quiet zone comes from QR_BORDER (≥4).
+    """
     qr = _qr_factory(otpauth)
-    img = qr.make_image(image_factory=SvgPathImage)
-    buf = io.BytesIO()
-    img.save(buf)
-    svg = buf.getvalue().decode("utf-8")
-    if svg.startswith("<?xml"):
-        svg = svg.split("?>", 1)[-1].lstrip()
-    # Explicit white rect so dark page chrome cannot show through.
-    if "<svg" in svg and "<rect" not in svg[:200].lower():
-        svg = svg.replace(
-            ">",
-            ' style="background:#ffffff">'
-            '<rect width="100%" height="100%" fill="#ffffff"/>',
-            1,
+    modules = qr.modules
+    if not modules:
+        raise RuntimeError("QR matrix is empty")
+    n = qr.modules_count
+    module_px = max(1, (QR_MIN_PX + n - 1) // n)
+    size = n * module_px
+    parts: list[str] = [
+        (
+            f'<svg xmlns="http://www.w3.org/2000/svg" role="img" '
+            f'aria-label="Authenticator QR code" class="qr-img" '
+            f'width="{size}" height="{size}" viewBox="0 0 {size} {size}" '
+            f'shape-rendering="crispEdges">'
+            f'<rect width="100%" height="100%" fill="#ffffff"/>'
         )
-    svg = svg.replace(
-        "<svg ",
-        '<svg role="img" aria-label="Authenticator QR code" ',
-        1,
-    )
-    return svg
+    ]
+    # Merge horizontal black runs to keep markup small and edges hard.
+    for y, row in enumerate(modules):
+        x = 0
+        while x < n:
+            if not row[x]:
+                x += 1
+                continue
+            x0 = x
+            while x < n and row[x]:
+                x += 1
+            run = x - x0
+            parts.append(
+                f'<rect x="{x0 * module_px}" y="{y * module_px}" '
+                f'width="{run * module_px}" height="{module_px}" fill="#000000"/>'
+            )
+    parts.append("</svg>")
+    return "".join(parts)
 
 
 def qr_markup(otpauth: str) -> str:
-    """Embeddable QR: PNG <img> when Pillow is available, else SVG."""
-    # Validate before try/except so a bad payload never silently falls back.
+    """Embeddable QR: SVG by default; optional PNG <img> when Pillow exists."""
+    # Validate before optional Pillow path so a bad payload never falls through.
     require_otpauth_payload(otpauth)
-    try:
-        data_url = qr_png_data_url(otpauth)
-    except Exception:
-        return qr_svg_markup(otpauth)
-    return (
-        f'<img class="qr-img" src="{data_url}" width="280" height="280" '
-        f'alt="Authenticator QR code" decoding="sync"/>'
-    )
+    if pillow_available():
+        try:
+            data_url = qr_png_data_url(otpauth)
+        except Exception:
+            data_url = None
+        if data_url:
+            return (
+                f'<img class="qr-img" src="{data_url}" width="{QR_MIN_PX}" '
+                f'height="{QR_MIN_PX}" alt="Authenticator QR code" decoding="sync"/>'
+            )
+    return qr_svg_markup(otpauth)
 
 
 def format_manual_key(secret: str) -> str:

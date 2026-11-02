@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import base64
 import io
+import re
 import time
 from urllib.parse import parse_qs, unquote, urlparse
 
 import pyotp
+import pytest
 from fastapi.testclient import TestClient
 
 from app import totp_gate
@@ -15,6 +17,22 @@ from app import totp_qr
 from app.main import app
 
 TEST_SECRET = "JBSWY3DPEHPK3PXP"
+
+
+def _assert_qr_markup_scannable(markup: str) -> None:
+    """Accept PNG data-URL or inline SVG; both need white background + otpauth guard."""
+    assert 'aria-label="Authenticator QR code"' in markup or 'alt="Authenticator QR code"' in markup
+    if "<svg" in markup:
+        assert 'fill="#ffffff"' in markup or "fill='#ffffff'" in markup
+        assert 'fill="#000000"' in markup or "fill='#000000'" in markup
+        assert 'shape-rendering="crispEdges"' in markup
+        assert "viewBox=" in markup
+        width_m = re.search(r'<svg[^>]*\bwidth="(\d+)"', markup)
+        assert width_m is not None
+        assert int(width_m.group(1)) >= totp_qr.QR_MIN_PX
+    else:
+        assert 'src="data:image/png;base64,' in markup
+        assert "qr-img" in markup
 
 
 def _enable(monkeypatch, tmp_path):
@@ -56,9 +74,9 @@ def test_setup_qr_valid_once_then_gone(monkeypatch, tmp_path):
     assert "works once" in body.lower() or "This link works once" in body
     assert TEST_SECRET in body
     assert "otpauth://totp/" in totp_gate.provisioning_uri(TEST_SECRET)
-    # Prefer PNG data-URL for Google Authenticator camera reliability.
-    assert 'src="data:image/png;base64,' in body
-    assert 'alt="Authenticator QR code"' in body
+    # PNG (optional Pillow) or pure SVG — must be scannable otpauth QR.
+    qr_chunk = body.split('class="qr-wrap"', 1)[1].split("</div>", 1)[0]
+    _assert_qr_markup_scannable(qr_chunk)
     assert "Copy" in body
     assert "Cache-Control" in first.headers
     assert "no-store" in first.headers.get("cache-control", "")
@@ -131,7 +149,29 @@ def test_require_otpauth_payload_rejects_http_and_bare_secrets():
             pass
 
 
-def test_qr_png_is_large_high_contrast():
+def test_qr_svg_is_large_high_contrast_without_pillow():
+    """Default path: pure SVG with white quiet zone — no Pillow/libjpeg needed."""
+    uri = totp_gate.provisioning_uri(TEST_SECRET)
+    assert uri.startswith("otpauth://totp/")
+    svg = totp_qr.qr_svg_markup(uri)
+    _assert_qr_markup_scannable(svg)
+    assert totp_qr.QR_BORDER >= 4
+    # Corner module of the matrix is quiet-zone white (border ≥4); first painted
+    # content after the full-size white rect must be black modules only.
+    assert svg.count('fill="#ffffff"') >= 1
+    assert svg.count('fill="#000000"') >= 1
+
+
+def test_qr_markup_falls_back_to_svg_without_pillow(monkeypatch):
+    uri = totp_gate.provisioning_uri(TEST_SECRET)
+    monkeypatch.setattr(totp_qr, "pillow_available", lambda: False)
+    markup = totp_qr.qr_markup(uri)
+    assert markup.lstrip().startswith("<svg")
+    _assert_qr_markup_scannable(markup)
+
+
+@pytest.mark.skipif(not totp_qr.pillow_available(), reason="Pillow optional")
+def test_qr_png_optional_when_pillow_installed():
     uri = totp_gate.provisioning_uri(TEST_SECRET)
     assert uri.startswith("otpauth://totp/")
     data_url = totp_qr.qr_png_data_url(uri)
@@ -142,12 +182,7 @@ def test_qr_png_is_large_high_contrast():
     img = Image.open(io.BytesIO(raw))
     assert img.size[0] >= totp_qr.QR_MIN_PX
     assert img.size[1] >= totp_qr.QR_MIN_PX
-    # Corner quiet zone should be white (high contrast pad).
     assert img.getpixel((0, 0)) == (255, 255, 255)
-    # Markup wraps PNG for the setup page.
-    markup = totp_qr.qr_markup(uri)
-    assert 'src="data:image/png;base64,' in markup
-    assert "qr-img" in markup
 
 
 def test_setup_page_qr_payload_is_otpauth(monkeypatch, tmp_path):
@@ -158,7 +193,8 @@ def test_setup_page_qr_payload_is_otpauth(monkeypatch, tmp_path):
     response = client.get("/setup/qr", params={"token": raw})
     assert response.status_code == 200
     body = response.text
-    assert 'src="data:image/png;base64,' in body
+    qr_chunk = body.split('class="qr-wrap"', 1)[1].split("</div>", 1)[0]
+    _assert_qr_markup_scannable(qr_chunk)
     assert "Enter a setup key" in body or "Manual setup key" in body
     assert totp_qr.format_manual_key(TEST_SECRET) in body
     # Reconstruct expected URI; page must not embed the enroll https link as QR text.

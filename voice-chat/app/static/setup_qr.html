@@ -51,20 +51,18 @@
       line-height: 0;
       margin: 0 0 12px;
     }
+    /* Fixed CSS size — avoid shrink/scale that softens QR modules for cameras. */
     .qr-wrap .qr-img,
-    .qr-wrap img {
-      width: min(280px, 72vw);
-      height: auto;
+    .qr-wrap img,
+    .qr-wrap svg {
+      width: 280px;
+      max-width: 100%;
+      height: 280px;
       display: block;
+      background: #ffffff;
       image-rendering: pixelated;
       image-rendering: crisp-edges;
-      background: #ffffff;
-    }
-    .qr-wrap svg {
-      width: min(280px, 72vw);
-      height: auto;
-      display: block;
-      background: #ffffff;
+      shape-rendering: crispEdges;
     }
     .scan-tip {
       margin: 0 0 20px;
