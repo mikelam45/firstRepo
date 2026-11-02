@@ -2,11 +2,13 @@
 # Control LingoCoach app systemd unit + status (app health + Caddy).
 #
 # Usage (from voice-chat/ on the VPS):
-#   ./lingocoachctl.sh install|start|stop|restart|status|stop-all
+#   ./lingocoachctl.sh install|start|stop|restart|status|stop-all|qr|new-qr
 #
 # stop      — stop app unit only (Caddy keeps serving; upstream may 502)
 # stop-all  — stop app unit and caddy.service
 # status    — OK/FAIL for unit, loopback /health, caddy, optional public URL
+# qr        — mint a fresh one-time Authenticator QR enroll URL (~20 min TTL)
+# new-qr    — alias for qr
 #
 # Never prints secrets from lingocoach.env.
 set -euo pipefail
@@ -17,6 +19,7 @@ UNIT_NAME="lingocoach.service"
 INTERNAL_PORT="${LINGOCOACH_INTERNAL_PORT:-${INTERNAL_PORT:-18066}}"
 HTTPS_PORT="${LINGOCOACH_HTTPS_PORT:-${HTTPS_PORT:-8066}}"
 PUBLIC_DOMAIN_DEFAULT="103-195-5-86.as-cloud-xip.com"
+PUBLIC_BASE_DEFAULT="https://${PUBLIC_DOMAIN_DEFAULT}:8066"
 
 # shellcheck source=local-common.sh
 . ./local-common.sh
@@ -69,21 +72,33 @@ resolve_env_file() {
   printf '%s' "${HOME}/lingocoach.env"
 }
 
+# Read KEY=value from env file without sourcing (avoids executing secrets as shell).
+env_file_get() {
+  local key="$1" f line val
+  f="$(resolve_env_file)"
+  [[ -f "$f" ]] || return 0
+  line="$(grep -E "^[[:space:]]*(export[[:space:]]+)?${key}=" "$f" | head -n1 || true)"
+  [[ -n "$line" ]] || return 0
+  val="${line#*=}"
+  val="${val#\"}"
+  val="${val%\"}"
+  val="${val#\'}"
+  val="${val%\'}"
+  val="${val#"${val%%[![:space:]]*}"}"
+  val="${val%"${val##*[![:space:]]}"}"
+  printf '%s' "$val"
+}
+
 resolve_domain() {
   local d="${LINGOCOACH_DOMAIN:-${DOMAIN:-${VPS_HOST:-}}}"
   if [[ -z "$d" ]]; then
-    local f line
-    f="$(resolve_env_file)"
-    if [[ -f "$f" ]]; then
-      line="$(grep -E '^[[:space:]]*(export[[:space:]]+)?(LINGOCOACH_DOMAIN|DOMAIN|VPS_HOST)=' "$f" | head -n1 || true)"
-      if [[ -n "$line" ]]; then
-        d="${line#*=}"
-        d="${d#\"}"
-        d="${d%\"}"
-        d="${d#\'}"
-        d="${d%\'}"
-      fi
-    fi
+    d="$(env_file_get LINGOCOACH_DOMAIN)"
+  fi
+  if [[ -z "$d" ]]; then
+    d="$(env_file_get DOMAIN)"
+  fi
+  if [[ -z "$d" ]]; then
+    d="$(env_file_get VPS_HOST)"
   fi
   d="${d#"${d%%[![:space:]]*}"}"
   d="${d%"${d##*[![:space:]]}"}"
@@ -92,6 +107,50 @@ resolve_domain() {
   d="${d%%/*}"
   d="${d%%:*}"
   printf '%s' "$d"
+}
+
+# Public HTTPS base for QR enroll links (no trailing slash).
+resolve_public_base() {
+  local base="${LINGOCOACH_PUBLIC_BASE:-${PUBLIC_BASE:-}}"
+  if [[ -z "$base" ]]; then
+    base="$(env_file_get LINGOCOACH_PUBLIC_BASE)"
+  fi
+  if [[ -z "$base" ]]; then
+    base="$(env_file_get PUBLIC_BASE)"
+  fi
+  if [[ -z "$base" ]]; then
+    local domain port
+    domain="$(resolve_domain)"
+    port="${LINGOCOACH_HTTPS_PORT:-${HTTPS_PORT:-}}"
+    if [[ -z "$port" ]]; then
+      port="$(env_file_get LINGOCOACH_HTTPS_PORT)"
+    fi
+    if [[ -z "$port" ]]; then
+      port="$(env_file_get HTTPS_PORT)"
+    fi
+    port="${port:-8066}"
+    if [[ -n "$domain" ]]; then
+      base="https://${domain}:${port}"
+    fi
+  fi
+  if [[ -z "$base" ]]; then
+    base="$PUBLIC_BASE_DEFAULT"
+  fi
+  base="${base%/}"
+  printf '%s' "$base"
+}
+
+# Export TOTP-related vars from env file into the current shell (for qr mint).
+# Does not echo values.
+load_totp_env() {
+  local key val
+  for key in LINGOCOACH_TOTP_SECRET TOTP_SECRET LINGOCOACH_PUBLIC_BASE PUBLIC_BASE \
+             LINGOCOACH_DOMAIN DOMAIN VPS_HOST LINGOCOACH_HTTPS_PORT HTTPS_PORT; do
+    val="$(env_file_get "$key")"
+    if [[ -n "$val" && -z "${!key:-}" ]]; then
+      export "${key}=${val}"
+    fi
+  done
 }
 
 ensure_venv() {
@@ -315,7 +374,7 @@ cmd_qr() {
 }
 
 usage() {
-  sed -n '2,13p' "${SCRIPT_DIR}/lingocoachctl.sh"
+  sed -n '2,13p' "$0"
 }
 
 cmd="${1:-}"
