@@ -1,4 +1,4 @@
-import { IllustratedPortrait, Portrait, englishVisemes, pinyinVisemes } from "./face.js?v=20261102-roster";
+import { IllustratedPortrait, Portrait, englishVisemes, pinyinVisemes } from "./face.js?v=20261102-expr";
 import { collectTranscript, recognitionLanguage, transcriptPiece } from "./transcript.js";
 
 const I18N = {
@@ -10,6 +10,7 @@ const I18N = {
     teacherHint: "Grammar, words, and phrases",
     correctionMode: "Correction",
     conversationMode: "Conversation",
+    englishTeacherMode: "English teacher",
     history: "History",
     settings: "Settings",
     back: "Back",
@@ -59,7 +60,7 @@ const I18N = {
     yes: "Start new",
     cancel: "Cancel",
     close: "Close",
-    womenMen: "Four coaches, all 27. Correction or conversation in every scene.",
+    womenMen: "Four coaches, all 27. Correction, conversation, or English teacher in every scene.",
     pickCoach: "Choose a coach",
     pickScene: "Choose a scene",
     morePractice: "IELTS practice",
@@ -122,6 +123,7 @@ const I18N = {
     teacherHint: "语法、用词和短语",
     correctionMode: "纠错模式",
     conversationMode: "对话模式",
+    englishTeacherMode: "英语老师",
     history: "历史",
     settings: "设置",
     back: "返回",
@@ -171,7 +173,7 @@ const I18N = {
     yes: "开始新的",
     cancel: "取消",
     close: "关闭",
-    womenMen: "四位教练，都是 27 岁。每个场景都可以纠错或对话。",
+    womenMen: "四位教练，都是 27 岁。每个场景都可以纠错、对话或当英语老师。",
     pickCoach: "选择教练",
     pickScene: "选择场景",
     morePractice: "雅思练习",
@@ -234,6 +236,7 @@ const I18N = {
     teacherHint: "文法、用詞同短語",
     correctionMode: "糾錯模式",
     conversationMode: "對話模式",
+    englishTeacherMode: "英文老師",
     history: "紀錄",
     settings: "設定",
     back: "返回",
@@ -283,7 +286,7 @@ const I18N = {
     yes: "開始新嘅",
     cancel: "取消",
     close: "關閉",
-    womenMen: "四位教練，全部 27 歲。每個場景都可以糾錯或對話。",
+    womenMen: "四位教練，全部 27 歲。每個場景都可以糾錯、對話或當英文老師。",
     pickCoach: "揀教練",
     pickScene: "揀場景",
     morePractice: "雅思練習",
@@ -454,7 +457,7 @@ function saveSettings() {
 function loadTeacherMode() {
   try {
     const v = localStorage.getItem("lingocoach.teacher.mode.v1");
-    if (v === "correction" || v === "conversation") return v;
+    if (v === "correction" || v === "conversation" || v === "teacher") return v;
   } catch (err) {
     /* keep default */
   }
@@ -504,6 +507,7 @@ function roleLabel(item) {
 
 function practiceTarget() {
   if (state.screen === "ielts") return "en";
+  if ((state.teacherMode || "correction") === "teacher") return "en";
   if (ENGLISH_FOCUS.has(state.daily?.scenario_id)) return "en";
   return state.settings.target || "en";
 }
@@ -649,7 +653,7 @@ function bubbleHtml(bubble, index) {
     return `<article class="bubble learner"><div class="said"><div class="row"><p class="text grow">${esc(bubble.text)}</p><button class="icon-btn speak" type="button" data-act="speak" data-index="${index}" aria-label="${esc(t("play"))}">▶</button></div></div>${coachHtml(bubble, index)}</article>`;
   }
   const who = (state.catalogue.partners || []).find((item) => item.id === bubble.partner_id);
-  const lineTarget = ENGLISH_FOCUS.has(state.daily?.scenario_id) ? "en" : state.settings.target;
+  const lineTarget = (state.teacherMode === "teacher" || ENGLISH_FOCUS.has(state.daily?.scenario_id)) ? "en" : state.settings.target;
   const showTranslation = state.settings.support !== lineTarget && bubble.translation;
   let translation = "";
   if (showTranslation && state.settings.level === "beginner") translation = `<p>${esc(bubble.translation)}</p>`;
@@ -669,9 +673,10 @@ function phoneticHtml(bubble) {
 
 function modeToggleHtml() {
   const mode = state.teacherMode || "correction";
-  return `<div class="mode-toggle" role="group" aria-label="${esc(`${t("correctionMode")} / ${t("conversationMode")}`)}">
+  return `<div class="mode-toggle" role="group" aria-label="${esc(`${t("correctionMode")} / ${t("conversationMode")} / ${t("englishTeacherMode")}`)}">
     <button class="mode-btn${mode === "correction" ? " active" : ""}" type="button" data-act="teacher-mode" data-mode="correction">${esc(t("correctionMode"))}</button>
     <button class="mode-btn${mode === "conversation" ? " active" : ""}" type="button" data-act="teacher-mode" data-mode="conversation">${esc(t("conversationMode"))}</button>
+    <button class="mode-btn${mode === "teacher" ? " active" : ""}" type="button" data-act="teacher-mode" data-mode="teacher">${esc(t("englishTeacherMode"))}</button>
   </div>`;
 }
 
@@ -1877,7 +1882,7 @@ async function mountFace() {
       const portrait = new Portrait(canvas);
       portrait.ready = false;
       face = portrait;
-      await portrait.load(who.portrait, who.mesh_url);
+      await portrait.load(who.portrait, who.mesh_url, who.expressions);
       if (token !== mountToken) return;
       portrait.ready = true;
       if (state.speaking) portrait.setMode("speak", state.speaking.mood || "happy");

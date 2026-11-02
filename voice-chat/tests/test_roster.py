@@ -39,6 +39,12 @@ def test_catalogue_roster_and_scenes():
         mesh = STATIC / "avatars" / f"{row['id']}.json"
         assert photo.is_file()
         assert mesh.is_file()
+        exprs = row["expressions"]
+        assert set(exprs) == {"mouth_open", "smile", "eyes_open", "eyes_semi", "brow"}
+        for key, url in exprs.items():
+            stem = url.rsplit("/", 1)[-1]
+            assert (STATIC / "avatars" / stem).is_file()
+            assert stem.startswith(row["id"] + "-")
     scene_ids = [row["id"] for row in catalogue["scenarios"]]
     assert scene_ids == list(MENU_IDS)
     titles = {row["id"]: row["title"]["en"] for row in catalogue["scenarios"]}
@@ -60,7 +66,7 @@ def test_modes_on_all_four_coaches_and_scenes():
     scenes = list(MENU_IDS)
     for partner_id in CHOOSABLE_IDS:
         for scenario_id in scenes:
-            for mode in ("correction", "conversation"):
+            for mode in ("correction", "conversation", "teacher"):
                 settings = dict(SETTINGS)
                 settings["mode"] = mode
                 settings["partner"] = partner_id
@@ -86,6 +92,9 @@ def test_modes_on_all_four_coaches_and_scenes():
                     assert body["coaching"]["corrections"] == []
                     assert body["coaching"]["suggested_reply"] is None
                     assert body["coaching"]["praise"]
+                if mode == "teacher":
+                    assert body["character"]["phonetic_system"] == "ipa-rp"
+                    assert not any("\u4e00" <= ch <= "\u9fff" for ch in body["character"]["text"])
 
 
 def test_hidden_partner_is_remapped_on_turn():
@@ -116,7 +125,7 @@ def test_picker_script_hides_retired_coaches():
         assert hidden not in script
     assert "CHOOSABLE_IDS" in script
     assert "amelia" in script and "mei" in script and "chloe" in script and "celine" in script
-    assert "app.js?v=20261102-roster" in page
+    assert "app.js?v=20261102-expr" in page
 
 
 def test_face_mesh_stays_mouth_only_with_sharp_brows():
@@ -126,6 +135,9 @@ def test_face_mesh_stays_mouth_only_with_sharp_brows():
     assert "brow: speaking ? 0" in src
     assert "lip landmarks are deformed" in src
     assert "chin, cheeks, brows, and head stay still" in src
+    assert "Photo frames (mouth-open / smile / eyes-semi / brow) blend" in src
+    assert "load(imageUrl, meshUrl, expressions)" in src
+    assert "u_smileAmt" in src
     assert ENGLISH_FOCUS_IDS == {"english-teacher", "london-chat"}
 
 
@@ -146,3 +158,51 @@ def test_casual_and_london_force_english():
         assert body["partner_id"] == partner_id
         assert body["character"]["phonetic_system"] == "ipa-rp"
         assert not any("\u4e00" <= ch <= "\u9fff" for ch in body["character"]["text"])
+
+
+def test_english_teacher_mode_in_restaurant_stays_in_scene():
+    body = client.post(
+        "/api/turn",
+        headers={"X-Client-Id": "amelia-restaurant-teacher"},
+        json={
+            "session_id": "amelia-restaurant-teacher",
+            "scenario_id": "hk-cha-chaan-teng",
+            "partner_id": "amelia",
+            "settings": {**SETTINGS, "target": "yue", "support": "en", "mode": "teacher"},
+            "history": [{"role": "learner", "text": "I want go to school yesterday"}],
+            "fired_signals": [],
+        },
+    ).json()
+    assert body["partner_id"] == "amelia"
+    assert body["character"]["phonetic_system"] == "ipa-rp"
+    assert "Amelia" in body["character"]["text"] or body["coaching"]["corrections"]
+    correction = body["coaching"]["corrections"][0]
+    assert correction["type"] == "grammar"
+    assert "wanted" in body["coaching"]["suggested_reply"].lower()
+    assert body["coaching"]["reading_hints"]
+    blob = str(body).lower()
+    assert "you pronounced" not in blob
+    assert "pronunciation was" not in blob
+
+
+def test_home_offers_three_modes():
+    script = (STATIC / "app.js").read_text(encoding="utf-8")
+    assert "englishTeacherMode" in script
+    assert 'data-mode="correction"' in script
+    assert 'data-mode="conversation"' in script
+    assert 'data-mode="teacher"' in script
+
+
+def test_expression_photos_are_photographic_and_distinct():
+    kinds = ("mouth-open", "smile", "eyes-open", "eyes-semi", "brow")
+    for partner_id in CHOOSABLE_IDS:
+        rest = (STATIC / "avatars" / f"{partner_id}.jpg").read_bytes()
+        assert rest[:3] == b"\xff\xd8\xff"
+        for kind in kinds:
+            path = STATIC / "avatars" / f"{partner_id}-{kind}.jpg"
+            data = path.read_bytes()
+            assert data[:3] == b"\xff\xd8\xff"
+            if kind == "eyes-open":
+                assert data == rest
+            else:
+                assert data != rest

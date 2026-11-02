@@ -206,10 +206,12 @@ export class Portrait {
     this.shown = { open: 0, round: 0, wide: 0, jaw: 0, press: 0, smile: 0.08, brow: 0, look: 0, nod: 0, blink: 0 };
     this.nextBlink = performance.now() + 800;
     this.blinkStart = -1;
+    this.exprReady = false;
+    this.exprTex = null;
     this._buildProgram();
   }
 
-  async load(imageUrl, meshUrl) {
+  async load(imageUrl, meshUrl, expressions) {
     const [mesh, image] = await Promise.all([
       fetch(meshUrl).then((r) => r.json()),
       loadImage(imageUrl),
@@ -221,13 +223,7 @@ export class Portrait {
     this.posed = this.rest.map((p) => [p[0], p[1]]);
     const gl = this.gl;
     gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
-    this.texture = gl.createTexture();
-    gl.bindTexture(gl.TEXTURE_2D, this.texture);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
+    this.texture = this._makeTex(image);
     this.pos = new Float32Array(this.rest.length * 2);
     this.uv = new Float32Array(this.rest.length * 2);
     this.rest.forEach((p, i) => {
@@ -248,7 +244,88 @@ export class Portrait {
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.indexBuf);
     gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, idx, gl.STATIC_DRAW);
     this.indexCount = idx.length;
+    this._bindMasks();
+    this.exprReady = false;
+    this.exprTex = null;
+    if (expressions && expressions.mouth_open) {
+      const keys = ["mouth_open", "smile", "eyes_semi", "brow"];
+      const loaded = {};
+      await Promise.all(keys.map(async (key) => {
+        const url = expressions[key];
+        if (!url) return;
+        try {
+          loaded[key] = await loadImage(url);
+        } catch (err) {
+          /* keep rest photo */
+        }
+      }));
+      if (loaded.mouth_open && loaded.smile && loaded.eyes_semi && loaded.brow) {
+        this.exprTex = {
+          mouth: this._makeTex(loaded.mouth_open),
+          smile: this._makeTex(loaded.smile),
+          semi: this._makeTex(loaded.eyes_semi),
+          brow: this._makeTex(loaded.brow),
+        };
+        this.exprReady = true;
+      }
+    }
     this.resize();
+  }
+
+  _makeTex(image) {
+    const gl = this.gl;
+    const tex = gl.createTexture();
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
+    return tex;
+  }
+
+  _bindMasks() {
+    const gl = this.gl;
+    const n = this.rest.length;
+    const mouth = new Float32Array(n);
+    const eye = new Float32Array(n);
+    const brow = new Float32Array(n);
+    const rest = this.rest;
+    const faceCount = this.faceCount;
+    const mw = Math.hypot(rest[61][0] - rest[291][0], rest[61][1] - rest[291][1]) || 0.14;
+    const mx = (rest[61][0] + rest[291][0]) / 2;
+    const my = (rest[13][1] + rest[14][1]) / 2;
+    const eyeL = [(rest[33][0] + rest[133][0]) / 2, (rest[159][1] + rest[145][1]) / 2];
+    const eyeR = [(rest[362][0] + rest[263][0]) / 2, (rest[386][1] + rest[374][1]) / 2];
+    const browL = rest[105];
+    const browR = rest[334];
+    const lids = new Set([...LID_UPPER_L, ...LID_LOWER_L, ...LID_UPPER_R, ...LID_LOWER_R]);
+    const brows = new Set([...BROW_L, ...BROW_R]);
+    for (let i = 0; i < faceCount; i++) {
+      const p = rest[i];
+      const dm = Math.hypot(p[0] - mx, p[1] - my) / mw;
+      mouth[i] = isLip(i) ? 1 : Math.max(0, 1 - dm / 0.85);
+      const de = Math.min(
+        Math.hypot(p[0] - eyeL[0], p[1] - eyeL[1]),
+        Math.hypot(p[0] - eyeR[0], p[1] - eyeR[1]),
+      ) / mw;
+      eye[i] = lids.has(i) ? 1 : Math.max(0, 1 - de / 0.55);
+      const db = Math.min(
+        Math.hypot(p[0] - browL[0], p[1] - browL[1]),
+        Math.hypot(p[0] - browR[0], p[1] - browR[1]),
+      ) / mw;
+      brow[i] = brows.has(i) ? 1 : Math.max(0, 1 - db / 0.5);
+    }
+    this.mouthMaskBuf = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.mouthMaskBuf);
+    gl.bufferData(gl.ARRAY_BUFFER, mouth, gl.STATIC_DRAW);
+    this.eyeMaskBuf = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.eyeMaskBuf);
+    gl.bufferData(gl.ARRAY_BUFFER, eye, gl.STATIC_DRAW);
+    this.browMaskBuf = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.browMaskBuf);
+    gl.bufferData(gl.ARRAY_BUFFER, brow, gl.STATIC_DRAW);
   }
 
   resize() {
@@ -302,6 +379,7 @@ export class Portrait {
       else this.blinkStart = -1;
     }
     // Speak mode is mouth-only: no smile/brow/cheek/chin so the brow mesh stays sharp.
+    // Photo frames (mouth-open / smile / eyes-semi / brow) blend in the shader for blink/speak/smile.
     const smile = speaking ? 0 : mood.smile;
     const target = {
       open: shape.open,
@@ -321,6 +399,11 @@ export class Portrait {
     this._teeth();
   }
 
+  _exprScale() {
+    // Photo frames carry most of the expression; keep residual mesh so visemes still read.
+    return this.exprReady ? 0.4 : 1;
+  }
+
   _pose() {
     const rest = this.rest;
     const pts = this.posed;
@@ -338,10 +421,11 @@ export class Portrait {
     // Closed photos keep the inner lip on one line. Split that line by landmark
     // so the upper lip rises and the lower lip drops. During speech only the
     // lip landmarks are deformed; the chin, cheeks, brows, and head stay still.
+    const meshMul = this._exprScale();
     const shut = 1 - s.press * 0.92;
-    const U = s.open * limits.up * shut;
-    const D = s.open * limits.down * shut;
-    const chinDrop = s.jaw * (limits.jaw || limits.down * 0.45) * shut;
+    const U = s.open * limits.up * shut * meshMul;
+    const D = s.open * limits.down * shut * meshMul;
+    const chinDrop = s.jaw * (limits.jaw || limits.down * 0.45) * shut * meshMul;
     const lipTop = limits.lipTop;
     const nose = limits.nose;
     const chinY = limits.chin;
@@ -380,10 +464,10 @@ export class Portrait {
       let dxPx = 0;
       let smileDy = 0;
       if ((!speaking || lip) && !aboveLip) {
-        dxPx = side * s.wide * mw * 0.05 * corner - side * s.round * mw * 0.2 * corner;
+        dxPx = side * s.wide * mw * 0.05 * corner * meshMul - side * s.round * mw * 0.2 * corner * meshMul;
         if (!speaking) {
-          smileDy = s.smile * mw * 0.05 * corner;
-          dxPx += side * s.smile * mw * 0.02 * corner;
+          smileDy = s.smile * mw * 0.05 * corner * meshMul;
+          dxPx += side * s.smile * mw * 0.02 * corner * meshMul;
         }
       }
       dy -= smileDy;
@@ -392,11 +476,11 @@ export class Portrait {
     }
     this.mouth = { cx, cy, mw };
     if (!speaking) {
-      const lift = s.smile * mw * 0.12;
+      const lift = s.smile * mw * 0.12 * meshMul;
       for (const i of CHEEK_L.concat(CHEEK_R)) pts[i][1] -= lift;
-      for (const i of BROW_L.concat(BROW_R)) pts[i][1] = rest[i][1] - s.brow * mw * 0.32;
-      pts[107][1] -= s.brow * mw * 0.12;
-      pts[336][1] -= s.brow * mw * 0.12;
+      for (const i of BROW_L.concat(BROW_R)) pts[i][1] = rest[i][1] - s.brow * mw * 0.32 * meshMul;
+      pts[107][1] -= s.brow * mw * 0.12 * meshMul;
+      pts[336][1] -= s.brow * mw * 0.12 * meshMul;
     }
     this._blink(LID_UPPER_L, LID_LOWER_L, s.blink);
     this._blink(LID_UPPER_R, LID_LOWER_R, s.blink);
@@ -443,9 +527,37 @@ export class Portrait {
     gl.enableVertexAttribArray(this.aUv);
     gl.vertexAttribPointer(this.aUv, 2, gl.FLOAT, false, 0, 0);
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.indexBuf);
+    this._bindAttr(this.aMouth, this.mouthMaskBuf, 1);
+    this._bindAttr(this.aEye, this.eyeMaskBuf, 1);
+    this._bindAttr(this.aBrow, this.browMaskBuf, 1);
+    gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, this.texture);
     gl.uniform1i(this.uTex, 0);
+    const expr = this.exprReady && this.exprTex;
+    gl.uniform1f(this.uHas, expr ? 1 : 0);
+    const bindExpr = (unit, loc, tex) => {
+      gl.activeTexture(gl.TEXTURE0 + unit);
+      gl.bindTexture(gl.TEXTURE_2D, (expr && tex) || this.texture);
+      gl.uniform1i(loc, unit);
+    };
+    bindExpr(1, this.uMouth, expr ? this.exprTex.mouth : null);
+    bindExpr(2, this.uSmile, expr ? this.exprTex.smile : null);
+    bindExpr(3, this.uSemi, expr ? this.exprTex.semi : null);
+    bindExpr(4, this.uBrowTex, expr ? this.exprTex.brow : null);
+    const s = this.shown;
+    gl.uniform1f(this.uOpen, s.open || 0);
+    gl.uniform1f(this.uSmileAmt, s.smile || 0);
+    gl.uniform1f(this.uBlink, s.blink || 0);
+    gl.uniform1f(this.uBrowAmt, s.brow || 0);
     gl.drawElements(gl.TRIANGLES, this.indexCount, gl.UNSIGNED_SHORT, 0);
+  }
+
+  _bindAttr(loc, buf, size) {
+    if (loc < 0 || !buf) return;
+    const gl = this.gl;
+    gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+    gl.enableVertexAttribArray(loc);
+    gl.vertexAttribPointer(loc, size, gl.FLOAT, false, 0, 0);
   }
 
   _teeth() {
@@ -524,9 +636,14 @@ export class Portrait {
       ctx.restore();
     }
     const gl = this.gl;
+    if (this.uHas) gl.uniform1f(this.uHas, 0);
+    if (this.aMouth >= 0) gl.disableVertexAttribArray(this.aMouth);
+    if (this.aEye >= 0) gl.disableVertexAttribArray(this.aEye);
+    if (this.aBrow >= 0) gl.disableVertexAttribArray(this.aBrow);
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
     gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+    gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, this.teethTex);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, canvas);
     const fan = new Float32Array((poly.length + 2) * 2);
@@ -561,17 +678,56 @@ export class Portrait {
     const vs = compile(gl, gl.VERTEX_SHADER, `
       attribute vec2 a_pos;
       attribute vec2 a_uv;
+      attribute float a_mouth;
+      attribute float a_eye;
+      attribute float a_brow;
       varying vec2 v_uv;
+      varying float v_mouth;
+      varying float v_eye;
+      varying float v_brow;
       void main() {
         v_uv = a_uv;
+        v_mouth = a_mouth;
+        v_eye = a_eye;
+        v_brow = a_brow;
         gl_Position = vec4(a_pos, 0.0, 1.0);
       }`);
     const fs = compile(gl, gl.FRAGMENT_SHADER, `
       precision mediump float;
       uniform sampler2D u_tex;
+      uniform sampler2D u_mouth;
+      uniform sampler2D u_smile;
+      uniform sampler2D u_semi;
+      uniform sampler2D u_brow;
+      uniform float u_has;
+      uniform float u_open;
+      uniform float u_smileAmt;
+      uniform float u_blink;
+      uniform float u_browAmt;
       varying vec2 v_uv;
+      varying float v_mouth;
+      varying float v_eye;
+      varying float v_brow;
       void main() {
-        gl_FragColor = texture2D(u_tex, v_uv);
+        vec4 rest = texture2D(u_tex, v_uv);
+        if (u_has < 0.5) {
+          gl_FragColor = rest;
+          return;
+        }
+        vec4 mouth = texture2D(u_mouth, v_uv);
+        vec4 smile = texture2D(u_smile, v_uv);
+        vec4 semi = texture2D(u_semi, v_uv);
+        vec4 brow = texture2D(u_brow, v_uv);
+        vec4 color = rest;
+        float openW = clamp(u_open * v_mouth, 0.0, 1.0);
+        float smileW = clamp(u_smileAmt * v_mouth * (1.0 - u_open * 0.55), 0.0, 1.0);
+        float blinkW = clamp(u_blink * v_eye, 0.0, 1.0);
+        float browW = clamp(u_browAmt * v_brow * (1.0 - u_blink * 0.35), 0.0, 1.0);
+        color = mix(color, mouth, openW);
+        color = mix(color, smile, smileW);
+        color = mix(color, semi, blinkW);
+        color = mix(color, brow, browW);
+        gl_FragColor = color;
       }`);
     const program = gl.createProgram();
     gl.attachShader(program, vs);
@@ -583,7 +739,19 @@ export class Portrait {
     this.program = program;
     this.aPos = gl.getAttribLocation(program, "a_pos");
     this.aUv = gl.getAttribLocation(program, "a_uv");
+    this.aMouth = gl.getAttribLocation(program, "a_mouth");
+    this.aEye = gl.getAttribLocation(program, "a_eye");
+    this.aBrow = gl.getAttribLocation(program, "a_brow");
     this.uTex = gl.getUniformLocation(program, "u_tex");
+    this.uMouth = gl.getUniformLocation(program, "u_mouth");
+    this.uSmile = gl.getUniformLocation(program, "u_smile");
+    this.uSemi = gl.getUniformLocation(program, "u_semi");
+    this.uBrowTex = gl.getUniformLocation(program, "u_brow");
+    this.uHas = gl.getUniformLocation(program, "u_has");
+    this.uOpen = gl.getUniformLocation(program, "u_open");
+    this.uSmileAmt = gl.getUniformLocation(program, "u_smileAmt");
+    this.uBlink = gl.getUniformLocation(program, "u_blink");
+    this.uBrowAmt = gl.getUniformLocation(program, "u_browAmt");
     this.overlay = document.createElement("canvas");
     this.teethTex = gl.createTexture();
     gl.bindTexture(gl.TEXTURE_2D, this.teethTex);

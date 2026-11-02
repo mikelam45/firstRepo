@@ -141,15 +141,17 @@ canvas.face, img.face {
 .chips { display: flex; gap: 8px; overflow: auto; padding: 8px 16px 0; flex-wrap: wrap; }
 .chip[aria-pressed="true"] { background: var(--accent); color: white; border-color: transparent; }
 .goal { margin: 8px 16px; color: var(--muted); }
-.mode-toggle { display: flex; gap: 8px; margin: 8px 16px 12px; }
+.mode-toggle { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 16px 12px; }
 .mode-btn {
-  flex: 1;
+  flex: 1 1 30%;
   min-height: 36px;
+  min-width: 6.2rem;
   border-radius: 999px;
   border: 1px solid var(--line);
   background: var(--bg-2);
   color: var(--ink);
-  padding: 0 12px;
+  padding: 0 10px;
+  font-size: 0.88rem;
 }
 .mode-btn.active {
   background: var(--accent);

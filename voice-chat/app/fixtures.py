@@ -50,6 +50,8 @@ def build_fixture(payload: dict, scenario: dict) -> dict:
         return _safety(scenario, target)
     if settings.get("mode") == "conversation":
         return _conversation_turn(payload, scenario, name)
+    if settings.get("mode") == "teacher":
+        return _teacher_mode_turn(payload, scenario, name)
     if not history:
         text = _opening(scenario["id"], target, level, name)
         return _pack(text, None, target, support, [], "open")
@@ -106,6 +108,37 @@ def _conversation_turn(payload: dict, scenario: dict, name: str) -> dict:
     )
     coaching = {"praise": praise, "corrections": [], "suggested_reply": None, "reading_hints": []}
     return _pack(text, coaching, target, support, fired, "open")
+
+
+def _teacher_mode_turn(payload: dict, scenario: dict, name: str) -> dict:
+    settings = payload["settings"]
+    history = payload["history"]
+    support = settings["support"]
+    level = settings["level"]
+    allowed = signal_ids(scenario)
+    if _refused(history):
+        return _safety(scenario, "en")
+    if not history:
+        return _pack(_teacher_opening(scenario["id"], name), None, "en", support, [], "open")
+    fired = _signals_in_history(scenario["id"], history)
+    fired = union_signals(payload.get("fired_signals") or [], fired, allowed)
+    including = turns_remaining_including_this(level, history)
+    learner = _last_learner(history)
+    coaching = _teacher_coaching(learner, support)
+    text = _teacher_line(learner)
+    if learner_count(history) > 0 and including <= 1:
+        text = "Let us stop here for today."
+    return _pack(text, coaching, "en", support, fired, "open")
+
+
+def _teacher_opening(scenario_id: str, name: str) -> str:
+    if scenario_id == "hk-cha-chaan-teng":
+        return f"Hello, I am {name}. Order in English and I will help with the words."
+    if scenario_id == "london-directions":
+        return f"Hello, I am {name}. Ask the way in English and I will help."
+    if scenario_id == "london-chat":
+        return f"Hello, I am {name}. Let's practise London English."
+    return f"Hello, I am {name}. Send me a sentence and I will help with the English."
 
 
 def _conversation_opening(scenario_id: str, target: str, name: str) -> str:
@@ -735,6 +768,14 @@ def _translate(text: str, support: str) -> str:
     }
     if text in table:
         return table[text][{"en": 0, "cmn": 1, "yue": 2}[support]]
+    if "Order in English and I will help with the words." in text:
+        return _t(support, text, "用英语点餐，我来帮你改用词。", "用英文叫餐，我幫你改用詞。")
+    if "Ask the way in English and I will help." in text:
+        return _t(support, text, "用英语问路，我来帮你。", "用英文問路，我幫你。")
+    if "Let's practise London English." in text:
+        return _t(support, text, "我们来练习伦敦英语。", "我哋嚟練習倫敦英語。")
+    if "Send me a sentence and I will help with the English." in text:
+        return _t(support, text, "发我一句英语，我来帮你改。", "傳一句英文畀我，我幫你改。")
     if support == "en":
         return "Reply in the scene."
     if support == "cmn":

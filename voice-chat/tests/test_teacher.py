@@ -113,6 +113,8 @@ def test_teacher_page_offers_chloe_and_celine():
     assert "celine" in script
     assert "amelia" in script
     assert "mei" in script
+    assert "englishTeacherMode" in script
+    assert 'data-mode="teacher"' in script
     scene_ids = [row["id"] for row in catalogue["scenarios"]]
     assert "hk-cha-chaan-teng" in scene_ids
     assert "london-chat" in scene_ids

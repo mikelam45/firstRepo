@@ -200,8 +200,21 @@ def get_choosable_partner(partner_id: str | None) -> dict:
     return _BY_ID[choose_partner(partner_id)]
 
 
+EXPR_FILES = {
+    "mouth_open": "mouth-open",
+    "smile": "smile",
+    "eyes_open": "eyes-open",
+    "eyes_semi": "eyes-semi",
+    "brow": "brow",
+}
+
+
+def expression_urls(partner_id: str) -> dict:
+    return {key: f"/static/avatars/{partner_id}-{stem}.jpg" for key, stem in EXPR_FILES.items()}
+
+
 def public_partner(partner: dict) -> dict:
-    return {
+    row = {
         "id": partner["id"],
         "name": partner["name"],
         "gender": partner["gender"],
@@ -217,3 +230,6 @@ def public_partner(partner: dict) -> dict:
         "palette": partner["palette"],
         "role": partner.get("role"),
     }
+    if partner.get("mesh"):
+        row["expressions"] = expression_urls(partner["id"])
+    return row

@@ -131,16 +131,20 @@ def resolve_provider():
     return OpenRouterProvider(key)
 
 
+def is_teacher_mode(settings: dict | None) -> bool:
+    return (settings or {}).get("mode") == "teacher"
+
+
 def handle_turn(payload: dict, provider=None) -> dict:
     scenario = get_scenario(payload["scenario_id"])
-    if is_english_focus(scenario["id"]):
+    if is_english_focus(scenario["id"]) or is_teacher_mode(payload.get("settings")):
         settings = dict(payload["settings"])
         settings["target"] = "en"
         payload = dict(payload)
         payload["settings"] = settings
     partner = get_choosable_partner(payload.get("partner_id") or payload["settings"].get("partner"))
     provider = provider or resolve_provider()
-    if is_english_focus(scenario["id"]):
+    if is_english_focus(scenario["id"]) or is_teacher_mode(payload["settings"]):
         route = "roleplay"
     else:
         route = route_for_turn(payload["settings"]["target"], payload["settings"]["support"])
@@ -224,8 +228,7 @@ def build_messages(payload: dict, scenario: dict, partner: dict) -> list[dict]:
             "",
             "OPENING_HINT:",
             scenario["opening_hint"][settings["level"]].replace("{name}", partner["name"]),
-            _correction_rules(scenario, partner) if settings.get("mode") != "conversation" else "",
-            _conversation_rules(scenario, partner, settings["target"]) if settings.get("mode") == "conversation" else "",
+            _mode_rules(scenario, partner, settings),
         ]
     )
     user = {
@@ -241,6 +244,7 @@ def build_messages(payload: dict, scenario: dict, partner: dict) -> list[dict]:
             "level": settings["level"],
             "script": settings["script"],
             "accent": settings["accent"],
+            "mode": settings.get("mode") or "correction",
         },
         "history": [{"role": item["role"], "text": item["text"]} for item in payload["history"][-12:]],
     }
@@ -248,6 +252,34 @@ def build_messages(payload: dict, scenario: dict, partner: dict) -> list[dict]:
         {"role": "system", "content": system},
         {"role": "user", "content": json.dumps(user, ensure_ascii=False)},
     ]
+
+
+def _mode_rules(scenario: dict, partner: dict, settings: dict) -> str:
+    mode = settings.get("mode") or "correction"
+    if mode == "conversation":
+        return _conversation_rules(scenario, partner, settings["target"])
+    if mode == "teacher":
+        return _teacher_mode_rules(scenario, partner)
+    return _correction_rules(scenario, partner)
+
+
+def _teacher_mode_rules(scenario: dict, partner: dict) -> str:
+    return "\n".join(
+        [
+            "",
+            "ENGLISH_TEACHER_MODE:",
+            f"You are {partner['name']}, an English teacher, staying in this scene.",
+            "character.text is English only, one or two short sentences, in a teacher's voice that still fits the scene.",
+            "Teach English here: restaurant orders, asking for directions, casual chat, or London English, matching SCENARIO.",
+            "Correction types: grammar, vocabulary for a wrong word, phrase for a wrong phrase.",
+            "Each quote must be an exact substring of the learner's latest line.",
+            "If the sentence already works, corrections is empty and suggested_reply is null.",
+            "Leave reading_hints as an empty array. The server writes how a word is read.",
+            "Coaching explanations use SUPPORT_LANG only.",
+            "You cannot hear the learner. Do not score pronunciation.",
+            'Never write "you pronounced", "pronunciation was", or "your tone".',
+        ]
+    )
 
 
 def _correction_rules(scenario: dict, partner: dict) -> str:
@@ -379,7 +411,7 @@ def normalize_turn(raw: dict, payload: dict, scenario: dict) -> dict:
             coaching["corrections"] = []
             coaching["suggested_reply"] = None
             coaching["reading_hints"] = []
-        elif is_english_focus(scenario["id"]) or settings.get("target") == "en":
+        elif is_english_focus(scenario["id"]) or settings.get("target") == "en" or is_teacher_mode(settings):
             learner = _latest_learner(payload)
             coaching["reading_hints"] = _english_reading_hints(
                 learner,
@@ -675,8 +707,8 @@ def validate_request(body: Any) -> dict:
     if settings.get("accent") not in {"en-GB", "en-US"}:
         raise ServiceError(400, "invalid_request", "accent must be en-GB or en-US.")
     settings = dict(settings)
-    if settings.get("mode") not in {None, "correction", "conversation"}:
-        raise ServiceError(400, "invalid_request", "mode must be correction or conversation.")
+    if settings.get("mode") not in {None, "correction", "conversation", "teacher"}:
+        raise ServiceError(400, "invalid_request", "mode must be correction, conversation, or teacher.")
     settings["mode"] = settings.get("mode") or "correction"
     if settings.get("pinyin_tone") not in {None, "mark", "number"}:
         raise ServiceError(400, "invalid_request", "pinyin_tone must be mark or number.")
