@@ -97,7 +97,7 @@ cd ~/lingocoach/voice-chat
 # equivalent: .venv/bin/python -m app.totp_setup --qr-link
 ```
 
-That prints `https://103-195-5-86.as-cloud-xip.com:8066/setup/qr?token=…` (shape: `/setup/qr?token=<high-entropy>`). Open it **once on the Mac** (Chrome). Leave the page open (do not refresh).
+That prints `https://103-195-5-86.as-cloud-xip.com:8066/setup/qr?token=…` (shape: `/setup/qr?token=<high-entropy>`). Every `qr` / `new-qr` call mints a **new** random `?token=` (overwrites hashed `.totp_qr_token` and invalidates any previous enroll URL immediately). Open the **latest** URL **once on the Mac** (Chrome). Leave the page open (do not refresh).
 
 **Primary — scan with iPhone Camera (matches GA “請改用相機”):**
 
@@ -113,7 +113,7 @@ That prints `https://103-195-5-86.as-cloud-xip.com:8066/setup/qr?token=…` (sha
 3. Paste the large base32 key (Copy). Spaces are optional.
 4. Tap **Add**, then `/login`.
 
-**On the phone browser:** tap **Open in Authenticator** (otpauth:// deep link) if you opened the enroll URL on the phone instead of the Mac. After restart/deploy, remint with `./lingocoachctl.sh qr`. The token is stored **hashed** in gitignored `voice-chat/.totp_qr_token` (mode 600), expires in ~20 minutes, and is **invalidated after the first successful page load**. A refresh or second visit returns 404.
+**On the phone browser:** tap **Open in Authenticator** (otpauth:// deep link) if you opened the enroll URL on the phone instead of the Mac. After restart/deploy, remint with `./lingocoachctl.sh qr` (or `new-qr`) and use the newly printed URL — do not reuse an older `?token=` from chat/history. The token is stored **hashed** in gitignored `voice-chat/.totp_qr_token` (mode 600), expires in ~20 minutes, is **replaced on every remint**, and is **invalidated after the first successful page load**. A refresh or second visit returns 404.
 
 When `LINGOCOACH_TOTP_SECRET` / `TOTP_SECRET` / `.totp_secret` is absent, the gate stays off (open access). On a public VPS, keep the secret set.
 

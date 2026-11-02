@@ -1,10 +1,14 @@
 """One-time Authenticator enrollment page (Dinner_recipe-style GA QR).
 
-Mint a high-entropy token (CLI), store only its hash + expiry next to
-.totp_secret (mode 600). GET /setup/qr?token=… shows a large otpauth://
-PNG QR on a light page (Mac Chrome → iPhone Camera / Google Authenticator),
-plus Enter a setup key and an otpauth:// deep link for phone browsers.
-First successful page load invalidates the token. TTL defaults to 20 minutes.
+Every CLI mint (``python -m app.totp_qr`` / ``./lingocoachctl.sh qr`` /
+``new-qr``) generates a fresh cryptographically random one-time token via
+``secrets.token_urlsafe``, stores only its hash + expiry next to
+.totp_secret (mode 600), and immediately invalidates any previous token.
+Never reuses an unexpired record; never derives the token from the TOTP
+secret. GET /setup/qr?token=… shows a large otpauth:// PNG QR on a light
+page (Mac Chrome → iPhone Camera / Google Authenticator), plus Enter a
+setup key and an otpauth:// deep link for phone browsers. First successful
+page load also invalidates the token. TTL defaults to 20 minutes.
 
 QR modules encode otpauth://totp/… only — never the HTTPS enroll URL.
 iPhone GA’s “請改用相機” flow: open Camera, point at the Mac QR, Add.
@@ -12,6 +16,7 @@ iPhone GA’s “請改用相機” flow: open Camera, point at the Mac QR, Add.
 Usage (from voice-chat/):
   .venv/bin/python -m app.totp_qr
   .venv/bin/python -m app.totp_setup --qr-link
+  ./lingocoachctl.sh qr   # alias: new-qr
 
 Public URL is built from LINGOCOACH_PUBLIC_BASE, or
 LINGOCOACH_DOMAIN + LINGOCOACH_HTTPS_PORT (default 8066). Example host:
@@ -75,9 +80,32 @@ def _hash_token(raw: str) -> str:
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
+def _invalidate_token_file() -> None:
+    """Remove any existing enroll-token record (previous raw tokens stop working)."""
+    try:
+        _TOKEN_FILE.unlink(missing_ok=True)
+    except OSError:
+        pass
+
+
 def _write_token_record(token_hash: str, exp: int) -> None:
+    """Atomically replace `.totp_qr_token` with hashed token + expiry (mode 600)."""
     payload = json.dumps({"v": 1, "hash": token_hash, "exp": exp}, separators=(",", ":"))
-    _TOKEN_FILE.write_text(payload + "\n", encoding="utf-8")
+    _TOKEN_FILE.parent.mkdir(parents=True, exist_ok=True)
+    tmp = _TOKEN_FILE.with_name(_TOKEN_FILE.name + ".tmp")
+    try:
+        tmp.write_text(payload + "\n", encoding="utf-8")
+        try:
+            os.chmod(tmp, 0o600)
+        except OSError:
+            pass
+        os.replace(tmp, _TOKEN_FILE)
+    except Exception:
+        try:
+            tmp.unlink(missing_ok=True)
+        except OSError:
+            pass
+        raise
     try:
         os.chmod(_TOKEN_FILE, 0o600)
     except OSError:
@@ -103,15 +131,29 @@ def _read_token_record() -> dict | None:
     exp = data.get("exp")
     if not isinstance(h, str) or not isinstance(exp, int):
         return None
-    return data
+    # Never persist or return a raw token — only hash + exp are valid.
+    if "raw" in data or "token" in data:
+        logger.warning("Ignoring legacy plaintext fields in enroll token file")
+    return {"v": data.get("v", 1), "hash": h, "exp": exp}
 
 
 def mint_enroll_token(ttl_seconds: int = TOKEN_TTL_SECONDS) -> tuple[str, int]:
-    """Create a one-time enroll token. Returns (raw_token, exp_unix)."""
+    """Always mint a fresh one-time enroll token. Returns (raw_token, exp_unix).
+
+    Every call generates a new cryptographically random token via
+    ``secrets.token_urlsafe``, overwrites ``.totp_qr_token`` (hash only), and
+    immediately invalidates any previously minted token. Never reuses an
+    unexpired record, never derives the token from the TOTP secret.
+    """
+    # Invalidate first so a crashed write cannot leave a stale usable token
+    # paired with a newly printed URL from a partial run.
+    _invalidate_token_file()
     raw = secrets.token_urlsafe(TOKEN_BYTES)
+    if not raw or len(raw) < 16:
+        raise RuntimeError("failed to mint enroll token (entropy)")
     exp = int(time.time()) + max(60, int(ttl_seconds))
     _write_token_record(_hash_token(raw), exp)
-    logger.info("TOTP QR enroll token minted (ttl_s=%s); link is one-shot", ttl_seconds)
+    logger.info("TOTP QR enroll token minted (ttl_s=%s); previous tokens invalidated", ttl_seconds)
     return raw, exp
 
 
@@ -527,7 +569,12 @@ def main(argv: list[str] | None = None) -> int:
     raw, exp = mint_enroll_token(ttl_seconds=ttl)
     url = enroll_url(raw, base=base_override)
     # Print only the link + metadata — never the TOTP secret.
+    # Every invocation mints a NEW ?token=; previous enroll URLs are dead.
     print(url)
+    print(
+        f"Fresh one-time token minted (len={len(raw)}); "
+        "previous enroll URLs are now invalid."
+    )
     print(f"Expires in ~{max(0, exp - int(time.time()))}s; works once (first successful page load).")
     print("Open on Mac Chrome; scan with iPhone Camera (or GA). Leave page open. Then /login.")
     return 0

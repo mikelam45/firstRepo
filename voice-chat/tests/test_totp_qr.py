@@ -482,6 +482,71 @@ def test_setup_qr_expired_is_gone(monkeypatch, tmp_path):
     assert TEST_SECRET not in response.text
 
 
+def test_consecutive_mints_produce_different_tokens_and_invalidate_prior(
+    monkeypatch, tmp_path
+):
+    """qr / new-qr must always remint: second mint ≠ first; first is rejected."""
+    import json
+
+    _enable(monkeypatch, tmp_path)
+    monkeypatch.setenv(
+        "LINGOCOACH_PUBLIC_BASE",
+        "https://103-195-5-86.as-cloud-xip.com:8066",
+    )
+    raw1, exp1 = totp_qr.mint_enroll_token()
+    path = totp_qr.token_file_path()
+    assert path.is_file()
+    rec1 = json.loads(path.read_text(encoding="utf-8"))
+    assert "hash" in rec1 and "raw" not in rec1 and "token" not in rec1
+    # Token must not be derived from the TOTP secret.
+    assert raw1 != TEST_SECRET
+    assert TEST_SECRET not in raw1
+
+    raw2, exp2 = totp_qr.mint_enroll_token()
+    assert raw1 != raw2
+    assert totp_qr.enroll_url(raw1) != totp_qr.enroll_url(raw2)
+    rec2 = json.loads(path.read_text(encoding="utf-8"))
+    assert rec1["hash"] != rec2["hash"]
+    assert exp2 >= exp1
+
+    # First token is dead immediately after the second mint; second still works.
+    assert totp_qr.consume_enroll_token(raw1) is False
+    assert path.is_file()
+    assert totp_qr.consume_enroll_token(raw2) is True
+    assert totp_qr.consume_enroll_token(raw2) is False
+
+    # Remint after consume: another pair must differ and invalidate prior.
+    raw3, _ = totp_qr.mint_enroll_token()
+    raw4, _ = totp_qr.mint_enroll_token()
+    assert len({raw1, raw2, raw3, raw4}) == 4
+    assert totp_qr.consume_enroll_token(raw3) is False
+    assert totp_qr.consume_enroll_token(raw4) is True
+
+
+def test_cli_remint_prints_distinct_urls(monkeypatch, tmp_path, capsys):
+    """Two CLI mints must print two different ?token= enroll URLs."""
+    _enable(monkeypatch, tmp_path)
+    monkeypatch.setenv(
+        "LINGOCOACH_PUBLIC_BASE",
+        "https://103-195-5-86.as-cloud-xip.com:8066",
+    )
+    assert totp_qr.main([]) == 0
+    out1 = capsys.readouterr().out
+    assert totp_qr.main([]) == 0
+    out2 = capsys.readouterr().out
+    url1 = next(line for line in out1.splitlines() if "/setup/qr?token=" in line)
+    url2 = next(line for line in out2.splitlines() if "/setup/qr?token=" in line)
+    assert url1 != url2
+    token1 = url1.split("token=", 1)[1]
+    token2 = url2.split("token=", 1)[1]
+    assert token1 != token2
+    assert TEST_SECRET not in out1 and TEST_SECRET not in out2
+    assert "previous enroll URLs are now invalid" in out2
+    # Only the latest token is accepted.
+    assert totp_qr.consume_enroll_token(token1) is False
+    assert totp_qr.consume_enroll_token(token2) is True
+
+
 def test_enroll_url_from_public_base(monkeypatch, tmp_path):
     _enable(monkeypatch, tmp_path)
     monkeypatch.setenv(

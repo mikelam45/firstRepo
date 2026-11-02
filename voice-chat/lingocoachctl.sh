@@ -437,10 +437,12 @@ cmd_qr() {
     return 1
   fi
 
-  echo "LingoCoach: minting one-time Authenticator QR enroll link…"
+  echo "LingoCoach: minting a NEW one-time Authenticator QR enroll link…"
   echo "  Public base: ${base}"
+  echo "  Always remints (never reuses ?token=); previous links invalidated immediately."
   echo "  TTL ≈ 20 minutes; single use (first successful page load)."
-  # Prints URL + expiry note; never the TOTP secret.
+  # Always calls Python mint (secrets.token_urlsafe); overwrites .totp_qr_token.
+  # Prints the new HTTPS URL + expiry note; never the TOTP secret.
   LINGOCOACH_PUBLIC_BASE="$base" "$py" -m app.totp_qr --base "$base"
 }
 
