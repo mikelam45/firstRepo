@@ -5,13 +5,15 @@ Every CLI mint (``python -m app.totp_qr`` / ``./lingocoachctl.sh qr`` /
 ``secrets.token_urlsafe``, stores only its hash + expiry next to
 .totp_secret (mode 600), and immediately invalidates any previous token.
 Never reuses an unexpired record; never derives the token from the TOTP
-secret. GET /setup/qr?token=… shows a large otpauth:// PNG QR on a light
-page (Mac Chrome → iPhone Camera / Google Authenticator), plus Enter a
+secret. GET /setup/qr?token=… shows a large otpauth:// SVG-module QR on a
+forced-light island (Mac Chrome display → iPhone Camera), plus Enter a
 setup key and an otpauth:// deep link for phone browsers. First successful
 page load also invalidates the token. TTL defaults to 20 minutes.
 
 QR modules encode otpauth://totp/… only — never the HTTPS enroll URL.
-iPhone GA’s “請改用相機” flow: open Camera, point at the Mac QR, Add.
+iPhone GA’s “請改用相機” flow: open Camera, point at the white square, Add.
+OpenCV-decoding the PNG is not enough — the on-screen QR must stay crisp
+on a Retina Mac (SVG rects + no dark-mode invert).
 
 Usage (from voice-chat/):
   .venv/bin/python -m app.totp_qr
@@ -25,7 +27,6 @@ https://103-195-5-86.as-cloud-xip.com:8066
 
 from __future__ import annotations
 
-import base64
 import hashlib
 import hmac
 import json
@@ -43,14 +44,18 @@ import segno
 
 from app import totp_gate
 
-# Default QR is a segno PNG data-URL (pure-Python wheel: py3-none-any, no
-# Pillow / libjpeg). Target ≥320 CSS px for Mac-monitor → iPhone Camera scan,
-# module scale ≥8–10px, quiet zone ≥4. SVG is last-resort only.
+# On-screen QR is a grid of SVG <rect> modules (same segno matrix as PNG).
+# Chrome rasterizes those rects with shape-rendering:crispEdges, so a Mac
+# Retina display stays hard-edged for iPhone Camera. A CSS-scaled PNG is
+# what OpenCV can decode from bytes while iPhone/GA fail on the monitor.
+# Quiet zone ≥4, prefer 8. Display ~360–420 CSS px. PNG remains a hidden
+# fallback only — never the only scannable surface.
 # Critical: QR *modules* encode otpauth://totp/… only — never the HTTPS
 # /setup/qr?token=… page URL (Camera would open a webpage instead of GA).
-QR_BOX_SIZE = 10  # module scale in px (≥8–10 keeps camera edges hard)
-QR_BORDER = 6  # modules; GA expects ≥4 — extra quiet zone for phone cameras
-QR_MIN_PX = 320  # large enough for cross-device monitor scanning
+QR_BOX_SIZE = 10  # PNG fallback module scale in px
+QR_BORDER = 8  # modules; GA expects ≥4 — 8 helps phone cameras on a monitor
+QR_MIN_PX = 320  # PNG fallback raster size
+QR_DISPLAY_PX = 400  # target on-screen SVG size (360–420 CSS px)
 QR_ERROR = "m"
 _PNG_SIG = b"\x89PNG\r\n\x1a\n"
 
@@ -261,6 +266,22 @@ def _module_px(modules_count: int) -> int:
     return max(QR_BOX_SIZE, (QR_MIN_PX + n - 1) // n)
 
 
+def onpage_display_px(modules_count: int) -> int:
+    """CSS px for the on-screen SVG: integer px/module, about 360–420.
+
+    Integer module size keeps Chrome's crispEdges raster on a Mac display
+    aligned to device pixels (Retina 2x). Prefer 8 CSS px/module when that
+    lands in range; never shrink below 280.
+    """
+    n = max(1, int(modules_count))
+    for module_px in (8, 7, 9, 10, 6):
+        size = n * module_px
+        if 360 <= size <= 420:
+            return size
+    size = n * 8
+    return max(280, min(480, max(size, QR_DISPLAY_PX)))
+
+
 def _segno_qr(otpauth: str) -> tuple[segno.QRCode, str]:
     """Build a segno QR whose payload is exactly the otpauth://totp/ URI."""
     payload = require_otpauth_payload(otpauth)
@@ -440,8 +461,8 @@ def qr_png_bytes(otpauth: str) -> bytes:
 def qr_png_data_url(otpauth: str) -> str:
     """High-contrast black-on-white PNG as a data URL (segno; no Pillow).
 
-    Default enroll-page path. Payload is always otpauth://totp/…
-    (never the /setup/qr HTTPS enroll link).
+    Hidden fallback only. The visible enroll QR is SVG module rects.
+    Payload is always otpauth://totp/… (never the /setup/qr HTTPS link).
     """
     qr, _payload = _segno_qr(otpauth)
     scale = _render_scale(qr)
@@ -453,48 +474,69 @@ def qr_png_data_url(otpauth: str) -> str:
     )
 
 
-def qr_svg_markup(otpauth: str) -> str:
-    """Pure-Python SVG QR fallback (last resort when PNG encode fails).
+def qr_svg_module_markup(otpauth: str) -> str:
+    """On-screen QR: SVG ``<rect>`` per dark run from the segno matrix.
 
-    Prefer PNG — many Authenticator cameras fail on SVG in mobile Safari.
+    This is what Mac Chrome paints onto the display. iPhone Camera photographs
+    those pixels — not the PNG bytes OpenCV decoded. Hard-edged black/white
+    rects with ``shape-rendering="crispEdges"`` stay scannable on Retina;
+    a CSS-scaled ``<img>`` PNG does not.
     """
     qr, _payload = _segno_qr(otpauth)
-    scale = _render_scale(qr)
-    svg = qr.svg_inline(
-        scale=scale,
-        border=QR_BORDER,
-        dark="#000000",
-        light="#ffffff",
-        svgclass="qr-img",
-    )
-    if "aria-label=" not in svg:
-        svg = svg.replace(
-            "<svg ",
-            '<svg role="img" aria-label="Authenticator QR code" '
-            'shape-rendering="crispEdges" ',
-            1,
-        )
-    return svg
+    matrix = _matrix_with_quiet_zone(qr)
+    n = len(matrix)
+    if n < 21 + 2 * QR_BORDER:
+        raise RuntimeError("QR matrix unexpectedly small")
+    display = onpage_display_px(n)
+    parts = [
+        '<svg class="qr-svg" role="img" aria-label="Authenticator QR code" ',
+        'xmlns="http://www.w3.org/2000/svg" ',
+        f'viewBox="0 0 {n} {n}" width="{display}" height="{display}" ',
+        'shape-rendering="crispEdges" color-scheme="only light" ',
+        f'data-modules="{n}" data-quiet-zone="{QR_BORDER}">',
+        f'<rect class="qr-bg" x="0" y="0" width="{n}" height="{n}" fill="#ffffff"/>',
+    ]
+    for y, row in enumerate(matrix):
+        x = 0
+        while x < n:
+            if not row[x]:
+                x += 1
+                continue
+            x2 = x + 1
+            while x2 < n and row[x2]:
+                x2 += 1
+            parts.append(
+                f'<rect class="qr-mod" x="{x}" y="{y}" width="{x2 - x}" '
+                f'height="1" fill="#000000"/>'
+            )
+            x = x2
+    parts.append("</svg>")
+    return "".join(parts)
+
+
+def qr_svg_markup(otpauth: str) -> str:
+    """On-screen SVG QR (module rects). Alias used by tests and fallbacks."""
+    return qr_svg_module_markup(otpauth)
 
 
 def qr_markup(otpauth: str) -> str:
-    """Embeddable QR: PNG <img data-URL> by default; SVG only if PNG fails."""
+    """Embeddable QR: visible SVG module grid; hidden PNG ``<img>`` fallback.
+
+    The SVG is the scannable surface on a Mac display. PNG stays for tests /
+    noscript but is not shown (a second on-screen QR confuses finders).
+    """
     require_otpauth_payload(otpauth)
+    svg = qr_svg_module_markup(otpauth)
+    fallback = ""
     try:
         data_url = qr_png_data_url(otpauth)
-        size = QR_MIN_PX
-        try:
-            w, h = png_ihdr_size(base64.b64decode(data_url.split(",", 1)[1]))
-            size = max(QR_MIN_PX, w, h)
-        except Exception:
-            pass
-        return (
-            f'<img class="qr-img" src="{data_url}" width="{size}" '
-            f'height="{size}" alt="Authenticator QR code" decoding="sync"/>'
+        fallback = (
+            f'<img class="qr-png-fallback" hidden src="{data_url}" '
+            f'alt="" width="0" height="0" decoding="sync"/>'
         )
     except Exception:
-        logger.exception("PNG QR encode failed; falling back to SVG")
-        return qr_svg_markup(otpauth)
+        logger.exception("PNG QR fallback encode failed; SVG-only page")
+    return svg + fallback
 
 
 def format_manual_key(secret: str) -> str:
@@ -514,10 +556,10 @@ def _html_attr_escape(value: str) -> str:
 
 
 def render_setup_page(template: str, secret: str, otpauth: str) -> str:
-    """Embed primary otpauth QR, grouped manual key, and otpauth deep link.
+    """Embed primary otpauth SVG QR, grouped manual key, and otpauth deep link.
 
-    otpauth must be otpauth://totp/… — encoded into QR modules (Mac→iPhone
-    Camera) and as a secondary deep-link href for phone browsers.
+    otpauth must be otpauth://totp/… — encoded into on-screen SVG modules
+    (Mac Chrome → iPhone Camera) and as a secondary deep-link href.
     """
     uri = require_otpauth_payload(otpauth)
     markup = qr_markup(uri)
@@ -576,7 +618,10 @@ def main(argv: list[str] | None = None) -> int:
         "previous enroll URLs are now invalid."
     )
     print(f"Expires in ~{max(0, exp - int(time.time()))}s; works once (first successful page load).")
-    print("Open on Mac Chrome; scan with iPhone Camera (or GA). Leave page open. Then /login.")
+    print(
+        "Open on Mac Chrome; scan the white square with iPhone Camera "
+        "(not GA in-app scanner). Leave page open. Then /login."
+    )
     return 0
 
 

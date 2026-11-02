@@ -1,12 +1,14 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="zh-Hant">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
   <title>LingoCoach — Authenticator setup</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23101826'/%3E%3Ccircle cx='16' cy='14' r='7' fill='%23e7eef8'/%3E%3C/svg%3E">
   <style>
-    /* Dinner_recipe-style GA enroll: light page + large otpauth QR for Mac→iPhone Camera. */
+    /* Forced-light enroll page: SVG module QR for Mac monitor → iPhone Camera.
+       Do not CSS-scale a PNG (Retina interpolation). Do not invert in dark mode. */
     :root {
       color-scheme: only light;
       --bg: #f4f6f9;
@@ -27,9 +29,10 @@
       min-height: 100%;
       background: var(--bg);
       color: var(--ink);
+      color-scheme: only light;
     }
     .sheet {
-      width: min(520px, 100%);
+      width: min(560px, 100%);
       min-height: 100dvh;
       margin: 0 auto;
       background: var(--surface);
@@ -48,12 +51,12 @@
       font-size: 1.45rem;
       margin: 0 0 6px;
     }
-    .lede {
-      margin: 0 0 6px;
-      line-height: 1.45;
+    .lede-zh {
+      margin: 0 0 8px;
+      line-height: 1.5;
       font-size: 1.08rem;
     }
-    .lede-zh {
+    .lede {
       margin: 0 0 16px;
       color: var(--muted);
       font-size: 0.98rem;
@@ -78,36 +81,68 @@
     }
     .steps li { margin: 0 0 8px; }
     .steps strong { color: var(--ink); font-weight: 600; }
-    .qr-wrap {
+    /* White QR island: never invert; never round the modules. */
+    .qr-wrap,
+    .qr-island {
       align-self: center;
       color-scheme: only light;
       forced-color-adjust: none;
       background: #ffffff;
-      padding: 32px;
-      border-radius: 8px;
+      padding: 28px;
+      border-radius: 0;
       border: 1px solid var(--line);
       line-height: 0;
       margin: 0 auto 12px;
       width: fit-content;
       max-width: 100%;
+      overflow: visible;
+      filter: none;
+      -webkit-filter: none;
+      mix-blend-mode: normal;
+      isolation: isolate;
     }
-    .qr-wrap .qr-img,
-    .qr-wrap img,
-    .qr-wrap svg {
-      width: min(360px, 78vw);
-      max-width: 100%;
-      height: auto;
-      aspect-ratio: 1 / 1;
+    .qr-wrap .qr-svg,
+    .qr-island .qr-svg,
+    .qr-wrap svg.qr-svg {
       display: block;
       margin: 0 auto;
       background: #ffffff;
       color-scheme: only light;
       forced-color-adjust: none;
-      filter: none;
-      -webkit-filter: none;
+      border-radius: 0;
+      overflow: visible;
+      shape-rendering: crispEdges;
       image-rendering: pixelated;
       image-rendering: crisp-edges;
-      shape-rendering: crispEdges;
+      filter: none;
+      -webkit-filter: none;
+      max-width: min(420px, calc(100vw - 72px));
+      min-width: 280px;
+      height: auto;
+      aspect-ratio: 1 / 1;
+    }
+    .qr-png-fallback,
+    .qr-wrap img.qr-png-fallback {
+      display: none !important;
+      width: 0 !important;
+      height: 0 !important;
+      border-radius: 0;
+    }
+    .qr-wrap img.qr-img {
+      image-rendering: pixelated;
+      image-rendering: crisp-edges;
+      border-radius: 0;
+      background: #ffffff;
+    }
+    @media (prefers-color-scheme: dark) {
+      .qr-wrap, .qr-island, .qr-wrap .qr-svg, .qr-island .qr-svg {
+        color-scheme: only light;
+        background: #ffffff !important;
+        filter: none !important;
+        -webkit-filter: none !important;
+      }
+      .qr-svg rect.qr-bg { fill: #ffffff !important; }
+      .qr-svg rect.qr-mod { fill: #000000 !important; }
     }
     .scan-tip {
       margin: 0 0 24px;
@@ -229,19 +264,19 @@
 <body>
   <div class="sheet">
     <p class="mark">LingoCoach</p>
-    <p class="lede">Scan this QR with your <strong>iPhone Camera</strong> (or Google Authenticator) to add <strong>__ISSUER__:__ACCOUNT__</strong>.</p>
-    <p class="lede-zh">用 <strong>iPhone 相機</strong>掃描這個 QR（Google Authenticator 也會提示「請改用相機」）。</p>
+    <p class="lede-zh">用 iPhone 的<strong>相機</strong>對準下方<strong>白色方塊</strong>掃描（不要先用 Google Authenticator 內建掃碼）。若 GA 顯示「無法掃描這個 QR code／請改用 iPhone 或 iPad 的相機」，請改用系統相機。</p>
+    <p class="lede">Open the iPhone <strong>Camera</strong> app (not Google Authenticator’s in-app scanner first). Point at the white square. Tap the Authenticator banner → <strong>Add</strong>.</p>
     <p class="warn">This link works once. Leave this page open while you scan — do not refresh. After you leave, remint with <code>./lingocoachctl.sh qr</code>.</p>
 
-    <ol class="steps" aria-label="Scan steps">
-      <li>Keep this page open on your <strong>Mac</strong> (Chrome / Safari).</li>
-      <li>On the iPhone, open the <strong>Camera</strong> app — or Google Authenticator → <strong>+</strong> → <strong>Scan a QR code</strong>.</li>
-      <li>Point at the QR below. When Camera shows an Authenticator banner, tap it and <strong>Add</strong>.</li>
+    <ol class="steps" aria-label="Scan with iPhone Camera">
+      <li>Keep this page open on the <strong>Mac</strong> (Chrome). Brighten the display.</li>
+      <li>On the iPhone, open the <strong>Camera</strong> app — not Google Authenticator → Scan a QR code.</li>
+      <li>Point at the <strong>white square</strong> below. When Camera shows an Authenticator banner, tap it and <strong>Add</strong>.</li>
       <li>Open <strong>/login</strong> and enter the 6-digit code.</li>
     </ol>
 
-    <div class="qr-wrap" id="qr-primary">__QR_MARKUP__</div>
-    <p class="scan-tip">QR encodes <code>otpauth://totp/…</code> only (not this page URL). Brighten the Mac screen if the scan fails.</p>
+    <div class="qr-wrap qr-island" id="qr-primary">__QR_MARKUP__</div>
+    <p class="scan-tip">QR encodes <code>otpauth://totp/…</code> only (not this page URL). Use iPhone Camera, not GA’s in-app scanner.</p>
 
     <hr class="divider">
 
@@ -256,10 +291,10 @@
       <p class="key" id="manual">__MANUAL_KEY__</p>
       <button type="button" class="copy" id="copy-key" data-raw="__MANUAL_KEY_RAW__">Copy</button>
     </div>
-    <p class="account-hint">Use this if Camera / Authenticator still cannot read the QR.</p>
+    <p class="account-hint">Use this if Camera still cannot read the QR. On a phone browser you can also tap the deep link below.</p>
 
     <a class="otpauth-btn" id="otpauth-link" href="__OTPAUTH_URI__">Open in Authenticator<br><span style="font-weight:600;font-size:0.88rem;opacity:0.92">點一下開啟（手機瀏覽器開啟此頁時）</span></a>
-    <p class="otpauth-sub">On the phone browser, this deep link adds the account without scanning.</p>
+    <p class="otpauth-sub">On the phone browser, this <code>otpauth://</code> deep link adds the account without scanning.</p>
 
     <a class="primary" href="/login">Continue to unlock</a>
   </div>

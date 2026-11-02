@@ -441,6 +441,7 @@ cmd_qr() {
   echo "  Public base: ${base}"
   echo "  Always remints (never reuses ?token=); previous links invalidated immediately."
   echo "  TTL ≈ 20 minutes; single use (first successful page load)."
+  echo "  Open on Mac Chrome; scan the white square with iPhone Camera (not GA in-app scanner)."
   # Always calls Python mint (secrets.token_urlsafe); overwrites .totp_qr_token.
   # Prints the new HTTPS URL + expiry note; never the TOTP secret.
   LINGOCOACH_PUBLIC_BASE="$base" "$py" -m app.totp_qr --base "$base"

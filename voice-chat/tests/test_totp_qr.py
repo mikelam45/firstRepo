@@ -129,6 +129,11 @@ def qr_decoder_ready():
     return name
 
 
+_SVG_RE = re.compile(r'<svg\b[^>]*class="qr-svg"[^>]*>.*?</svg>', re.S)
+_RECT_RE = re.compile(r"<rect\b([^>]*)/?>", re.I)
+_ATTR_RE = re.compile(r'([:\w-]+)="([^"]*)"')
+
+
 def _png_from_markup(markup: str) -> bytes:
     assert 'src="data:image/png;base64,' in markup
     m = re.search(r'src="data:image/png;base64,([A-Za-z0-9+/=]+)"', markup)
@@ -136,25 +141,74 @@ def _png_from_markup(markup: str) -> bytes:
     return base64.b64decode(m.group(1))
 
 
+def _qr_wrap_inner(body: str) -> str:
+    m = re.search(r'<div[^>]*id="qr-primary"[^>]*>(.*?)</div>', body, re.S)
+    assert m, "missing #qr-primary wrap"
+    return m.group(1)
+
+
+def _onpage_svg(markup: str) -> str:
+    """The visible QR must be SVG module rects (not a CSS-scaled PNG img)."""
+    m = _SVG_RE.search(markup)
+    assert m is not None, "on-page QR must include <svg class=\"qr-svg\"> module rects"
+    return m.group(0)
+
+
+def _matrix_from_svg(svg: str) -> list[list[bool]]:
+    """Rebuild the boolean matrix from on-page SVG <rect> modules."""
+    vb = re.search(r'viewBox="0 0 (\d+) (\d+)"', svg)
+    assert vb is not None, "SVG QR needs viewBox=\"0 0 n n\""
+    n = int(vb.group(1))
+    assert n == int(vb.group(2))
+    assert n >= 21 + 2 * totp_qr.QR_BORDER
+    matrix = [[False] * n for _ in range(n)]
+    dark_rects = 0
+    for rect in _RECT_RE.finditer(svg):
+        attrs = dict(_ATTR_RE.findall(rect.group(1)))
+        fill = (attrs.get("fill") or "").strip().lower()
+        if fill in {"#fff", "#ffffff", "white"}:
+            continue
+        if fill not in {"#000", "#000000", "black"}:
+            continue
+        x = int(float(attrs.get("x", "0")))
+        y = int(float(attrs.get("y", "0")))
+        w = int(float(attrs.get("width", "1")))
+        h = int(float(attrs.get("height", "1")))
+        dark_rects += 1
+        for yy in range(y, y + h):
+            for xx in range(x, x + w):
+                matrix[yy][xx] = True
+    assert dark_rects > 0
+    return matrix
+
+
+def _assert_quiet_zone(matrix: list[list[bool]], border: int | None = None) -> None:
+    border = totp_qr.QR_BORDER if border is None else border
+    assert border >= 4
+    n = len(matrix)
+    for i in range(border):
+        assert not any(matrix[i]), f"quiet zone row {i} is not white"
+        assert not any(matrix[n - 1 - i]), f"quiet zone row {n - 1 - i} is not white"
+        assert all(not matrix[y][i] and not matrix[y][n - 1 - i] for y in range(n))
+    # Finder pattern origin (core 0,0) is dark.
+    assert matrix[border][border] is True
+
+
 def _assert_qr_markup_scannable(markup: str) -> None:
-    """Accept PNG data-URL (default) or inline SVG fallback."""
-    assert 'aria-label="Authenticator QR code"' in markup or 'alt="Authenticator QR code"' in markup
-    if "<svg" in markup:
-        assert "viewBox=" in markup or 'width="' in markup
-        assert "qr-img" in markup or 'aria-label="Authenticator QR code"' in markup
-        width_m = re.search(r'<svg[^>]*\bwidth="(\d+)"', markup)
-        assert width_m is not None
-        assert int(width_m.group(1)) >= totp_qr.QR_MIN_PX
-    else:
-        assert 'src="data:image/png;base64,' in markup
-        assert "qr-img" in markup
-        png = _png_from_markup(markup)
-        w, h = totp_qr.png_ihdr_size(png)
-        assert w >= totp_qr.QR_MIN_PX
-        assert h >= totp_qr.QR_MIN_PX
-        assert w == h
-        assert totp_qr.png_corner_rgb(png, 0, 0) == (255, 255, 255)
-        assert totp_qr.png_corner_rgb(png, w - 1, h - 1) == (255, 255, 255)
+    """On-page QR is an SVG module grid (PNG may exist only as hidden fallback)."""
+    assert 'aria-label="Authenticator QR code"' in markup
+    svg = _onpage_svg(markup)
+    assert 'shape-rendering="crispEdges"' in svg
+    assert 'color-scheme="only light"' in svg or "color-scheme: only light" in markup
+    assert "border-radius" not in svg
+    width_m = re.search(r'<svg[^>]*\bwidth="(\d+)"', svg)
+    assert width_m is not None
+    assert int(width_m.group(1)) >= 280
+    matrix = _matrix_from_svg(svg)
+    _assert_quiet_zone(matrix)
+    # Hidden PNG fallback is allowed; it must not be the only QR surface.
+    if 'src="data:image/png;base64,' in markup:
+        assert "qr-png-fallback" in markup or 'hidden' in markup
 
 
 def _enable(monkeypatch, tmp_path):
@@ -198,13 +252,14 @@ def test_setup_qr_valid_once_then_gone(monkeypatch, tmp_path):
     assert TEST_SECRET in body
     assert expected.startswith("otpauth://totp/")
     # Dinner_recipe-style: primary is a large otpauth QR for iPhone Camera.
-    assert 'id="qr-primary"' in body or 'class="qr-wrap"' in body
+    assert 'id="qr-primary"' in body
+    assert "qr-wrap" in body
     assert "iPhone Camera" in body or "相機" in body
     assert "請改用相機" in body or "Camera" in body
     # QR is visible (not collapsed under <details>).
     assert "<details" not in body
-    qr_chunk = body.split('class="qr-wrap"', 1)[1].split("</div>", 1)[0]
-    assert 'src="data:image/png;base64,' in qr_chunk
+    qr_chunk = _qr_wrap_inner(body)
+    assert "<svg" in qr_chunk
     _assert_qr_markup_scannable(qr_chunk)
     # Manual setup key + otpauth deep link remain as backup / phone path.
     assert "Enter a setup key" in body or "輸入設定密鑰" in body or "Can’t scan" in body or "Can't scan" in body
@@ -243,8 +298,104 @@ def test_setup_page_includes_otpauth_href(monkeypatch, tmp_path):
     assert 'href="https://' not in body.split('id="otpauth-link"', 1)[1].split(">", 1)[0]
     # Light page + primary QR (Dinner_recipe Mac→iPhone Camera flow).
     assert 'color-scheme: only light' in body or "color-scheme: only light" in body
-    assert 'class="qr-wrap"' in body
+    assert 'name="color-scheme"' in body and 'content="light"' in body
+    assert "qr-wrap" in body
+    assert "qr-island" in body
     assert "<details" not in body
+    assert "<svg" in body
+    assert 'class="qr-svg"' in body
+
+
+def test_setup_html_crisp_onpage_qr_matches_iphone_camera_failure_mode(
+    monkeypatch, tmp_path
+):
+    """Page markup must be screen-scan reliable — not 'OpenCV can read the PNG'.
+
+    iPhone Camera / GA photograph the Mac Chrome display. The on-page QR
+    therefore has to be SVG (or table) modules in a forced-light white
+    island, not a CSS-scaled bitmap that Retina blurs or dark mode inverts.
+    """
+    _enable(monkeypatch, tmp_path)
+    raw, _ = totp_qr.mint_enroll_token()
+    client = TestClient(app)
+    response = client.get("/setup/qr", params={"token": raw})
+    assert response.status_code == 200
+    body = response.text
+    expected = totp_gate.provisioning_uri(TEST_SECRET)
+
+    # 1) Crisp on-screen QR (SVG rects), not only an <img> PNG.
+    assert 'name="color-scheme"' in body
+    assert 'content="light"' in body
+    assert "color-scheme: only light" in body
+    assert "forced-color-adjust: none" in body
+    assert "qr-island" in body
+    assert "background: #ffffff" in body or "background:#ffffff" in body
+    assert "shape-rendering: crispEdges" in body or 'shape-rendering="crispEdges"' in body
+    # QR island itself must not round/clip finder patterns.
+    wrap_css = re.search(r"\.qr-wrap\s*,\s*\.qr-island\s*\{([^}]+)\}", body)
+    assert wrap_css is not None
+    assert "border-radius: 0" in wrap_css.group(1)
+    svg_css = re.search(r"\.qr-wrap \.qr-svg[\s\S]*?\{([^}]+)\}", body)
+    assert svg_css is not None
+    assert "border-radius: 0" in svg_css.group(1)
+    # Do not CSS-scale a bitmap as the primary surface.
+    assert "width: min(360px, 78vw)" not in body
+
+    qr_chunk = _qr_wrap_inner(body)
+    svg = _onpage_svg(qr_chunk)
+    assert svg.find("<svg") < (qr_chunk.find("<img") if "<img" in qr_chunk else len(qr_chunk))
+    assert 'class="qr-mod"' in svg
+    assert 'fill="#000000"' in svg
+    assert 'fill="#ffffff"' in svg
+    width_m = re.search(r'<svg[^>]*\bwidth="(\d+)"', svg)
+    assert width_m is not None
+    assert 280 <= int(width_m.group(1)) <= 480
+
+    # 2) On-page matrix payload is the Google Key Uri (otpauth totp).
+    matrix = _matrix_from_svg(svg)
+    _assert_quiet_zone(matrix)
+    assert totp_qr.QR_BORDER >= 8
+    assert len(matrix) == len(totp_qr._qr_factory(expected).matrix) + 2 * totp_qr.QR_BORDER
+    assert matrix == totp_qr._matrix_with_quiet_zone(totp_qr._qr_factory(expected))
+
+    # 3) Camera instructions first (Traditional Chinese + English).
+    camera_zh = body.find("相機")
+    ga_inapp = body.find("內建掃碼")
+    assert camera_zh != -1
+    assert "請改用" in body
+    assert "iPhone Camera" in body or "Camera" in body
+    assert "white square" in body.lower() or "白色方塊" in body
+    # Chinese Camera instruction appears before the QR wrap and before GA in-app.
+    assert camera_zh < body.find('id="qr-primary"')
+    assert ga_inapp != -1
+    assert camera_zh < ga_inapp
+
+    # 4) Single primary QR of otpauth; backups remain.
+    assert "/setup/qr?token=" not in body
+    assert totp_qr.format_manual_key(TEST_SECRET) in body
+    assert 'id="otpauth-link"' in body
+    escaped = expected.replace("&", "&amp;")
+    assert f'href="{escaped}"' in body or f'href="{expected}"' in body
+
+
+def test_onpage_svg_matrix_decodes_to_otpauth_not_enroll_url(qr_decoder_ready):
+    """Rasterize the SVG-rect matrix (what Chrome paints) and decode it."""
+    uri = totp_gate.provisioning_uri(TEST_SECRET)
+    svg = totp_qr.qr_svg_module_markup(uri)
+    matrix = _matrix_from_svg(svg)
+    _assert_quiet_zone(matrix)
+    assert matrix == totp_qr._matrix_with_quiet_zone(totp_qr._qr_factory(uri))
+    png = totp_qr.encode_qr_matrix_png(matrix, module_px=8)
+    decoded, _used = _decode_qr_png(png)
+    assert decoded == uri
+    assert decoded.startswith("otpauth://totp/")
+    assert "https://" not in decoded
+    assert "/setup/qr" not in decoded
+    display = totp_qr.onpage_display_px(len(matrix))
+    assert 280 <= display <= 480
+    width_m = re.search(r'\bwidth="(\d+)"', svg)
+    assert width_m is not None
+    assert int(width_m.group(1)) == display
 
 
 def test_otpauth_uri_google_authenticator_shape():
@@ -345,9 +496,12 @@ def test_qr_png_default_segno_pure_python():
     assert totp_qr.png_corner_rgb(raw, w - 1, h - 1) == (255, 255, 255)
 
     markup = totp_qr.qr_markup(uri)
-    assert markup.lstrip().startswith("<img")
-    assert 'src="data:image/png;base64,' in markup
+    assert markup.lstrip().startswith("<svg")
+    assert 'class="qr-svg"' in markup
     _assert_qr_markup_scannable(markup)
+    # PNG may remain as a hidden fallback, not the visible surface.
+    if 'src="data:image/png;base64,' in markup:
+        assert "qr-png-fallback" in markup
 
 
 def test_qr_png_decodes_to_otpauth_matching_pyotp(qr_decoder_ready):
@@ -403,13 +557,17 @@ def test_qr_png_decodes_to_otpauth_matching_pyotp(qr_decoder_ready):
 
 
 def test_qr_svg_fallback_still_large():
-    """SVG remains available as last-resort fallback (Authenticator prefers PNG)."""
+    """Primary on-screen QR is a large crisp SVG module grid."""
     uri = totp_gate.provisioning_uri(TEST_SECRET)
     assert uri.startswith("otpauth://totp/")
     svg = totp_qr.qr_svg_markup(uri)
     _assert_qr_markup_scannable(svg)
     assert totp_qr.QR_BORDER >= 4
-    assert "qr-img" in svg or "aria-label" in svg
+    assert 'class="qr-svg"' in svg
+    assert 'shape-rendering="crispEdges"' in svg
+    width_m = re.search(r'<svg[^>]*\bwidth="(\d+)"', svg)
+    assert width_m is not None
+    assert int(width_m.group(1)) >= 280
 
 
 def test_qr_markup_falls_back_to_svg_when_png_fails(monkeypatch):
@@ -421,6 +579,7 @@ def test_qr_markup_falls_back_to_svg_when_png_fails(monkeypatch):
     monkeypatch.setattr(totp_qr, "qr_png_data_url", _boom)
     markup = totp_qr.qr_markup(uri)
     assert markup.lstrip().startswith("<svg")
+    assert "qr-png-fallback" not in markup
     _assert_qr_markup_scannable(markup)
 
 
@@ -441,17 +600,19 @@ def test_setup_page_qr_payload_is_otpauth(monkeypatch, tmp_path, qr_decoder_read
     assert "Enter a setup key" in body or "輸入設定密鑰" in body or "Can’t scan" in body
     assert totp_qr.format_manual_key(TEST_SECRET) in body
     assert "/setup/qr?token=" not in body
-    # Primary QR (Dinner_recipe / GA Key URI Format) must decode to the same URI.
-    assert 'class="qr-wrap"' in body
+    # Primary QR is the on-page SVG matrix (not a CSS-scaled PNG).
+    assert "qr-wrap" in body
     assert "<details" not in body
-    qr_chunk = body.split('class="qr-wrap"', 1)[1].split("</div>", 1)[0]
+    qr_chunk = _qr_wrap_inner(body)
     _assert_qr_markup_scannable(qr_chunk)
     assert totp_qr.qr_encoded_payload(expected).startswith("otpauth://totp/")
-    png = _png_from_markup(qr_chunk)
-    w, h = totp_qr.png_ihdr_size(png)
-    assert w >= totp_qr.QR_MIN_PX and h >= totp_qr.QR_MIN_PX
-    assert totp_qr.QR_MIN_PX >= 320
-    decoded, used = _decode_qr_png(png)
+    svg = _onpage_svg(qr_chunk)
+    matrix = _matrix_from_svg(svg)
+    expected_matrix = totp_qr._matrix_with_quiet_zone(totp_qr._qr_factory(expected))
+    assert matrix == expected_matrix
+    # Decode the ON-PAGE modules (rasterized from SVG rects), not segno's PNG path.
+    onpage_png = totp_qr.encode_qr_matrix_png(matrix, module_px=8)
+    decoded, used = _decode_qr_png(onpage_png)
     assert used == qr_decoder_ready or used
     assert decoded == expected
     parsed = urlparse(decoded)
