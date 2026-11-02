@@ -1,6 +1,15 @@
-"""Partners, age 27. Six scene partners, then Chloe and Celine."""
+"""Partners, age 27. Four choosable photo coaches; others stay for old session ids."""
 
 from __future__ import annotations
+
+CHOOSABLE_IDS = ("amelia", "mei", "chloe", "celine")
+HIDDEN_REMAP = {
+    "wing": "celine",
+    "lok": "celine",
+    "oliver": "amelia",
+    "hao": "mei",
+    "nora": "chloe",
+}
 
 PARTNERS = [
     {
@@ -12,7 +21,12 @@ PARTNERS = [
         "from": "London, UK",
         "region": "UK",
         "home_language": "en",
-        "manner": "Warm, clear British examiner. Short sentences. No American slang.",
+        "role": {
+            "en": "London partner",
+            "cmn": "伦敦伙伴",
+            "yue": "倫敦夥伴",
+        },
+        "manner": "Warm, clear British partner. Short sentences. No American slang.",
         "mesh": True,
         "display": "mesh",
         "portrait": "/static/avatars/amelia.jpg",
@@ -28,6 +42,11 @@ PARTNERS = [
         "from": "Beijing, China",
         "region": "China",
         "home_language": "cmn",
+        "role": {
+            "en": "Beijing partner",
+            "cmn": "北京伙伴",
+            "yue": "北京夥伴",
+        },
         "manner": "Friendly Beijing host. Mainland service Mandarin when the line is Putonghua: 您好 and 请问. No extra 儿化.",
         "mesh": True,
         "display": "mesh",
@@ -109,13 +128,13 @@ PARTNERS = [
         "region": "UK",
         "home_language": "en",
         "role": {
-            "en": "English teacher",
-            "cmn": "英语老师",
-            "yue": "英文老師",
+            "en": "English partner",
+            "cmn": "英语伙伴",
+            "yue": "英文夥伴",
         },
         "manner": (
-            "Patient English teacher. Speaks clear English. "
-            "Corrects grammar, the wrong word, and a wrong phrase. "
+            "Patient London English partner. Speaks clear English. "
+            "In correction mode she fixes grammar, the wrong word, and a wrong phrase. "
             "Never comments on how a microphone heard the learner."
         ),
         "mesh": True,
@@ -134,13 +153,14 @@ PARTNERS = [
         "region": "HK",
         "home_language": "yue",
         "role": {
-            "en": "Coffee shop waitress",
-            "cmn": "咖啡店服务员",
-            "yue": "茶餐廳侍應",
+            "en": "Hong Kong partner",
+            "cmn": "香港伙伴",
+            "yue": "香港夥伴",
         },
         "manner": (
-            "Warm Hong Kong café waitress. Colloquial Cantonese when the line is Cantonese, "
-            "唔該 for requests. She takes the order; she does not teach grammar."
+            "Warm Hong Kong partner. Colloquial Cantonese when the line is Cantonese, "
+            "唔該 for requests. In correction mode she still chats in character while "
+            "fixing grammar, words, and phrases."
         ),
         "mesh": True,
         "display": "mesh",
@@ -154,7 +174,17 @@ _BY_ID = {partner["id"]: partner for partner in PARTNERS}
 
 
 def all_partners() -> list[dict]:
-    return list(PARTNERS)
+    """Choosable coaches for the home picker and catalogue."""
+    return [partner for partner in PARTNERS if partner["id"] in CHOOSABLE_IDS]
+
+
+def choose_partner(partner_id: str | None) -> str:
+    """Map a request onto a choosable coach. Hidden ids stay import-safe."""
+    if not partner_id:
+        return "amelia"
+    if partner_id in CHOOSABLE_IDS:
+        return partner_id
+    return HIDDEN_REMAP.get(partner_id, "amelia")
 
 
 def get_partner(partner_id: str | None) -> dict:
@@ -164,6 +194,10 @@ def get_partner(partner_id: str | None) -> dict:
     if partner is None:
         raise KeyError(partner_id)
     return partner
+
+
+def get_choosable_partner(partner_id: str | None) -> dict:
+    return _BY_ID[choose_partner(partner_id)]
 
 
 def public_partner(partner: dict) -> dict:

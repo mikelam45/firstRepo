@@ -28,32 +28,35 @@ def test_health():
 
 
 def test_catalogue_includes_english_teacher():
-    women = [row for row in PARTNERS if row["gender"] == "woman"]
-    men = [row for row in PARTNERS if row["gender"] == "man"]
-    assert [row["name"] for row in women] == ["Amelia", "Mei", "Wing", "Chloe", "Celine"]
-    assert [row["name"] for row in men] == ["Oliver", "Hao", "Lok"]
     assert all(row["age"] == 27 for row in PARTNERS)
     catalogue = client.get("/api/catalogue").json()
-    assert len(catalogue["partners"]) == 8
+    names = [row["name"] for row in catalogue["partners"]]
+    assert names == ["Amelia", "Mei", "Chloe", "Celine"]
+    assert not any(name in names for name in ("Wing", "Oliver", "Hao", "Lok"))
+    assert len(catalogue["partners"]) == 4
     chloe = next(row for row in catalogue["partners"] if row["id"] == "chloe")
     assert chloe["name"] == "Chloe"
     assert chloe["age"] == 27
-    assert chloe["role"]["en"] == "English teacher"
+    assert chloe["role"]["en"] == "English partner"
     assert chloe["mesh"] is True
+    assert chloe["portrait"].endswith("chloe.jpg")
     celine = next(row for row in catalogue["partners"] if row["id"] == "celine")
     assert celine["name"] == "Celine"
-    assert celine["role"]["yue"] == "茶餐廳侍應"
+    assert celine["role"]["yue"] == "香港夥伴"
     assert celine["mesh"] is True
-    teacher = next(row for row in catalogue["scenarios"] if row["id"] == "english-teacher")
-    assert teacher["role_ai"]["en"] == "English teacher"
-    assert "examiner" not in teacher["role_ai"]["en"].lower()
+    casual = next(row for row in catalogue["scenarios"] if row["id"] == "english-teacher")
+    assert casual["title"]["en"] == "Casual chat"
+    assert "examiner" not in (casual["role_ai"]["en"] or "").lower()
+    scene_ids = [row["id"] for row in catalogue["scenarios"]]
+    assert scene_ids == ["hk-cha-chaan-teng", "london-directions", "english-teacher", "london-chat"]
+    assert "beijing-hotel-checkin" not in scene_ids
 
 
 def test_cantonese_register_fixture():
     response = client.post("/api/turn", json={
         "session_id": "s",
         "scenario_id": "hk-cha-chaan-teng",
-        "partner_id": "wing",
+        "partner_id": "celine",
         "settings": SETTINGS,
         "history": [{"role": "learner", "text": "我要咖啡"}],
         "fired_signals": [],
@@ -178,7 +181,7 @@ def test_openrouter_status_without_key_skips_the_network(monkeypatch):
     assert "OPENROUTER_API_KEY=" not in blob
     page = (STATIC / "index.html").read_text(encoding="utf-8")
     script = (STATIC / "app.js").read_text(encoding="utf-8")
-    assert 'src="/static/app.js?v=20261102-logout"' in page
+    assert 'src="/static/app.js?v=20261102-roster"' in page
     assert "OpenRouter LLM connectivity check" in script
     assert "Put OPENROUTER_API_KEY in ~/lingocoach.env or voice-chat/.env" in script
     assert "The Mac path /Users/mikelam/firstRepo/openrouter_key/.env_voice_chat does not exist on this server" in script

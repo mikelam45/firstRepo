@@ -1,4 +1,4 @@
-import { IllustratedPortrait, Portrait, englishVisemes, pinyinVisemes } from "./face.js?v=20261023-chloe-voice";
+import { IllustratedPortrait, Portrait, englishVisemes, pinyinVisemes } from "./face.js?v=20261102-roster";
 import { collectTranscript, recognitionLanguage, transcriptPiece } from "./transcript.js";
 
 const I18N = {
@@ -59,7 +59,10 @@ const I18N = {
     yes: "Start new",
     cancel: "Cancel",
     close: "Close",
-    womenMen: "All 27. Chloe teaches English. Celine takes the café order.",
+    womenMen: "Four coaches, all 27. Correction or conversation in every scene.",
+    pickCoach: "Choose a coach",
+    pickScene: "Choose a scene",
+    morePractice: "IELTS practice",
     corrGrammar: "Grammar",
     corrWord: "Wrong word",
     corrPhrase: "Wrong phrase",
@@ -168,7 +171,10 @@ const I18N = {
     yes: "开始新的",
     cancel: "取消",
     close: "关闭",
-    womenMen: "全部 27 岁。Chloe 是英语老师。Celine 是咖啡店服务员。",
+    womenMen: "四位教练，都是 27 岁。每个场景都可以纠错或对话。",
+    pickCoach: "选择教练",
+    pickScene: "选择场景",
+    morePractice: "雅思练习",
     corrGrammar: "语法",
     corrWord: "用词",
     corrPhrase: "短语",
@@ -277,7 +283,10 @@ const I18N = {
     yes: "開始新嘅",
     cancel: "取消",
     close: "關閉",
-    womenMen: "全部 27 歲。Chloe 係英文老師。Celine 係茶餐廳侍應。",
+    womenMen: "四位教練，全部 27 歲。每個場景都可以糾錯或對話。",
+    pickCoach: "揀教練",
+    pickScene: "揀場景",
+    morePractice: "雅思練習",
     corrGrammar: "文法",
     corrWord: "用詞",
     corrPhrase: "短語",
@@ -330,6 +339,16 @@ const I18N = {
     logout: "登出",
   },
 };
+
+const CHOOSABLE_IDS = new Set(["amelia", "mei", "chloe", "celine"]);
+const HIDDEN_PARTNERS = { wing: "celine", lok: "celine", oliver: "amelia", hao: "mei", nora: "chloe" };
+const ENGLISH_FOCUS = new Set(["english-teacher", "london-chat"]);
+
+function choosablePartnerId(id) {
+  if (!id) return "amelia";
+  if (CHOOSABLE_IDS.has(id)) return id;
+  return HIDDEN_PARTNERS[id] || "amelia";
+}
 
 const app = document.querySelector("#app");
 const state = {
@@ -407,7 +426,7 @@ function loadSettings() {
     const v3 = localStorage.getItem("lingocoach.settings.v3");
     if (v3) {
       const data = { ...base, ...JSON.parse(v3) };
-      if (data.partner === "nora") data.partner = "chloe";
+      data.partner = choosablePartnerId(data.partner);
       return data;
     }
     const v2 = localStorage.getItem("lingocoach.settings.v2");
@@ -461,18 +480,20 @@ function uuid() {
 
 function partner() {
   const list = state.catalogue?.partners || [];
-  return list.find((item) => item.id === state.settings.partner) || list[0];
+  const id = choosablePartnerId(state.settings.partner);
+  return list.find((item) => item.id === id) || list[0];
 }
 
 function activePartner() {
   const list = state.catalogue?.partners || [];
-  const id = state.screen === "daily" && state.daily?.partner_id ? state.daily.partner_id : state.settings.partner;
+  const raw = state.screen === "daily" && state.daily?.partner_id ? state.daily.partner_id : state.settings.partner;
+  const id = choosablePartnerId(raw);
   return list.find((item) => item.id === id) || partner();
 }
 
 function selectedPartnerId() {
-  if (state.screen === "daily" && state.daily?.partner_id) return state.daily.partner_id;
-  return state.settings.partner;
+  if (state.screen === "daily" && state.daily?.partner_id) return choosablePartnerId(state.daily.partner_id);
+  return choosablePartnerId(state.settings.partner);
 }
 
 function roleLabel(item) {
@@ -483,13 +504,9 @@ function roleLabel(item) {
 
 function practiceTarget() {
   if (state.screen === "ielts") return "en";
-  if (state.daily?.scenario_id === "english-teacher") return "en";
+  if (ENGLISH_FOCUS.has(state.daily?.scenario_id)) return "en";
   return state.settings.target || "en";
 }
-
-const TEACHER_ID = "chloe";
-const CAFE_ID = "celine";
-const CAFE_SCENE = "hk-cha-chaan-teng";
 
 function scenario() {
   const list = state.catalogue?.scenarios || [];
@@ -548,6 +565,10 @@ function homeView() {
   const who = partner();
   const plan = loadPlan();
   const soon = examSoon();
+  const coaches = (state.catalogue.partners || []).filter((item) => CHOOSABLE_IDS.has(item.id));
+  const scenes = state.catalogue.scenarios || [];
+  const support = state.settings.support;
+  const selected = choosablePartnerId(state.settings.partner);
   return `
     <header class="top">
       <div class="mark">LingoCoach</div>
@@ -562,17 +583,29 @@ function homeView() {
         <div>
           <strong>${esc(who.name)}</strong>
           <div class="muted">${esc(who.city)} · ${esc(t("age"))}${roleLabel(who) ? ` · ${esc(roleLabel(who))}` : ""}</div>
-          <button class="ghost" type="button" data-act="partners">${esc(t("change"))}</button>
         </div>
       </div>
       ${soon ? `<p class="banner">${esc(t("examSoon"))}</p>` : ""}
       ${plan.drillsSince >= 3 ? `<p class="banner">${esc(t("mockReady"))}</p>` : ""}
       ${state.provider === "fixture" ? `<p class="banner">${esc(t("fixture"))}</p>` : ""}
+      <p class="home-label">${esc(t("pickCoach"))}</p>
+      <div class="coach-grid" role="list">
+        ${coaches.map((item) => `
+          <button class="coach-pick" type="button" data-act="pick-partner" data-id="${esc(item.id)}" aria-pressed="${item.id === selected}">
+            <img alt="" src="${esc(item.portrait)}">
+            <strong>${esc(item.name)}</strong>
+            <span class="muted">${esc(item.city)}</span>
+          </button>`).join("")}
+      </div>
+      ${modeToggleHtml()}
+      <p class="home-label">${esc(t("pickScene"))}</p>
+      <div class="scene-list">
+        ${scenes.map((item) => `<button class="choice" type="button" data-act="home-scene" data-id="${esc(item.id)}"><strong>${esc(item.icon || "")} ${esc(item.title[support] || item.title.en)}</strong><span class="muted">${esc(item.goal[support] || item.goal.en)}</span></button>`).join("")}
+      </div>
+      <p class="home-label">${esc(t("morePractice"))}</p>
       <div class="choices">
         <button class="choice" type="button" data-act="drill"><strong>${esc(t("drill"))}</strong><span class="muted">${esc(plan.label || t("diagnostic"))}</span></button>
         <button class="choice" type="button" data-act="mock"><strong>${esc(t("mock"))}</strong><span class="muted">Part 1 · Part 2 · Part 3</span></button>
-        <button class="choice" type="button" data-act="daily"><strong>${esc(t("daily"))}</strong></button>
-        <button class="choice" type="button" data-act="teacher"><strong>${esc(t("teacher"))}</strong><span class="muted">${esc(t("teacherHint"))}</span></button>
       </div>
       <p class="small muted">${esc(t("disclaimer"))}</p>
       <p class="small muted">${esc(t("adult"))}</p>
@@ -585,9 +618,8 @@ function dailyView() {
   const support = state.settings.support;
   const title = sc.title[support] || sc.title.en;
   const goal = sc.goal[support] || sc.goal.en;
-  const teacher = sc.id === "english-teacher";
-  const ended = teacher ? state.daily.cap_reached : (state.daily.goal === "met" || state.daily.cap_reached);
-  const scenes = (state.catalogue.scenarios || []).filter((item) => item.id !== "english-teacher");
+  const ended = ENGLISH_FOCUS.has(sc.id) ? state.daily.cap_reached : (state.daily.goal === "met" || state.daily.cap_reached);
+  const scenes = state.catalogue.scenarios || [];
   return `
     <header class="top">
       <button class="icon-btn" type="button" data-act="home">${esc(t("back"))}</button>
@@ -595,11 +627,11 @@ function dailyView() {
       <button class="icon-btn" type="button" data-act="settings">⚙</button>
       ${logoutControl()}
     </header>
-    ${teacher ? "" : `<div class="chips" role="tablist">
+    <div class="chips" role="tablist">
       ${scenes.map((item) => `<button class="chip" type="button" data-act="scenario" data-id="${esc(item.id)}" aria-pressed="${item.id === sc.id}">${esc(item.title[support] || item.title.en)}</button>`).join("")}
-    </div>`}
+    </div>
     <p class="goal">${esc(t("goal"))}: ${esc(goal)}${state.daily.goal === "met" ? ` · ${esc(t("goalMet"))}` : ""}</p>
-    ${teacher ? modeToggleHtml() : ""}
+    ${modeToggleHtml()}
     ${state.provider === "fixture" ? `<p class="banner">${esc(t("fixture"))}</p>` : ""}
     <div class="stage large"><canvas id="face" class="face" width="480" height="640" aria-label="${esc(who.name)}, ${esc(who.city)}, 27"></canvas></div>
     <div class="row" style="padding:0 16px 8px">
@@ -617,7 +649,7 @@ function bubbleHtml(bubble, index) {
     return `<article class="bubble learner"><div class="said"><div class="row"><p class="text grow">${esc(bubble.text)}</p><button class="icon-btn speak" type="button" data-act="speak" data-index="${index}" aria-label="${esc(t("play"))}">▶</button></div></div>${coachHtml(bubble, index)}</article>`;
   }
   const who = (state.catalogue.partners || []).find((item) => item.id === bubble.partner_id);
-  const lineTarget = state.daily?.scenario_id === "english-teacher" ? "en" : state.settings.target;
+  const lineTarget = ENGLISH_FOCUS.has(state.daily?.scenario_id) ? "en" : state.settings.target;
   const showTranslation = state.settings.support !== lineTarget && bubble.translation;
   let translation = "";
   if (showTranslation && state.settings.level === "beginner") translation = `<p>${esc(bubble.translation)}</p>`;
@@ -768,11 +800,11 @@ function sheet() {
 }
 
 function partnerSheet() {
-  const selected = selectedPartnerId();
-  const rows = state.catalogue.partners.map((item) => `
+  const selected = choosablePartnerId(selectedPartnerId());
+  const rows = (state.catalogue.partners || []).filter((item) => CHOOSABLE_IDS.has(item.id)).map((item) => `
     <button class="partner-row" type="button" data-act="pick-partner" data-id="${esc(item.id)}" aria-pressed="${item.id === selected}">
       <img alt="" src="${esc(item.portrait)}">
-      <span><strong>${esc(item.name)}</strong><br><span class="muted">${esc(item.city)} · 27 · ${esc(item.gender === "woman" ? "woman" : "man")}${roleLabel(item) ? ` · ${esc(roleLabel(item))}` : ""}</span><br><span class="small muted">${item.display === "mesh" ? esc(t("mesh")) : esc(t("illustrated"))}</span></span>
+      <span><strong>${esc(item.name)}</strong><br><span class="muted">${esc(item.city)} · 27${roleLabel(item) ? ` · ${esc(roleLabel(item))}` : ""}</span><br><span class="small muted">${esc(t("mesh"))}</span></span>
     </button>`).join("");
   return `<div class="backdrop" data-act="close-sheet"></div><section class="sheet"><div class="row"><h2 class="grow">${esc(t("change"))}</h2><button class="icon-btn" type="button" data-act="close-sheet">${esc(t("close"))}</button></div><p class="muted">${esc(t("womenMen"))}</p>${rows}</section>`;
 }
@@ -920,7 +952,7 @@ function onAct(act, data) {
   if (act === "confirm-yes") { const pending = state.confirm; state.confirm = null; pending?.run(); return; }
   if (act === "pick-partner") { pickPartner(data.id); return; }
   if (act === "teacher-mode") { state.teacherMode = data.mode; saveTeacherMode(); render(); return; }
-  if (act === "teacher") { openEnglishTeacher(); return; }
+  if (act === "home-scene") { startSceneFromHome(data.id); return; }
   if (act === "daily") { openDaily(state.catalogue.scenarios[0].id); return; }
   if (act === "scenario") { changeScenario(data.id); return; }
   if (act === "again") { openDaily(state.daily.scenario_id, true); return; }
@@ -994,25 +1026,11 @@ function sceneHasLearnerLines(scene) {
   return (scene?.bubbles || []).some((bubble) => bubble.role === "learner" && String(bubble.text || "").trim());
 }
 
-function openEnglishTeacher() {
+function startSceneFromHome(id) {
   const saved = state.screen === "daily" && state.daily ? state.daily : loadOpen();
-  const same = saved && saved.scenario_id === "english-teacher";
+  const same = saved && saved.scenario_id === id;
   const busy = saved && !same && sceneHasLearnerLines(saved);
-  const run = () => openDaily("english-teacher", !same, TEACHER_ID);
-  if (busy) {
-    state.sheet = null;
-    state.confirm = { text: t("startNew"), run };
-    render();
-    return;
-  }
-  run();
-}
-
-function openCafeWaitress() {
-  const saved = state.screen === "daily" && state.daily ? state.daily : loadOpen();
-  const same = saved && saved.scenario_id === CAFE_SCENE;
-  const busy = saved && !same && sceneHasLearnerLines(saved);
-  const run = () => openDaily(CAFE_SCENE, !same, CAFE_ID);
+  const run = () => openDaily(id, !same, state.settings.partner);
   if (busy) {
     state.sheet = null;
     state.confirm = { text: t("startNew"), run };
@@ -1028,30 +1046,23 @@ async function openDaily(scenarioId, force, partnerId) {
   state.sheet = null;
   state.notice = "";
   composerDraft = "";
+  const assigned = choosablePartnerId(partnerId || state.settings.partner);
   const retiredTeacher = scenarioId === "english-teacher" && (saved?.bubbles || []).some((bubble) => {
     const text = `${bubble.text || ""} ${bubble.translation || ""}`;
     return text.includes("I am Nora") || text.includes("我是 Nora") || text.includes("我係 Nora");
   });
   if (saved && saved.scenario_id === scenarioId && !retiredTeacher) {
     state.daily = saved;
-    if (state.daily.partner_id === "nora") state.daily.partner_id = TEACHER_ID;
-    if (partnerId) {
-      state.daily.partner_id = partnerId;
-      state.settings.partner = partnerId;
-      saveSettings();
-    } else if (scenarioId === "english-teacher" && !state.daily.partner_id) {
-      state.daily.partner_id = TEACHER_ID;
-    }
+    state.daily.partner_id = choosablePartnerId(partnerId || state.daily.partner_id || assigned);
+    state.settings.partner = state.daily.partner_id;
+    saveSettings();
     saveOpen();
     render();
     scrollThread(true);
     return;
   }
-  const assigned = partnerId || (scenarioId === "english-teacher" ? TEACHER_ID : null);
-  if (assigned) {
-    state.settings.partner = assigned;
-    saveSettings();
-  }
+  state.settings.partner = assigned;
+  saveSettings();
   state.daily = {
     session_id: uuid(),
     scenario_id: scenarioId,
@@ -1103,7 +1114,7 @@ async function postTurn(history) {
   const body = {
     session_id: state.daily.session_id,
     scenario_id: state.daily.scenario_id,
-    partner_id: state.daily.partner_id || state.settings.partner,
+    partner_id: choosablePartnerId(state.daily.partner_id || state.settings.partner),
     settings: {
       target: practiceTarget(),
       support: state.settings.support,
@@ -1199,43 +1210,15 @@ function pickPartner(id) {
   const session = state.ielts;
   if (session && session.kind === "mock" && (session.phase === "part2_prep" || session.phase === "part2_speak")) return;
   if (listening) return;
-  if (id === TEACHER_ID) {
-    if (state.screen === "daily" && state.daily?.scenario_id === "english-teacher") {
-      state.daily.partner_id = TEACHER_ID;
-      saveOpen();
-      state.sheet = null;
-      const name = activePartner()?.name || id;
-      render();
-      const live = document.querySelector("#live");
-      if (live) live.textContent = `${t("nowTalking")} ${name}`;
-      return;
-    }
-    openEnglishTeacher();
-    return;
-  }
-  if (id === CAFE_ID) {
-    if (state.screen === "daily" && state.daily?.scenario_id === CAFE_SCENE) {
-      state.settings.partner = CAFE_ID;
-      state.daily.partner_id = CAFE_ID;
-      saveSettings();
-      saveOpen();
-      state.sheet = null;
-      render();
-      const live = document.querySelector("#live");
-      if (live) live.textContent = `${t("nowTalking")} ${activePartner()?.name || "Celine"}`;
-      return;
-    }
-    openCafeWaitress();
-    return;
-  }
-  state.settings.partner = id;
+  const chosen = choosablePartnerId(id);
+  state.settings.partner = chosen;
   saveSettings();
   if (state.screen === "daily" && state.daily) {
-    state.daily.partner_id = id;
+    state.daily.partner_id = chosen;
     saveOpen();
   }
   state.sheet = null;
-  const name = (state.screen === "daily" ? activePartner() : partner())?.name || id;
+  const name = (state.screen === "daily" ? activePartner() : partner())?.name || chosen;
   const live = document.querySelector("#live");
   if (live) live.textContent = `${t("nowTalking")} ${name}`;
   if (state.speaking) {
@@ -2422,10 +2405,14 @@ async function boot() {
   } catch (err) {
     state.history = [];
   }
+  state.settings.partner = choosablePartnerId(state.settings.partner);
+  saveSettings();
   const open = loadOpen();
   if (open?.bubbles?.length) {
+    open.partner_id = choosablePartnerId(open.partner_id || state.settings.partner);
     state.daily = open;
     state.screen = "daily";
+    saveOpen();
   }
   render();
   if (state.screen === "daily") scrollThread(true);

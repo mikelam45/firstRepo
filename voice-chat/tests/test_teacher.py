@@ -104,12 +104,21 @@ def test_offline_teacher_does_not_pretend_the_sentence_was_checked():
 def test_teacher_page_offers_chloe_and_celine():
     page = client.get("/").text
     script = client.get("/static/app.js").text
+    catalogue = client.get("/api/catalogue").json()
     assert "english-teacher" in script
-    assert 'data-act="teacher"' in script
+    assert "london-chat" in script
+    assert 'data-act="home-scene"' in script
+    assert 'data-act="teacher-mode"' in script
     assert "chloe" in script
     assert "celine" in script
-    assert "hk-cha-chaan-teng" in script
+    assert "amelia" in script
+    assert "mei" in script
+    scene_ids = [row["id"] for row in catalogue["scenarios"]]
+    assert "hk-cha-chaan-teng" in scene_ids
+    assert "london-chat" in scene_ids
     assert "app.js" in page
+    for hidden in ("data-id=\"wing\"", "data-id=\"oliver\"", "data-id=\"hao\"", "data-id=\"lok\""):
+        assert hidden not in script
 
 
 def test_teacher_conversation_mode_natural_reply():

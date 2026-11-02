@@ -7,11 +7,11 @@ SCENARIOS = {
         "id": "hk-cha-chaan-teng",
         "locale": "HK",
         "enabled": True,
-        "icon": "☕",
+        "icon": "🍴",
         "title": {
-            "en": "Coffee at a cha chaan teng",
-            "cmn": "茶餐厅点餐",
-            "yue": "茶餐廳叫嘢飲",
+            "en": "Restaurant",
+            "cmn": "餐厅点餐",
+            "yue": "餐廳叫餐",
         },
         "role_ai": {
             "en": "Counter staff",
@@ -24,9 +24,9 @@ SCENARIOS = {
             "yue": "客",
         },
         "goal": {
-            "en": "Order a drink, change or confirm one detail (ice, sugar, temperature), and ask for the bill",
-            "cmn": "点一杯饮料，确认或改一个细节（冰、甜度或冷热），然后买单",
-            "yue": "叫一杯嘢飲，改或者確認一樣（冰、甜度、冷熱），再埋單",
+            "en": "Order a drink or dish, change or confirm one detail (ice, sugar, temperature), and ask for the bill",
+            "cmn": "点一杯饮料或一道菜，确认或改一个细节（冰、甜度或冷热），然后买单",
+            "yue": "叫一杯嘢飲或一碟餸，改或者確認一樣（冰、甜度、冷熱），再埋單",
         },
         "success_signals": [
             {"id": "ordered_drink", "description": "The learner ordered a drink."},
@@ -46,10 +46,10 @@ SCENARIOS = {
             {"id": "bill", "say": {"en": "the bill, please", "cmn": "买单", "yue": "埋單"}, "gloss": {"en": "the bill", "cmn": "买单", "yue": "埋單"}},
         ],
         "cultural_notes": [
-            "Requests use 唔該. Thanks for the drink once it is handed over can be 多謝.",
-            "Drinks are often 熱 / 凍, 走甜 / 少甜 / 正常甜, 走冰. 咖啡 in speech is often 啡.",
-            "Staff speak quickly and practically. They do not make a speech about the origin of the beans.",
-            "Prices, if mentioned, are in HKD. No tipping ritual.",
+            "Restaurant or café. Staff take the order; they do not lecture about the menu.",
+            "Cantonese: requests use 唔該. Thanks for the drink once it is handed over can be 多謝. 咖啡 in speech is often 啡.",
+            "Mandarin: 您好 / 请问. English: Could I / please. Drinks are often hot or iced, with or without sugar.",
+            "Prices, if mentioned, match the locale (HKD in a Hong Kong café). No tipping ritual.",
         ],
         "opening_hint": {
             "beginner": "Staff greet and ask what they would like, in one short line.",
@@ -66,9 +66,9 @@ SCENARIOS = {
         "enabled": True,
         "icon": "🚇",
         "title": {
-            "en": "Asking the way",
-            "cmn": "伦敦问路",
-            "yue": "倫敦問路",
+            "en": "Asking for directions",
+            "cmn": "问路",
+            "yue": "問路",
         },
         "role_ai": {
             "en": "A person on the pavement near a Tube entrance",
@@ -113,7 +113,7 @@ SCENARIOS = {
     "beijing-hotel-checkin": {
         "id": "beijing-hotel-checkin",
         "locale": "Beijing",
-        "enabled": True,
+        "enabled": False,
         "icon": "🏨",
         "title": {
             "en": "Hotel check-in",
@@ -165,16 +165,16 @@ SCENARIOS = {
         "id": "english-teacher",
         "locale": "London",
         "enabled": True,
-        "icon": "✏️",
+        "icon": "💬",
         "title": {
-            "en": "English teacher",
-            "cmn": "英语老师",
-            "yue": "英文老師",
+            "en": "Casual chat",
+            "cmn": "闲聊",
+            "yue": "傾偈",
         },
         "role_ai": {
-            "en": "English teacher",
-            "cmn": "英语老师",
-            "yue": "英文老師",
+            "en": "Chat partner",
+            "cmn": "闲聊伙伴",
+            "yue": "傾偈夥伴",
         },
         "role_learner": {
             "en": "Learner",
@@ -182,9 +182,9 @@ SCENARIOS = {
             "yue": "學習者",
         },
         "goal": {
-            "en": "Send a sentence. The teacher corrects grammar, a wrong word, or a wrong phrase, and shows how a hard word is read.",
-            "cmn": "发一句英语。老师改正语法、用错的词或短语，并标出难读的词怎么读。",
-            "yue": "傳一句英文。老師改文法、用錯嘅字或者短語，再標出難讀嘅字點讀。",
+            "en": "Everyday small talk. In correction mode the coach fixes grammar, a wrong word, or a wrong phrase. In conversation mode they chat naturally with a short correctness note.",
+            "cmn": "日常闲聊。纠错模式改正语法、用错的词或短语。对话模式自然聊天，并给一句简短对错提示。",
+            "yue": "日常傾偈。糾錯模式改文法、用錯嘅字或者短語。對話模式自然傾，再加一句短短對錯提示。",
         },
         "success_signals": [
             {"id": "shared_sentence", "description": "The learner sent a sentence to correct."},
@@ -195,32 +195,107 @@ SCENARIOS = {
             {"id": "bored", "say": {"en": "I am bored", "cmn": "I am bored", "yue": "I am bored"}, "gloss": {"en": "how you feel", "cmn": "你的感觉", "yue": "你嘅感覺"}},
         ],
         "cultural_notes": [
-            "Chloe is an English teacher, not a café clerk, a hotel clerk, or an IELTS examiner.",
+            "Everyday small talk: weekend plans, food, weather, work, hobbies. Not a café clerk, hotel clerk, or IELTS examiner.",
             "character.text is English only. Explanations stay in the support language.",
-            "Correct grammar, a wrong word, or a wrong phrase. quote must be an exact substring of the learner line.",
+            "Correction mode: grammar, a wrong word, or a wrong phrase. quote must be an exact substring of the learner line.",
+            "Conversation mode: answer the learner naturally and put one short correctness or encouragement note in coaching.praise.",
             "Do not score pronunciation and do not say what a microphone heard. Leave reading_hints empty; the server adds how a word is read from the spelling.",
             "Never write “you pronounced”, “pronunciation was”, or “your tone”.",
         ],
         "opening_hint": {
-            "beginner": "Hello, I am Chloe. Send me a sentence and I will help with the English.",
-            "intermediate": "Hello, I am Chloe. Send me a sentence and I will help with the English.",
-            "advanced": "Hello, I am Chloe. Send me a sentence and I will help with the English.",
+            "beginner": "Hello, I am {name}. Shall we have a chat?",
+            "intermediate": "Hello, I am {name}. Shall we have a chat?",
+            "advanced": "Hello, I am {name}. Shall we have a chat?",
+        },
+        "jyutping_overrides": {},
+        "pinyin_phrases": {},
+    },
+    "london-chat": {
+        "id": "london-chat",
+        "locale": "London",
+        "enabled": True,
+        "icon": "🇬🇧",
+        "title": {
+            "en": "London-focus chat",
+            "cmn": "伦敦英语闲聊",
+            "yue": "倫敦英語傾偈",
+        },
+        "role_ai": {
+            "en": "London local",
+            "cmn": "伦敦本地人",
+            "yue": "倫敦本地人",
+        },
+        "role_learner": {
+            "en": "Visitor or newcomer",
+            "cmn": "访客或新来者",
+            "yue": "訪客或新來者",
+        },
+        "goal": {
+            "en": "Chat in UK/London English: a place, the Tube, and a polite local phrase.",
+            "cmn": "用英国/伦敦英语闲聊：一个地方、地铁，以及一句礼貌的本地说法。",
+            "yue": "用英國／倫敦英語傾偈：一個地方、地鐵，同一句有禮嘅本地講法。",
+        },
+        "success_signals": [
+            {"id": "named_place", "description": "The learner named a London place."},
+            {"id": "mentioned_tube", "description": "The learner mentioned the Tube or a line."},
+            {"id": "used_polite_phrase", "description": "The learner used a polite British phrase."},
+        ],
+        "vocab": [
+            {"id": "tube", "say": {"en": "the Tube", "cmn": "the Tube", "yue": "the Tube"}, "gloss": {"en": "London underground", "cmn": "伦敦地铁", "yue": "倫敦地鐵"}},
+            {"id": "queue", "say": {"en": "join the queue", "cmn": "join the queue", "yue": "join the queue"}, "gloss": {"en": "British for line", "cmn": "排队", "yue": "排隊"}},
+            {"id": "cheers", "say": {"en": "Cheers", "cmn": "Cheers", "yue": "Cheers"}, "gloss": {"en": "thanks / bye", "cmn": "谢谢或再见", "yue": "多謝或再見"}},
+            {"id": "excuse", "say": {"en": "Excuse me", "cmn": "Excuse me", "yue": "Excuse me"}, "gloss": {"en": "polite opener", "cmn": "礼貌开头", "yue": "有禮開頭"}},
+            {"id": "gap", "say": {"en": "mind the gap", "cmn": "mind the gap", "yue": "mind the gap"}, "gloss": {"en": "platform warning", "cmn": "月台空隙提醒", "yue": "月台空隙提醒"}},
+        ],
+        "cultural_notes": [
+            "UK/London English: Tube, queue, pavement, lift, way out, cheers, mind the gap. No American subway/line/sidewalk unless correcting it.",
+            "Talk about places (Soho, Covent Garden, Camden, Westminster, Hyde Park), the Tube, and politeness.",
+            "character.text is English only. Explanations stay in the support language.",
+            "Correction mode: grammar, a wrong word, a wrong phrase, or a more London wording. quote must be an exact substring of the learner line.",
+            "Conversation mode: answer naturally about London and put one short correctness note in coaching.praise.",
+            "Never write “you pronounced”, “pronunciation was”, or “your tone”.",
+        ],
+        "opening_hint": {
+            "beginner": "Hi, I am {name}. Fancy a chat about London?",
+            "intermediate": "Hi, I am {name}. Fancy a chat about London?",
+            "advanced": "Hi, I am {name} — fancy a natter about London?",
         },
         "jyutping_overrides": {},
         "pinyin_phrases": {},
     },
 }
 
+MENU_IDS = (
+    "hk-cha-chaan-teng",
+    "london-directions",
+    "english-teacher",
+    "london-chat",
+)
+
+ENGLISH_FOCUS_IDS = {"english-teacher", "london-chat"}
+
 
 def enabled_scenarios() -> list[dict]:
-    return [scenario for scenario in SCENARIOS.values() if scenario["enabled"]]
+    rows = []
+    for scenario_id in MENU_IDS:
+        scenario = SCENARIOS.get(scenario_id)
+        if scenario and scenario["enabled"]:
+            rows.append(scenario)
+    for scenario in SCENARIOS.values():
+        if scenario["enabled"] and scenario["id"] not in MENU_IDS:
+            rows.append(scenario)
+    return rows
 
 
 def get_scenario(scenario_id: str) -> dict:
     scenario = SCENARIOS.get(scenario_id)
-    if scenario is None or not scenario["enabled"]:
+    if scenario is None:
         raise KeyError(scenario_id)
     return scenario
+
+
+def is_english_focus(scenario_id: str) -> bool:
+    return scenario_id in ENGLISH_FOCUS_IDS
 
 
 def signal_ids(scenario: dict) -> list[str]:

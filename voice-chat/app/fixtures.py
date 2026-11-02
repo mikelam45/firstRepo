@@ -8,8 +8,9 @@ from __future__ import annotations
 
 import re
 
+from app.partners import get_choosable_partner
 from app.phonetics.segment import is_han
-from app.scenarios import signal_ids
+from app.scenarios import is_english_focus, signal_ids
 from app.session import learner_count, turns_remaining_including_this, union_signals
 
 DAILY_DENY = (
@@ -42,13 +43,15 @@ def build_fixture(payload: dict, scenario: dict) -> dict:
     target = settings["target"]
     support = settings["support"]
     level = settings["level"]
+    partner = get_choosable_partner(payload.get("partner_id") or settings.get("partner"))
+    name = partner["name"]
     allowed = signal_ids(scenario)
     if _refused(history):
         return _safety(scenario, target)
-    if scenario["id"] == "english-teacher" and settings.get("mode") == "conversation":
-        return _teacher_conversation(payload, scenario)
+    if settings.get("mode") == "conversation":
+        return _conversation_turn(payload, scenario, name)
     if not history:
-        text = _opening(scenario["id"], target, level)
+        text = _opening(scenario["id"], target, level, name)
         return _pack(text, None, target, support, [], "open")
     fired = _signals_in_history(scenario["id"], history)
     fired = union_signals(payload.get("fired_signals") or [], fired, allowed)
@@ -58,7 +61,7 @@ def build_fixture(payload: dict, scenario: dict) -> dict:
     text = _character(scenario["id"], target, level, fired, learner, status)
     including = turns_remaining_including_this(level, history)
     if learner_count(history) > 0 and including <= 1 and status != "met":
-        text = "Let us stop here for today." if scenario["id"] == "english-teacher" else _wrap(target)
+        text = "Let us stop here for today." if is_english_focus(scenario["id"]) else _wrap(target)
     return _pack(text, coaching, target, support, fired, status)
 
 
@@ -80,7 +83,7 @@ def _last_learner(history: list[dict]) -> str:
     return ""
 
 
-def _teacher_conversation(payload: dict, scenario: dict) -> dict:
+def _conversation_turn(payload: dict, scenario: dict, name: str) -> dict:
     settings = payload["settings"]
     history = payload["history"]
     target = settings["target"]
@@ -90,11 +93,11 @@ def _teacher_conversation(payload: dict, scenario: dict) -> dict:
     if _refused(history):
         return _safety(scenario, target)
     if not history:
-        return _pack("Hello! How are you today?", None, target, support, [], "open")
+        return _pack(_conversation_opening(scenario["id"], target, name), None, target, support, [], "open")
     fired = _signals_in_history(scenario["id"], history)
     fired = union_signals(payload.get("fired_signals") or [], fired, allowed)
     including = turns_remaining_including_this(level, history)
-    text = _conversation_reply(history, level, including)
+    text = _conversation_reply(history, level, including, target, scenario["id"])
     praise = _t(
         support,
         "That sounds clear.",
@@ -105,9 +108,52 @@ def _teacher_conversation(payload: dict, scenario: dict) -> dict:
     return _pack(text, coaching, target, support, fired, "open")
 
 
-def _conversation_reply(history: list[dict], level: str, including: int) -> str:
+def _conversation_opening(scenario_id: str, target: str, name: str) -> str:
+    if scenario_id == "london-chat" or is_english_focus(scenario_id):
+        if scenario_id == "london-chat":
+            return f"Hi, I am {name}. Fancy a chat about London?"
+        return "Hello! How are you today?"
+    if scenario_id == "hk-cha-chaan-teng":
+        return {"yue": "唔該，想飲啲咩？", "cmn": "您好，请问想喝什么？", "en": "What would you like to drink?"}[target]
+    if scenario_id == "london-directions":
+        return {"en": "Hi — where are you trying to get to?", "cmn": "您好，请问您想去哪里？", "yue": "你好，你想去邊度？"}[target]
+    return {"en": "Hello, do you have a reservation?", "cmn": "您好，请问您有预订吗？", "yue": "你好，請問有冇預訂？"}[target]
+
+
+def _conversation_reply(history: list[dict], level: str, including: int, target: str = "en", scenario_id: str = "english-teacher") -> str:
     if learner_count(history) > 0 and including <= 1:
-        return "It was great chatting with you today."
+        return {
+            "en": "It was great chatting with you today.",
+            "cmn": "今天聊得很开心。",
+            "yue": "今日傾得好開心。",
+        }[target]
+    if scenario_id == "london-chat":
+        replies = (
+            "Covent Garden is lovely on a Saturday. Have you been on the Tube yet?",
+            "Yes — mind the gap when you step off. Which line are you taking?",
+            "People usually join the queue at the ticket hall. Where to after that?",
+            "Cheers — that's a very London way to put it. Fancy Hyde Park next?",
+            "The Northern line is busy, but it is handy. What else is on your list?",
+        )
+        return replies[learner_count(history) % len(replies)]
+    if target == "yue":
+        replies = (
+            "好呀，你平時鍾意做咩？",
+            "聽落唔錯。再講多啲嚟聽下。",
+            "我明白。你週末有咩安排？",
+            "真係？我想再聽多啲。",
+            "嗯，幾得意。你仲有咩諗緊？",
+        )
+        return replies[learner_count(history) % len(replies)]
+    if target == "cmn":
+        replies = (
+            "我也很高兴认识你。你空闲时喜欢做什么？",
+            "听起来不错。再多告诉我一点。",
+            "原来如此。你周末有什么安排吗？",
+            "真的吗？我很想再听多点。",
+            "嗯，有意思。你还在想什么？",
+        )
+        return replies[learner_count(history) % len(replies)]
     replies = (
         "Nice to meet you too. What do you like to do in your free time?",
         "That sounds nice. Tell me more about it.",
@@ -154,7 +200,16 @@ def _safety(scenario: dict, target: str) -> dict:
             "cmn": "I can only help with your English sentences.",
             "en": "I can only help with your English sentences.",
         },
-    }[scenario["id"]][target]
+        "london-chat": {
+            "yue": "I can only chat about London English.",
+            "cmn": "I can only chat about London English.",
+            "en": "I can only chat about London English.",
+        },
+    }.get(scenario["id"], {
+        "yue": "我只可以幫你呢個練習。",
+        "cmn": "我只能帮您做这个练习。",
+        "en": "I can only help with this practice.",
+    })[target]
     return {
         "contract": "1",
         "character": {"text": scene, "translation": None},
@@ -164,9 +219,11 @@ def _safety(scenario: dict, target: str) -> dict:
     }
 
 
-def _opening(scenario_id: str, target: str, level: str) -> str:
+def _opening(scenario_id: str, target: str, level: str, name: str = "Chloe") -> str:
+    if scenario_id == "london-chat":
+        return f"Hi, I am {name}. Fancy a chat about London?"
     if scenario_id == "english-teacher":
-        return "Hello, I am Chloe. Send me a sentence and I will help with the English."
+        return f"Hello, I am {name}. Shall we have a chat?"
     if scenario_id == "hk-cha-chaan-teng":
         if target == "yue":
             if level == "intermediate":
@@ -242,6 +299,8 @@ def _signals_in_text(scenario_id: str, text: str) -> list[str]:
             found.append("confirmed_the_turn")
     elif scenario_id == "english-teacher":
         return _teacher_signals(text)
+    elif scenario_id == "london-chat":
+        return _london_chat_signals(text)
     else:
         if any(word in text for word in ("我叫", "姓名", "名字")) or bool(
             re.search(r"\bmy name is\b|\bi'm\b|\bi am\b", lowered)
@@ -270,8 +329,13 @@ def _wrong_language(text: str, target: str) -> bool:
 
 
 def _coach(scenario_id: str, learner: str, target: str, support: str, level: str, fired: list[str]) -> dict:
-    if scenario_id == "english-teacher":
-        return _teacher_coaching(learner, support)
+    if scenario_id in {"english-teacher", "london-chat"}:
+        taught = _teacher_coaching(learner, support)
+        if taught.get("corrections"):
+            return taught
+        if scenario_id == "london-chat":
+            return _london_chat_nudge(learner, support, fired)
+        return taught
     if _wrong_language(learner, target):
         return _mismatch(scenario_id, learner, target, support)
     special = _special(scenario_id, learner, target, support)
@@ -382,7 +446,13 @@ def _mismatch(scenario_id: str, learner: str, target: str, support: str) -> dict
         ("beijing-hotel-checkin", "cmn"): "您好，我有预订。",
         ("beijing-hotel-checkin", "yue"): "您好，我有預訂。",
         ("beijing-hotel-checkin", "en"): "Hello, I have a reservation.",
-    }[(scenario_id, target)]
+        ("london-chat", "en"): "Excuse me, could you tell me about the Tube to Covent Garden?",
+        ("london-chat", "yue"): "Excuse me, could you tell me about the Tube to Covent Garden?",
+        ("london-chat", "cmn"): "Excuse me, could you tell me about the Tube to Covent Garden?",
+        ("english-teacher", "en"): "I wanted to go to school yesterday.",
+        ("english-teacher", "yue"): "I wanted to go to school yesterday.",
+        ("english-teacher", "cmn"): "I wanted to go to school yesterday.",
+    }.get((scenario_id, target), "Could I try that again, please?")
     quote = learner.strip()[:80]
     return {
         "praise": None,
@@ -413,6 +483,9 @@ def _already_fine(scenario_id: str, learner: str, target: str, fired: list[str])
     if scenario_id == "london-directions" and target == "en":
         lowered = learner.lower()
         return lowered.startswith("could you") or lowered.startswith("excuse me")
+    if scenario_id == "london-chat" and target == "en":
+        lowered = learner.lower()
+        return any(word in lowered for word in ("excuse me", "could you", "cheers", "tube", "queue"))
     if scenario_id == "beijing-hotel-checkin" and target == "cmn":
         return "您好" in learner or "麻烦" in learner
     return False
@@ -483,6 +556,14 @@ def _suggest_missing(scenario_id: str, target: str, fired: list[str]) -> str | N
         if "confirmed_the_turn" not in fired:
             return {"en": "So I turn left?", "cmn": "所以我向左转？", "yue": "即係我轉左？"}[target]
         return None
+    if scenario_id == "london-chat":
+        if "named_place" not in fired:
+            return "I'd like to see Covent Garden, please."
+        if "mentioned_tube" not in fired:
+            return "Could I take the Tube there?"
+        if "used_polite_phrase" not in fired:
+            return "Excuse me, could you tell me the way?"
+        return None
     if "gave_name" not in fired:
         return {"cmn": "您好，预订姓名是林。", "yue": "您好，預訂姓名係林。", "en": "Hello, the booking name is Lin."}[target]
     if "confirmed_dates" not in fired:
@@ -495,6 +576,8 @@ def _suggest_missing(scenario_id: str, target: str, fired: list[str]) -> str | N
 def _character(scenario_id: str, target: str, level: str, fired: list[str], learner: str, status: str) -> str:
     if scenario_id == "english-teacher":
         return _teacher_line(learner)
+    if scenario_id == "london-chat":
+        return _london_chat_line(fired, status)
     if status == "met":
         return {
             "hk-cha-chaan-teng": {"yue": "好，埋單。一共廿八蚊。", "cmn": "好的，我来买单。一共二十八块。", "en": "Sure, here is the bill. That's twenty-eight dollars."},
@@ -534,10 +617,55 @@ def _translate(text: str, support: str) -> str:
         "我哋今日先到呢度。唔該。": ("Let's wrap up here.", "我们先到这里。", "我哋今日先到呢度。唔該。"),
         "Let's wrap up here.": ("Let's wrap up here.", "我们先到这里。", "我哋今日先到呢度。"),
         "我们先到这里。": ("Let's wrap up here.", "我们先到这里。", "我哋今日先到呢度。"),
-        "Hello, I am Chloe. Send me a sentence and I will help with the English.": (
-            "Hello, I am Chloe. Send me a sentence and I will help with the English.",
-            "你好，我是 Chloe。发我一句英语，我来帮你改。",
-            "你好，我係 Chloe。傳一句英文畀我，我幫你改。",
+        "Hello, I am Chloe. Shall we have a chat?": (
+            "Hello, I am Chloe. Shall we have a chat?",
+            "你好，我是 Chloe。我们聊一会儿吧？",
+            "你好，我係 Chloe。我哋傾吓偈？",
+        ),
+        "Hello, I am Amelia. Shall we have a chat?": (
+            "Hello, I am Amelia. Shall we have a chat?",
+            "你好，我是 Amelia。我们聊一会儿吧？",
+            "你好，我係 Amelia。我哋傾吓偈？",
+        ),
+        "Hello, I am Mei. Shall we have a chat?": (
+            "Hello, I am Mei. Shall we have a chat?",
+            "你好，我是 Mei。我们聊一会儿吧？",
+            "你好，我係 Mei。我哋傾吓偈？",
+        ),
+        "Hello, I am Celine. Shall we have a chat?": (
+            "Hello, I am Celine. Shall we have a chat?",
+            "你好，我是 Celine。我们聊一会儿吧？",
+            "你好，我係 Celine。我哋傾吓偈？",
+        ),
+        "Hi, I am Chloe. Fancy a chat about London?": (
+            "Hi, I am Chloe. Fancy a chat about London?",
+            "你好，我是 Chloe。想聊聊伦敦吗？",
+            "你好，我係 Chloe。想傾下倫敦嗎？",
+        ),
+        "Hi, I am Amelia. Fancy a chat about London?": (
+            "Hi, I am Amelia. Fancy a chat about London?",
+            "你好，我是 Amelia。想聊聊伦敦吗？",
+            "你好，我係 Amelia。想傾下倫敦嗎？",
+        ),
+        "Hi, I am Mei. Fancy a chat about London?": (
+            "Hi, I am Mei. Fancy a chat about London?",
+            "你好，我是 Mei。想聊聊伦敦吗？",
+            "你好，我係 Mei。想傾下倫敦嗎？",
+        ),
+        "Hi, I am Celine. Fancy a chat about London?": (
+            "Hi, I am Celine. Fancy a chat about London?",
+            "你好，我是 Celine。想聊聊伦敦吗？",
+            "你好，我係 Celine。想傾下倫敦嗎？",
+        ),
+        "Covent Garden is lovely on a Saturday. Have you been on the Tube yet?": (
+            "Covent Garden is lovely on a Saturday. Have you been on the Tube yet?",
+            "周六的 Covent Garden 很不错。你坐过地铁吗？",
+            "星期六 Covent Garden 幾正。你坐過地鐵未？",
+        ),
+        "Lovely — that's a very London way to put it.": (
+            "Lovely — that's a very London way to put it.",
+            "很好——这很有伦敦味道。",
+            "好——呢句好有倫敦味。",
         ),
         "Let us fix the grammar in that sentence.": (
             "Let us fix the grammar in that sentence.",
@@ -686,6 +814,71 @@ def _teacher_signals(text: str) -> list[str]:
     if re.search(r"[A-Za-z]", text):
         return ["shared_sentence"]
     return []
+
+
+_LONDON_PLACES = (
+    "covent garden", "soho", "camden", "westminster", "hyde park", "notting hill",
+    "brick lane", "southbank", "south bank", "tower", "oxford street", "piccadilly",
+    "paddington", "london", "leicester", "borough", "shoreditch",
+)
+_LONDON_TUBE = (
+    "tube", "underground", "oyster", "mind the gap", "northern line", "district",
+    "circle", "central line", "piccadilly line", "bakerloo", "jubilee",
+)
+_LONDON_POLITE = (
+    "excuse me", "could you", "please", "cheers", "thank you", "queue", "would you",
+)
+
+
+def _london_chat_signals(text: str) -> list[str]:
+    lowered = text.lower()
+    found: list[str] = []
+    if any(place in lowered for place in _LONDON_PLACES):
+        found.append("named_place")
+    if any(word in lowered for word in _LONDON_TUBE):
+        found.append("mentioned_tube")
+    if any(word in lowered for word in _LONDON_POLITE):
+        found.append("used_polite_phrase")
+    return found
+
+
+def _london_chat_nudge(learner: str, support: str, fired: list[str]) -> dict:
+    suggestion = _suggest_missing("london-chat", "en", fired)
+    if suggestion is None:
+        return {
+            "praise": _t(support, "That works for this step.", "这一步这样说就可以。", "呢一步咁講得。"),
+            "corrections": [],
+            "suggested_reply": None,
+            "reading_hints": [],
+        }
+    quote = learner.strip()[:80] or learner
+    return {
+        "praise": None,
+        "corrections": [
+            {
+                "type": "completeness",
+                "quote": quote,
+                "why": _t(
+                    support,
+                    "A London chat still needs a place, the Tube, or a polite phrase.",
+                    "伦敦闲聊还需要一个地方、地铁或一句礼貌说法。",
+                    "倫敦傾偈仲要一個地方、地鐵或一句有禮講法。",
+                ),
+            }
+        ],
+        "suggested_reply": suggestion,
+        "reading_hints": [],
+    }
+
+
+def _london_chat_line(fired: list[str], status: str) -> str:
+    if status == "met":
+        return "Lovely — that's a very London way to put it."
+    if "named_place" not in fired:
+        return "Which bit of London are you thinking of?"
+    if "mentioned_tube" not in fired:
+        return "Will you take the Tube, or walk?"
+    return "Yes — 'mind the gap' is what you'll hear on the platform."
 
 
 def _teacher_line(learner: str) -> str:

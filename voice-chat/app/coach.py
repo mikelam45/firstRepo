@@ -12,10 +12,10 @@ import httpx
 
 from app.fixtures import DAILY_DENY, build_fixture
 from app.models import ROUTES, route_for_turn
-from app.partners import get_partner
+from app.partners import CHOOSABLE_IDS, HIDDEN_REMAP, choose_partner, get_choosable_partner, get_partner
 from app.phonetics.english import english_ipa
 from app.phonetics.pipeline import annotate
-from app.scenarios import get_scenario, signal_ids
+from app.scenarios import get_scenario, is_english_focus, signal_ids
 from app.session import (
     CORRECTION_PRIORITY,
     LEVEL_BUDGETS,
@@ -133,14 +133,14 @@ def resolve_provider():
 
 def handle_turn(payload: dict, provider=None) -> dict:
     scenario = get_scenario(payload["scenario_id"])
-    if scenario["id"] == "english-teacher":
+    if is_english_focus(scenario["id"]):
         settings = dict(payload["settings"])
         settings["target"] = "en"
         payload = dict(payload)
         payload["settings"] = settings
-    partner = get_partner(payload.get("partner_id") or payload["settings"].get("partner"))
+    partner = get_choosable_partner(payload.get("partner_id") or payload["settings"].get("partner"))
     provider = provider or resolve_provider()
-    if scenario["id"] == "english-teacher":
+    if is_english_focus(scenario["id"]):
         route = "roleplay"
     else:
         route = route_for_turn(payload["settings"]["target"], payload["settings"]["support"])
@@ -223,9 +223,9 @@ def build_messages(payload: dict, scenario: dict, partner: dict) -> list[dict]:
             "\n".join(f"- {note}" for note in scenario["cultural_notes"]),
             "",
             "OPENING_HINT:",
-            scenario["opening_hint"][settings["level"]],
-            _teacher_rules() if scenario["id"] == "english-teacher" and settings.get("mode") != "conversation" else "",
-            _conversation_rules() if scenario["id"] == "english-teacher" and settings.get("mode") == "conversation" else "",
+            scenario["opening_hint"][settings["level"]].replace("{name}", partner["name"]),
+            _correction_rules(scenario, partner) if settings.get("mode") != "conversation" else "",
+            _conversation_rules(scenario, partner, settings["target"]) if settings.get("mode") == "conversation" else "",
         ]
     )
     user = {
@@ -250,31 +250,39 @@ def build_messages(payload: dict, scenario: dict, partner: dict) -> list[dict]:
     ]
 
 
-def _teacher_rules() -> str:
+def _correction_rules(scenario: dict, partner: dict) -> str:
+    extra = []
+    if is_english_focus(scenario["id"]):
+        extra = [
+            "character.text is English only, one or two short sentences.",
+            "Correction types: grammar, vocabulary for a wrong word, phrase for a wrong phrase.",
+            "Leave reading_hints as an empty array. The server writes how a word is read.",
+        ]
     return "\n".join(
         [
             "",
-            "ENGLISH_TEACHER:",
-            "You are an English teacher. You are not a café clerk, a hotel clerk, or an IELTS examiner.",
-            "character.text is English only, one or two short sentences, in a teacher's voice.",
-            "Coaching explanations use SUPPORT_LANG only.",
-            "Correction types: grammar, vocabulary for a wrong word, phrase for a wrong phrase.",
+            "CORRECTION_MODE:",
+            f"You are {partner['name']}, staying in the scene while you help the learner.",
+            "Fix grammar, a wrong word, or a wrong phrase. Scene register still applies.",
             "Each quote must be an exact substring of the learner's latest line.",
             "If the sentence already works, corrections is empty and suggested_reply is null.",
-            "Leave reading_hints as an empty array. The server writes how a word is read.",
+            "Coaching explanations use SUPPORT_LANG only.",
             "You cannot hear the learner. Do not score pronunciation.",
             'Never write "you pronounced", "pronunciation was", or "your tone".',
+            *extra,
         ]
     )
 
 
-def _conversation_rules() -> str:
+def _conversation_rules(scenario: dict, partner: dict, target: str) -> str:
+    lang = {"en": "English", "cmn": "Mandarin", "yue": "Cantonese"}.get(target, "the target language")
     return "\n".join(
         [
             "",
             "CONVERSATION_MODE:",
-            "You are having a casual conversation with the learner.",
-            "Reply naturally in English as Chloe, in a friendly, short, conversational voice that answers the learner's actual message or question.",
+            f"You are having a natural conversation with the learner as {partner['name']}.",
+            f"Reply in {lang}, in a friendly, short voice that answers the learner's actual message.",
+            "Stay in the scene, but do not turn every turn into a drill.",
             "Give one very short correctness or encouragement note in coaching.praise.",
             "If the learner made a small mistake, the praise can gently note it in one short phrase.",
             "Do not return corrections, suggested_reply, or reading_hints.",
@@ -366,12 +374,12 @@ def normalize_turn(raw: dict, payload: dict, scenario: dict) -> dict:
     elif translation is not None:
         translation = str(translation)[:400]
     coaching = None if opening or refused else _coaching(raw.get("coaching"), payload)
-    if coaching and scenario["id"] == "english-teacher":
+    if coaching:
         if settings.get("mode") == "conversation":
             coaching["corrections"] = []
             coaching["suggested_reply"] = None
             coaching["reading_hints"] = []
-        else:
+        elif is_english_focus(scenario["id"]) or settings.get("target") == "en":
             learner = _latest_learner(payload)
             coaching["reading_hints"] = _english_reading_hints(
                 learner,
@@ -673,11 +681,13 @@ def validate_request(body: Any) -> dict:
     if settings.get("pinyin_tone") not in {None, "mark", "number"}:
         raise ServiceError(400, "invalid_request", "pinyin_tone must be mark or number.")
     settings["pinyin_tone"] = settings.get("pinyin_tone") or "mark"
-    partner_id = body.get("partner_id") or settings.get("partner") or "amelia"
-    try:
-        get_partner(partner_id)
-    except KeyError:
-        raise ServiceError(400, "invalid_request", "Unknown partner.")
+    raw_partner = body.get("partner_id") or settings.get("partner") or "amelia"
+    if raw_partner not in CHOOSABLE_IDS and raw_partner not in HIDDEN_REMAP:
+        try:
+            get_partner(raw_partner)
+        except KeyError:
+            raise ServiceError(400, "invalid_request", "Unknown partner.")
+    partner_id = choose_partner(raw_partner)
     history = body.get("history", [])
     if not isinstance(history, list) or len(history) > 12:
         raise ServiceError(400, "invalid_request", "history must be a list of at most 12 turns.")

@@ -1,29 +1,38 @@
-from app.partners import PARTNERS, get_partner
+from app.partners import CHOOSABLE_IDS, PARTNERS, all_partners, choose_partner, get_partner
 from app.session import needs_reset_confirm
 from app.visemes import MOODS, english_visemes, pinyin_visemes, synthesis_request, viseme_at
 
 
 def test_partner_catalogue_includes_english_teacher():
-    women = [partner for partner in PARTNERS if partner["gender"] == "woman"]
-    men = [partner for partner in PARTNERS if partner["gender"] == "man"]
-    assert [partner["name"] for partner in women] == ["Amelia", "Mei", "Wing", "Chloe", "Celine"]
-    assert [partner["name"] for partner in men] == ["Oliver", "Hao", "Lok"]
-    assert [partner["name"] for partner in PARTNERS] == [
-        "Amelia", "Mei", "Wing", "Oliver", "Hao", "Lok", "Chloe", "Celine",
-    ]
+    choosable = all_partners()
+    assert [partner["name"] for partner in choosable] == ["Amelia", "Mei", "Chloe", "Celine"]
+    assert all(partner["id"] in CHOOSABLE_IDS for partner in choosable)
     assert all(partner["age"] == 27 for partner in PARTNERS)
     teacher = get_partner("chloe")
     assert teacher["name"] == "Chloe"
     assert teacher["age"] == 27
-    assert teacher["role"]["en"] == "English teacher"
+    assert teacher["role"]["en"] == "English partner"
     assert teacher["display"] == "mesh"
     assert teacher["mesh"] is True
     assert teacher["portrait"].endswith("chloe.jpg")
     waitress = get_partner("celine")
     assert waitress["name"] == "Celine"
-    assert waitress["role"]["en"] == "Coffee shop waitress"
+    assert waitress["role"]["en"] == "Hong Kong partner"
     assert waitress["city"] == "Hong Kong"
     assert waitress["portrait"].endswith("celine.jpg")
+    for partner in choosable:
+        assert partner["mesh"] is True
+        assert partner["portrait"].endswith(".jpg")
+        assert partner["mesh_url"].endswith(".json")
+
+
+def test_hidden_partners_are_not_choosable():
+    assert choose_partner("wing") == "celine"
+    assert choose_partner("lok") == "celine"
+    assert choose_partner("oliver") == "amelia"
+    assert choose_partner("hao") == "mei"
+    assert choose_partner("nora") == "chloe"
+    assert get_partner("hao")["name"] == "Hao"
 
 
 def test_english_and_pinyin_visemes():
@@ -62,7 +71,7 @@ def test_switch_keeps_bubbles_and_labels_hao():
 
 
 def test_cantonese_voice_never_selects_mandarin():
-    for partner_id in ("wing", "lok"):
+    for partner_id in ("celine", "wing", "lok"):
         choice = synthesis_request(get_partner(partner_id), "yue", "en-GB")
         assert "zh-CN" not in choice["langs"]
         assert "zh-TW" not in choice["langs"]
