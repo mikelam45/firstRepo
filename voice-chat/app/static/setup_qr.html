@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>LingoCoach — Authenticator setup</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23101826'/%3E%3Ccircle cx='16' cy='14' r='7' fill='%23e7eef8'/%3E%3C/svg%3E">
+  <style>
+    /* Forced-light enroll page. Primary path is Enter a setup key in Google
+       Authenticator. The SVG QR is secondary (GA in-app scanner / Android).
+       iPhone Camera treats otpauth:// as Apple Passwords / 安全金鑰 — do not
+       tell users to scan this page with Camera. */
+    :root {
+      color-scheme: only light;
+      --bg: #f4f6f9;
+      --surface: #ffffff;
+      --ink: #1a2233;
+      --muted: #5a6a82;
+      --line: #d5dde8;
+      --accent: #1a73e8;
+      --accent-ink: #ffffff;
+      --ok: #1e7a4a;
+      --warn-bg: #fff8e8;
+      --warn-line: #e6d4a8;
+      --danger-bg: #fff1f0;
+      --danger-line: #f0b8b4;
+      --danger-ink: #8a1f1a;
+      font-family: "Segoe UI", "PingFang HK", "Noto Sans CJK TC", "Noto Sans SC", sans-serif;
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      min-height: 100%;
+      background: var(--bg);
+      color: var(--ink);
+      color-scheme: only light;
+    }
+    .sheet {
+      width: min(600px, 100%);
+      min-height: 100dvh;
+      margin: 0 auto;
+      background: var(--surface);
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      padding: 28px 20px;
+      padding-top: max(28px, env(safe-area-inset-top));
+      padding-bottom: max(28px, env(safe-area-inset-bottom));
+      border-left: 1px solid var(--line);
+      border-right: 1px solid var(--line);
+    }
+    .mark {
+      font-weight: 700;
+      letter-spacing: 0.01em;
+      font-size: 1.45rem;
+      margin: 0 0 6px;
+    }
+    .lede-zh {
+      margin: 0 0 8px;
+      line-height: 1.5;
+      font-size: 1.08rem;
+    }
+    .lede {
+      margin: 0 0 16px;
+      color: var(--muted);
+      font-size: 0.98rem;
+      line-height: 1.45;
+    }
+    .warn {
+      margin: 0 0 16px;
+      padding: 12px 14px;
+      border: 1px solid var(--warn-line);
+      border-radius: 10px;
+      background: var(--warn-bg);
+      color: #6a5520;
+      font-size: 0.9rem;
+      line-height: 1.4;
+    }
+    .warn-camera {
+      border-color: var(--danger-line);
+      background: var(--danger-bg);
+      color: var(--danger-ink);
+      font-weight: 600;
+    }
+    .warn-camera .warn-en {
+      display: block;
+      margin-top: 6px;
+      font-weight: 500;
+      font-size: 0.88rem;
+    }
+    .steps {
+      margin: 0 0 18px;
+      padding-left: 1.25rem;
+      color: var(--muted);
+      font-size: 0.95rem;
+      line-height: 1.55;
+    }
+    .steps li { margin: 0 0 8px; }
+    .steps strong { color: var(--ink); font-weight: 600; }
+    /* White QR island: never invert; never round the modules. Secondary path. */
+    .qr-wrap,
+    .qr-island {
+      align-self: center;
+      color-scheme: only light;
+      forced-color-adjust: none;
+      background: #ffffff;
+      padding: 28px;
+      border-radius: 0;
+      border: 1px solid var(--line);
+      line-height: 0;
+      margin: 0 auto 12px;
+      width: fit-content;
+      max-width: 100%;
+      overflow: visible;
+      filter: none;
+      -webkit-filter: none;
+      mix-blend-mode: normal;
+      isolation: isolate;
+    }
+    .qr-wrap .qr-svg,
+    .qr-island .qr-svg,
+    .qr-wrap svg.qr-svg {
+      display: block;
+      margin: 0 auto;
+      background: #ffffff;
+      color-scheme: only light;
+      forced-color-adjust: none;
+      border-radius: 0;
+      overflow: visible;
+      shape-rendering: crispEdges;
+      image-rendering: pixelated;
+      image-rendering: crisp-edges;
+      filter: none;
+      -webkit-filter: none;
+      max-width: min(420px, calc(100vw - 72px));
+      min-width: 280px;
+      height: auto;
+      aspect-ratio: 1 / 1;
+    }
+    .qr-png-fallback,
+    .qr-wrap img.qr-png-fallback {
+      display: none !important;
+      width: 0 !important;
+      height: 0 !important;
+      border-radius: 0;
+    }
+    .qr-wrap img.qr-img {
+      image-rendering: pixelated;
+      image-rendering: crisp-edges;
+      border-radius: 0;
+      background: #ffffff;
+    }
+    @media (prefers-color-scheme: dark) {
+      .qr-wrap, .qr-island, .qr-wrap .qr-svg, .qr-island .qr-svg {
+        color-scheme: only light;
+        background: #ffffff !important;
+        filter: none !important;
+        -webkit-filter: none !important;
+      }
+      .qr-svg rect.qr-bg { fill: #ffffff !important; }
+      .qr-svg rect.qr-mod { fill: #000000 !important; }
+    }
+    .scan-tip {
+      margin: 0 0 24px;
+      color: var(--muted);
+      font-size: 0.88rem;
+      line-height: 1.45;
+      text-align: center;
+    }
+    .divider {
+      margin: 4px 0 20px;
+      border: 0;
+      border-top: 1px solid var(--line);
+    }
+    .panel-title {
+      margin: 0 0 10px;
+      font-size: 1.08rem;
+      font-weight: 700;
+    }
+    .panel-title .badge {
+      display: inline-block;
+      margin-left: 6px;
+      padding: 2px 8px;
+      border-radius: 6px;
+      background: #e8f0fe;
+      color: #174ea6;
+      font-size: 0.72rem;
+      font-weight: 600;
+      vertical-align: middle;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+    .panel-title .badge-secondary {
+      background: #eef1f5;
+      color: #5a6a82;
+    }
+    .key-label { font-size: 0.95rem; color: var(--muted); margin: 0 0 8px; font-weight: 600; }
+    .key-row {
+      display: flex;
+      gap: 8px;
+      align-items: stretch;
+      margin: 0 0 8px;
+    }
+    .key {
+      flex: 1;
+      margin: 0;
+      padding: 22px 16px;
+      border-radius: 10px;
+      border: 2px solid var(--accent);
+      background: #f8fafc;
+      font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+      font-size: 1.85rem;
+      font-weight: 700;
+      letter-spacing: 0.14em;
+      word-break: break-all;
+      line-height: 1.5;
+      user-select: all;
+      -webkit-user-select: all;
+      color: var(--ink);
+    }
+    .copy {
+      flex: 0 0 auto;
+      min-width: 96px;
+      border: 1px solid var(--accent);
+      border-radius: 10px;
+      background: var(--accent);
+      color: var(--accent-ink);
+      font-weight: 700;
+      font-size: 1rem;
+      cursor: pointer;
+      padding: 0 16px;
+    }
+    .copy:active { filter: brightness(0.94); }
+    .copy.copied {
+      background: var(--ok);
+      border-color: var(--ok);
+    }
+    .account-hint {
+      margin: 0 0 18px;
+      color: var(--muted);
+      font-size: 0.88rem;
+      line-height: 1.4;
+    }
+    .otpauth-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 56px;
+      margin: 0 0 8px;
+      border: 1px solid var(--accent);
+      border-radius: 10px;
+      background: var(--accent);
+      color: var(--accent-ink);
+      padding: 14px 16px;
+      font-weight: 700;
+      font-size: 1.08rem;
+      text-decoration: none;
+      text-align: center;
+      line-height: 1.3;
+    }
+    .otpauth-btn:active { filter: brightness(0.94); }
+    .otpauth-sub {
+      margin: 0 0 22px;
+      color: var(--muted);
+      font-size: 0.86rem;
+      line-height: 1.4;
+      text-align: center;
+    }
+    .primary {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      align-self: center;
+      min-height: 48px;
+      border-radius: 10px;
+      background: transparent;
+      color: var(--ink);
+      border: 1px solid var(--line);
+      padding: 0 18px;
+      font-weight: 600;
+      text-decoration: none;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <div class="sheet">
+    <p class="mark">LingoCoach</p>
+    <p class="lede-zh">在 <strong>Google Authenticator</strong> 裡<strong>輸入設定密鑰</strong>（不要用 iPhone 相機掃描此頁）。</p>
+    <p class="lede">Add LingoCoach in <strong>Google Authenticator</strong> by entering a setup key. Do <strong>not</strong> use the iPhone Camera app for this page.</p>
+    <p class="warn warn-camera" id="camera-warning">iPhone 相機會開啟「密碼／安全金鑰」，<strong>不會</strong>交給 Google Authenticator。請勿用系統相機掃描此頁。若 GA 顯示「請改用相機」，請忽略該提示，改用下方「輸入設定密鑰」。<span class="warn-en">iPhone Camera opens Apple Passwords / Security Keys (密碼／安全金鑰), <strong>not</strong> Google Authenticator. Do not use Camera for this page. Camera will not hand off to GA.</span></p>
+    <p class="warn">This link works once. Leave this page open while you add the key — do not refresh. After you leave, remint with <code>./lingocoachctl.sh qr</code>.</p>
+
+    <section id="setup-key-primary">
+      <h2 class="panel-title">1. Enter a setup key / 輸入設定密鑰 <span class="badge">Primary</span></h2>
+      <ol class="steps" aria-label="Enter a setup key in Google Authenticator">
+        <li>Keep this page open on the <strong>Mac</strong> (Chrome).</li>
+        <li>On the iPhone, open <strong>Google Authenticator</strong> — not the Camera app, not Apple Passwords.</li>
+        <li>Tap <strong>+</strong> → <strong>Enter a setup key</strong> / <strong>輸入設定密鑰</strong>.</li>
+        <li>Account / 帳戶名稱: <strong>LingoCoach</strong></li>
+        <li>Key / 密鑰: paste the key below (Copy). Spaces are optional.</li>
+        <li>Type: <strong>Time based</strong> / <strong>基於時間</strong> → <strong>Add</strong> / 新增.</li>
+        <li>Open <strong>/login</strong> and enter the 6-digit code.</li>
+      </ol>
+      <p class="key-label">Your setup key (base32) / 設定密鑰</p>
+      <div class="key-row">
+        <p class="key" id="manual">__MANUAL_KEY__</p>
+        <button type="button" class="copy" id="copy-key" data-raw="__MANUAL_KEY_RAW__">Copy</button>
+      </div>
+      <p class="account-hint">Account name in GA: <strong>LingoCoach</strong>. Copy pastes the key without spaces. Google Authenticator also accepts the grouped form.</p>
+    </section>
+
+    <hr class="divider">
+
+    <section id="qr-secondary">
+      <h2 class="panel-title">2. Scan from inside Google Authenticator <span class="badge badge-secondary">Secondary</span></h2>
+      <ol class="steps" aria-label="Scan QR from inside Google Authenticator">
+        <li>Do <strong>not</strong> open the iPhone <strong>Camera</strong> app.</li>
+        <li>Google Authenticator → <strong>+</strong> → <strong>Scan a QR code</strong> / 掃描 QR code.</li>
+        <li>Point at the <strong>white square</strong> below on this Mac. Android: same in-app scanner.</li>
+      </ol>
+      <div class="qr-wrap qr-island" id="qr-primary">__QR_MARKUP__</div>
+      <p class="scan-tip">QR encodes <code>otpauth://totp/…</code> only (not this page URL). Scan it from <strong>inside</strong> Google Authenticator, not with iPhone Camera.</p>
+    </section>
+
+    <hr class="divider">
+
+    <section id="otpauth-phone">
+      <h2 class="panel-title">3. If you opened this page on the iPhone</h2>
+      <a class="otpauth-btn" id="otpauth-link" href="__OTPAUTH_URI__">Open in Google Authenticator<br><span style="font-weight:600;font-size:0.88rem;opacity:0.92">在 Google Authenticator 開啟</span></a>
+      <p class="otpauth-sub">iOS may still offer Passwords / 安全金鑰. If so, tap <strong>Cancel</strong> and use the setup key above. Do not expect Camera → Google Authenticator.</p>
+    </section>
+
+    <a class="primary" href="/login">Continue to unlock</a>
+  </div>
+  <script>
+    (function () {
+      var btn = document.getElementById("copy-key");
+      if (!btn) return;
+      var raw = btn.getAttribute("data-raw") || "";
+      var done = function () {
+        btn.textContent = "Copied";
+        btn.classList.add("copied");
+        setTimeout(function () {
+          btn.textContent = "Copy";
+          btn.classList.remove("copied");
+        }, 1500);
+      };
+      var selectVisible = function () {
+        var el = document.getElementById("manual");
+        if (!el) return false;
+        var range = document.createRange();
+        range.selectNodeContents(el);
+        var sel = window.getSelection();
+        sel.removeAllRanges();
+        sel.addRange(range);
+        return true;
+      };
+      var execCopy = function () {
+        var ta = document.createElement("textarea");
+        ta.value = raw;
+        ta.setAttribute("readonly", "");
+        ta.setAttribute("aria-hidden", "true");
+        ta.style.position = "fixed";
+        ta.style.top = "0";
+        ta.style.left = "-9999px";
+        ta.style.opacity = "0";
+        document.body.appendChild(ta);
+        ta.focus();
+        ta.select();
+        ta.setSelectionRange(0, raw.length);
+        var ok = false;
+        try {
+          ok = document.execCommand("copy");
+        } catch (e) {
+          ok = false;
+        }
+        document.body.removeChild(ta);
+        return ok;
+      };
+      btn.addEventListener("click", function () {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(raw).then(done).catch(function () {
+            if (execCopy()) done();
+            else selectVisible();
+          });
+          return;
+        }
+        if (execCopy()) done();
+        else selectVisible();
+      });
+    })();
+  </script>
+</body>
+</html>

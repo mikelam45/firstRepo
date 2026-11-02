@@ -1,0 +1,8 @@
+.env
+openrouter_key/
+.git
+**/.git
+**/__pycache__
+**/.pytest_cache
+**/*.pyc
+**/.venv
