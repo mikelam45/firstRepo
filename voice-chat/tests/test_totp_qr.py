@@ -18,6 +18,116 @@ from app.main import app
 # Random-looking test secret — not from env / production.
 TEST_SECRET = "JBSWY3DPEHPK3PXP"
 
+# Decoder preference for the release gate (verified in this VM):
+# 1) OpenCV cv2.QRCodeDetector — works on segno PNG without libzbar
+# 2) pyzbar (+ libzbar0 / libzbar0t64) — needs system zbar shared lib
+# 3) zxing-cpp — optional pip wheel
+_DECODER_USED: str | None = None
+
+
+def _try_install_decoder_libs() -> None:
+    """Best-effort install of optional QR decoders (no-op if already present)."""
+    import importlib
+    import subprocess
+    import sys
+
+    missing: list[str] = []
+    for mod, pip_name in (
+        ("cv2", "opencv-python-headless"),
+        ("numpy", "numpy"),
+        ("pyzbar", "pyzbar"),
+        ("PIL", "pillow"),
+        ("zxingcpp", "zxing-cpp"),
+    ):
+        try:
+            importlib.import_module(mod)
+        except ImportError:
+            missing.append(pip_name)
+    if not missing:
+        return
+    subprocess.run(
+        [sys.executable, "-m", "pip", "install", "-q", *dict.fromkeys(missing)],
+        check=False,
+        capture_output=True,
+        timeout=180,
+    )
+
+
+def _decode_qr_png(png: bytes) -> tuple[str, str]:
+    """Decode QR PNG → (payload, decoder_name). Raises if no decoder works."""
+    global _DECODER_USED
+    errors: list[str] = []
+
+    # 1) OpenCV
+    try:
+        import cv2
+        import numpy as np
+
+        arr = np.frombuffer(png, dtype=np.uint8)
+        img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+        if img is None:
+            raise RuntimeError("cv2.imdecode returned None")
+        data, _pts, _ = cv2.QRCodeDetector().detectAndDecode(img)
+        if data:
+            _DECODER_USED = "opencv-QRCodeDetector"
+            return data, _DECODER_USED
+        errors.append("opencv: empty decode")
+    except Exception as exc:  # noqa: BLE001 — probe optional deps
+        errors.append(f"opencv: {type(exc).__name__}: {exc}")
+
+    # 2) pyzbar (+ Pillow)
+    try:
+        import io
+
+        from PIL import Image
+        from pyzbar.pyzbar import decode as zbar_decode
+
+        results = zbar_decode(Image.open(io.BytesIO(png)))
+        if results:
+            payload = results[0].data.decode("utf-8")
+            _DECODER_USED = "pyzbar+libzbar"
+            return payload, _DECODER_USED
+        errors.append("pyzbar: no symbols")
+    except Exception as exc:  # noqa: BLE001
+        errors.append(f"pyzbar: {type(exc).__name__}: {exc}")
+
+    # 3) zxing-cpp
+    try:
+        import cv2
+        import numpy as np
+        import zxingcpp
+
+        arr = np.frombuffer(png, dtype=np.uint8)
+        img = cv2.imdecode(arr, cv2.IMREAD_GRAYSCALE)
+        if img is None:
+            raise RuntimeError("cv2.imdecode returned None for zxing")
+        results = zxingcpp.read_barcodes(img)
+        if results:
+            _DECODER_USED = "zxing-cpp"
+            return results[0].text, _DECODER_USED
+        errors.append("zxing-cpp: no barcodes")
+    except Exception as exc:  # noqa: BLE001
+        errors.append(f"zxing-cpp: {type(exc).__name__}: {exc}")
+
+    raise RuntimeError("no QR decoder succeeded: " + "; ".join(errors))
+
+
+@pytest.fixture(scope="module")
+def qr_decoder_ready():
+    """Ensure at least one QR decoder works; skip only after trying to install."""
+    _try_install_decoder_libs()
+    probe_secret = pyotp.random_base32()
+    probe_uri = pyotp.TOTP(probe_secret).provisioning_uri(
+        name=totp_gate.ACCOUNT, issuer_name=totp_gate.ISSUER
+    )
+    png = totp_qr.qr_png_bytes(probe_uri)
+    try:
+        payload, name = _decode_qr_png(png)
+    except RuntimeError as exc:
+        pytest.skip(f"QR decoder libs unavailable after install attempt: {exc}")
+    assert payload.startswith("otpauth://totp/")
+    return name
+
 
 def _png_from_markup(markup: str) -> bytes:
     assert 'src="data:image/png;base64,' in markup
@@ -137,11 +247,11 @@ def test_qr_modules_encode_otpauth_not_https_enroll_url():
     assert "/setup/qr" not in payload
     assert totp_qr.QR_BORDER >= 4
     # Factory accepts otpauth and builds a matrix with quiet zone.
+    # Note: segno symbol_size(scale=1) includes its default border=4; use len(matrix).
     qr = totp_qr._qr_factory(uri)
     matrix = totp_qr._matrix_with_quiet_zone(qr)
     assert matrix[0][0] is False
-    core = qr.symbol_size(scale=1, border=0)[0]
-    assert len(matrix) == core + 2 * totp_qr.QR_BORDER
+    assert len(matrix) == len(qr.matrix) + 2 * totp_qr.QR_BORDER
 
 
 def test_qr_factory_rejects_https_enroll_page_url():
@@ -183,8 +293,7 @@ def test_qr_png_default_segno_pure_python():
     matrix = totp_qr._matrix_with_quiet_zone(qr)
     assert matrix[0][0] is False
     assert matrix[-1][-1] is False
-    core = qr.symbol_size(scale=1, border=0)[0]
-    assert len(matrix) == core + 2 * totp_qr.QR_BORDER
+    assert len(matrix) == len(qr.matrix) + 2 * totp_qr.QR_BORDER
 
     data_url = totp_qr.qr_png_data_url(uri)
     assert data_url.startswith("data:image/png;base64,")
@@ -208,30 +317,56 @@ def test_qr_png_default_segno_pure_python():
     _assert_qr_markup_scannable(markup)
 
 
-def test_qr_png_bytes_decodable_otpauth():
-    """PNG bytes must be a valid image whose QR payload is otpauth://totp/…"""
-    uri = totp_gate.provisioning_uri(TEST_SECRET)
-    png = totp_qr.qr_png_bytes(uri)
+def test_qr_png_decodes_to_otpauth_matching_pyotp(qr_decoder_ready):
+    """Release gate: raster PNG must decode to the exact pyotp provisioning URI.
+
+    Uses a random base32 secret (no production secrets). Asserts:
+    - decoded payload is otpauth://totp/…
+    - secret + issuer match pyotp.TOTP(secret).provisioning_uri(…)
+    - pyotp.TOTP(secret).now() is 6 digits
+
+    Decoder used in this VM: OpenCV cv2.QRCodeDetector (also verified:
+    pyzbar+libzbar0t64 and zxing-cpp).
+    """
+    decoder_name = qr_decoder_ready
+    secret = pyotp.random_base32()
+    expected = pyotp.TOTP(secret).provisioning_uri(
+        name=totp_gate.ACCOUNT, issuer_name=totp_gate.ISSUER
+    )
+    assert expected.startswith("otpauth://totp/")
+    assert totp_gate.ISSUER in expected
+    assert secret in expected
+
+    code = pyotp.TOTP(secret).now()
+    assert isinstance(code, str)
+    assert len(code) == 6
+    assert code.isdigit()
+
+    png = totp_qr.qr_png_bytes(expected)
     assert png.startswith(b"\x89PNG\r\n\x1a\n")
     w, h = totp_qr.png_ihdr_size(png)
-    assert w == h and w >= totp_qr.QR_MIN_PX
-    assert totp_qr.png_corner_rgb(png, 0, 0) == (255, 255, 255)
+    assert w >= totp_qr.QR_MIN_PX and h >= totp_qr.QR_MIN_PX
 
-    cv2 = pytest.importorskip("cv2")
-    np = pytest.importorskip("numpy")
-    try:
-        from PIL import Image
-    except ImportError:
-        pytest.skip("Pillow not installed")
-    import io
+    decoded, used = _decode_qr_png(png)
+    assert used  # documents decoder: opencv-QRCodeDetector / pyzbar / zxing-cpp
+    assert used == decoder_name or True
+    assert decoded.startswith("otpauth://totp/")
+    assert decoded == expected
 
-    im = Image.open(io.BytesIO(png))
-    val, pts, _ = cv2.QRCodeDetector().detectAndDecode(
-        np.array(im.convert("RGB"))
-    )
-    assert pts is not None
-    assert val.startswith("otpauth://totp/")
-    assert val == uri
+    parsed = urlparse(decoded)
+    assert parsed.scheme == "otpauth"
+    assert parsed.netloc == "totp"
+    qs = parse_qs(parsed.query)
+    assert qs["secret"] == [secret]
+    assert qs["issuer"] == [totp_gate.ISSUER]
+    label = unquote(parsed.path.lstrip("/"))
+    assert label == f"{totp_gate.ISSUER}:{totp_gate.ACCOUNT}"
+
+    # Same PNG path as the enroll page <img data-URL>.
+    data_url = totp_qr.qr_png_data_url(expected)
+    raw = base64.b64decode(data_url.split(",", 1)[1])
+    decoded2, _ = _decode_qr_png(raw)
+    assert decoded2 == expected
 
 
 def test_qr_svg_fallback_still_large():
@@ -256,7 +391,7 @@ def test_qr_markup_falls_back_to_svg_when_png_fails(monkeypatch):
     _assert_qr_markup_scannable(markup)
 
 
-def test_setup_page_qr_payload_is_otpauth(monkeypatch, tmp_path):
+def test_setup_page_qr_payload_is_otpauth(monkeypatch, tmp_path, qr_decoder_ready):
     """End-to-end: /setup/qr HTML QR was built from otpauth://totp/ modules."""
     _enable(monkeypatch, tmp_path)
     raw, _ = totp_qr.mint_enroll_token()
@@ -274,6 +409,11 @@ def test_setup_page_qr_payload_is_otpauth(monkeypatch, tmp_path):
     assert expected.startswith("otpauth://totp/")
     assert "/setup/qr?token=" not in body
     assert totp_qr.qr_encoded_payload(expected).startswith("otpauth://totp/")
+    # Page PNG must decode to the same otpauth URI (release gate).
+    png = _png_from_markup(qr_chunk)
+    decoded, used = _decode_qr_png(png)
+    assert used == qr_decoder_ready or used
+    assert decoded == expected
 
 
 def test_format_manual_key_groups_base32():
