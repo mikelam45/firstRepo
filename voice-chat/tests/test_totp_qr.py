@@ -84,12 +84,56 @@ def test_otpauth_uri_google_authenticator_shape():
     assert qs["issuer"] == [totp_gate.ISSUER]
     # Round-trip: pyotp accepts the secret and mint matches.
     assert pyotp.TOTP(TEST_SECRET).provisioning_uri(
-        name=totp_gate.ACCOUNT, issuer_name=totp_gate.ISSUER
+        name=totp_gate.ACCOUNT, issuer_name="LingoCoach"
     ) == uri
+
+
+def test_qr_modules_encode_otpauth_not_https_enroll_url():
+    """QR data payload must be otpauth://totp/… — never /setup/qr?token=…."""
+    uri = pyotp.TOTP(TEST_SECRET).provisioning_uri(
+        name=totp_gate.ACCOUNT, issuer_name="LingoCoach"
+    )
+    assert uri.startswith("otpauth://totp/")
+    qr = totp_qr._qr_factory(uri)
+    payload = totp_qr.qr_encoded_payload(qr)
+    assert payload.startswith("otpauth://totp/")
+    assert payload == uri
+    assert "https://" not in payload
+    assert "http://" not in payload
+    assert "/setup/qr" not in payload
+    assert totp_qr.QR_BORDER >= 4
+
+
+def test_qr_factory_rejects_https_enroll_page_url():
+    enroll = (
+        "https://103-195-5-86.as-cloud-xip.com:8066/setup/qr"
+        "?token=example-not-a-real-token"
+    )
+    try:
+        totp_qr._qr_factory(enroll)
+        assert False, "expected ValueError for https enroll URL"
+    except ValueError as exc:
+        assert "otpauth://totp/" in str(exc)
+
+
+def test_require_otpauth_payload_rejects_http_and_bare_secrets():
+    for bad in (
+        "https://example.com/setup/qr?token=abc",
+        "http://example.com/",
+        "totp://not-valid",
+        TEST_SECRET,
+        "",
+    ):
+        try:
+            totp_qr.require_otpauth_payload(bad)
+            assert False, f"expected ValueError for {bad!r}"
+        except ValueError:
+            pass
 
 
 def test_qr_png_is_large_high_contrast():
     uri = totp_gate.provisioning_uri(TEST_SECRET)
+    assert uri.startswith("otpauth://totp/")
     data_url = totp_qr.qr_png_data_url(uri)
     assert data_url.startswith("data:image/png;base64,")
     raw = base64.b64decode(data_url.split(",", 1)[1])
@@ -104,6 +148,30 @@ def test_qr_png_is_large_high_contrast():
     markup = totp_qr.qr_markup(uri)
     assert 'src="data:image/png;base64,' in markup
     assert "qr-img" in markup
+
+
+def test_setup_page_qr_payload_is_otpauth(monkeypatch, tmp_path):
+    """End-to-end: /setup/qr HTML QR was built from otpauth://totp/ modules."""
+    _enable(monkeypatch, tmp_path)
+    raw, _ = totp_qr.mint_enroll_token()
+    client = TestClient(app)
+    response = client.get("/setup/qr", params={"token": raw})
+    assert response.status_code == 200
+    body = response.text
+    assert 'src="data:image/png;base64,' in body
+    assert "Enter a setup key" in body or "Manual setup key" in body
+    assert totp_qr.format_manual_key(TEST_SECRET) in body
+    # Reconstruct expected URI; page must not embed the enroll https link as QR text.
+    expected = pyotp.TOTP(TEST_SECRET).provisioning_uri(
+        name=totp_gate.ACCOUNT, issuer_name="LingoCoach"
+    )
+    assert expected.startswith("otpauth://totp/")
+    # Enroll URL shape must not appear inside the page as scannable plaintext QR data.
+    # (The browser address bar is separate; the HTML body QR is otpauth-only.)
+    assert "/setup/qr?token=" not in body
+    assert totp_qr.qr_encoded_payload(totp_qr._qr_factory(expected)).startswith(
+        "otpauth://totp/"
+    )
 
 
 def test_format_manual_key_groups_base32():

@@ -126,11 +126,11 @@
 <body>
   <div class="phone">
     <p class="mark">LingoCoach</p>
-    <p class="muted">Scan this QR with Google Authenticator (or Authy / 1Password) to enroll <strong>__ISSUER__:__ACCOUNT__</strong>.</p>
+    <p class="muted">In <strong>Google Authenticator</strong> (or Authy / 1Password), choose <strong>Scan a QR code</strong> — not the iPhone Camera app — to enroll <strong>__ISSUER__:__ACCOUNT__</strong>.</p>
     <p class="warn">This link works once. After you leave or refresh, it will not open again. Keep the manual key until your authenticator shows codes.</p>
     <div class="qr-wrap">__QR_MARKUP__</div>
-    <p class="scan-tip">Tip: hold the phone steady, fill the viewfinder with the white square, and avoid screen glare. If scan fails, enter the manual key below.</p>
-    <p class="key-label">Manual key (base32) — type or paste into Authenticator</p>
+    <p class="scan-tip">This QR encodes an Authenticator setup URI (otpauth), not a website. If iPhone Camera opens a webpage, you scanned the wrong code — use Authenticator’s scanner, or enter the manual key below.</p>
+    <p class="key-label">Manual setup key (base32) — Authenticator → Enter a setup key</p>
     <div class="key-row">
       <p class="key" id="manual">__MANUAL_KEY__</p>
       <button type="button" class="copy" id="copy-key" data-raw="__MANUAL_KEY_RAW__">Copy</button>

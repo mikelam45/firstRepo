@@ -34,9 +34,11 @@ from app import totp_gate
 
 # Phone cameras (Google Authenticator) scan raster QR far more reliably than
 # CSS-scaled SVG. Target ~260–320 CSS px with a solid white quiet zone.
+# Critical: QR *modules* encode otpauth://totp/… only — never the HTTPS
+# /setup/qr?token=… page URL (iPhone Camera would open that as a webpage).
 QR_BOX_SIZE = 10
-QR_BORDER = 4  # modules; GA expects ≥4
-QR_MIN_PX = 260
+QR_BORDER = 6  # modules; GA expects ≥4 — extra quiet zone for phone cameras
+QR_MIN_PX = 280
 
 logger = logging.getLogger("lingocoach")
 
@@ -168,6 +170,7 @@ def enroll_url(raw_token: str, base: str | None = None) -> str:
 
 
 def otpauth_uri() -> str | None:
+    """Build otpauth://totp/… via pyotp (issuer LingoCoach). Never an https URL."""
     totp_gate.ensure_configured()
     secret = totp_gate.current_secret()
     if not secret:
@@ -175,15 +178,58 @@ def otpauth_uri() -> str | None:
     return totp_gate.provisioning_uri(secret)
 
 
+def require_otpauth_payload(otpauth: str) -> str:
+    """Refuse anything that is not an Authenticator otpauth://totp/ URI.
+
+    Encoding the enroll page (`https://…/setup/qr?token=…`) makes iPhone
+    Camera open Safari instead of offering Google Authenticator.
+    """
+    if not isinstance(otpauth, str):
+        raise ValueError("QR payload must be an otpauth://totp/ string")
+    value = otpauth.strip()
+    if not value.startswith("otpauth://totp/"):
+        raise ValueError(
+            "QR modules must encode otpauth://totp/… only "
+            "(refusing non-Authenticator payload)"
+        )
+    # Defense in depth: never allow page / enroll URLs into the matrix.
+    lowered = value.lower()
+    if (
+        "https://" in lowered
+        or "http://" in lowered
+        or "/setup/qr" in lowered
+        or "token=" in lowered
+    ):
+        raise ValueError("Refusing to encode enroll-page URL into Authenticator QR")
+    return value
+
+
+def qr_encoded_payload(qr: qrcode.QRCode) -> str:
+    """Return the exact string stored in the QR modules (for tests/guards)."""
+    parts: list[str] = []
+    for item in qr.data_list:
+        raw = getattr(item, "data", item)
+        if isinstance(raw, bytes):
+            parts.append(raw.decode("utf-8"))
+        else:
+            parts.append(str(raw))
+    return "".join(parts)
+
+
 def _qr_factory(otpauth: str) -> qrcode.QRCode:
+    payload = require_otpauth_payload(otpauth)
     qr = qrcode.QRCode(
         version=None,
         error_correction=qrcode.constants.ERROR_CORRECT_M,
         box_size=QR_BOX_SIZE,
         border=QR_BORDER,
     )
-    qr.add_data(otpauth)
+    qr.add_data(payload)
     qr.make(fit=True)
+    # Belt-and-suspenders: matrix must still be otpauth after encode.
+    encoded = qr_encoded_payload(qr)
+    if not encoded.startswith("otpauth://totp/"):
+        raise RuntimeError("QR matrix payload is not otpauth://totp/…")
     return qr
 
 
@@ -191,7 +237,8 @@ def qr_png_data_url(otpauth: str) -> str:
     """High-contrast black-on-white PNG as a data URL (Pillow).
 
     Preferred for Google Authenticator camera scans: fixed modules, solid
-    quiet zone, no SVG anti-alias / CSS-shrink blur.
+    quiet zone, no SVG anti-alias / CSS-shrink blur. Payload is always
+    otpauth://totp/… (never the /setup/qr HTTPS enroll link).
     """
     from PIL import Image
 
@@ -241,6 +288,8 @@ def qr_svg_markup(otpauth: str) -> str:
 
 def qr_markup(otpauth: str) -> str:
     """Embeddable QR: PNG <img> when Pillow is available, else SVG."""
+    # Validate before try/except so a bad payload never silently falls back.
+    require_otpauth_payload(otpauth)
     try:
         data_url = qr_png_data_url(otpauth)
     except Exception:
@@ -258,7 +307,8 @@ def format_manual_key(secret: str) -> str:
 
 
 def render_setup_page(template: str, secret: str, otpauth: str) -> str:
-    markup = qr_markup(otpauth)
+    """Embed otpauth QR + grouped manual key. otpauth must be otpauth://totp/…."""
+    markup = qr_markup(require_otpauth_payload(otpauth))
     return (
         template.replace("__QR_MARKUP__", markup)
         .replace("__MANUAL_KEY__", format_manual_key(secret))
