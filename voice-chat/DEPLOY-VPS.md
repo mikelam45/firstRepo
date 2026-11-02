@@ -97,7 +97,7 @@ cd ~/lingocoach/voice-chat
 # equivalent: .venv/bin/python -m app.totp_setup --qr-link
 ```
 
-That prints `https://103-195-5-86.as-cloud-xip.com:8066/setup/qr?token=…` (shape: `/setup/qr?token=<high-entropy>`). Open it once on the phone, scan with Google Authenticator, then use `/login`. The token is stored **hashed** in gitignored `voice-chat/.totp_qr_token` (mode 600), expires in ~20 minutes, and is **invalidated after the first successful page load**. A refresh or second visit returns 404. Re-run `./lingocoachctl.sh qr` anytime you need a fresh link.
+That prints `https://103-195-5-86.as-cloud-xip.com:8066/setup/qr?token=…` (shape: `/setup/qr?token=<high-entropy>`). Open it **once** on the phone (Safari is fine for viewing). In **Google Authenticator** choose **+ → Scan a QR code** — do not use the iPhone Camera app (that opens the enroll webpage). The page shows a raster PNG QR (otpauth://totp/…); after restart/deploy, remint with `./lingocoachctl.sh qr` so you get a fresh PNG. Then use `/login`. The token is stored **hashed** in gitignored `voice-chat/.totp_qr_token` (mode 600), expires in ~20 minutes, and is **invalidated after the first successful page load**. A refresh or second visit returns 404.
 
 When `LINGOCOACH_TOTP_SECRET` / `TOTP_SECRET` / `.totp_secret` is absent, the gate stays off (open access). On a public VPS, keep the secret set.
 

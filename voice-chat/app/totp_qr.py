@@ -15,31 +15,32 @@ https://103-195-5-86.as-cloud-xip.com:8066
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import hmac
-import io
 import json
 import logging
 import os
 import secrets
+import struct
 import sys
 import time
+import zlib
 from pathlib import Path
-
-import base64
 
 import qrcode
 
 from app import totp_gate
 
-# Default QR is pure SVG (no Pillow / no libjpeg). Target ≥280 CSS px with a
-# solid white quiet zone and crispEdges so modules stay hard for cameras.
-# Optional PNG path uses Pillow when installed; not required on the VPS.
-# Critical: QR *modules* encode otpauth://totp/… only — never the HTTPS
-# /setup/qr?token=… page URL (iPhone Camera would open that as a webpage).
-QR_BOX_SIZE = 10
+# Default QR is a pure-Python PNG data-URL (zlib + minimal writer — no Pillow /
+# libjpeg). Target ≥280 CSS px, module scale ≥8–10px, quiet zone ≥4 modules.
+# SVG remains a last-resort fallback only. Critical: QR *modules* encode
+# otpauth://totp/… only — never the HTTPS /setup/qr?token=… page URL
+# (iPhone Camera would open that as a webpage).
+QR_BOX_SIZE = 10  # module scale in px (≥8–10 keeps camera edges hard)
 QR_BORDER = 6  # modules; GA expects ≥4 — extra quiet zone for phone cameras
 QR_MIN_PX = 280
+_PNG_SIG = b"\x89PNG\r\n\x1a\n"
 
 logger = logging.getLogger("lingocoach")
 
@@ -234,53 +235,130 @@ def _qr_factory(otpauth: str) -> qrcode.QRCode:
     return qr
 
 
-def pillow_available() -> bool:
-    """True when Pillow is importable (optional; not in requirements)."""
-    try:
-        import PIL  # noqa: F401
-    except ImportError:
-        return False
-    return True
+def _module_px(modules_count: int) -> int:
+    """Pixels per QR module: at least QR_BOX_SIZE, and whole image ≥ QR_MIN_PX."""
+    n = max(1, int(modules_count))
+    return max(QR_BOX_SIZE, (QR_MIN_PX + n - 1) // n)
+
+
+def _png_chunk(tag: bytes, data: bytes) -> bytes:
+    """One PNG chunk: length + type + data + CRC32(type||data)."""
+    crc = zlib.crc32(tag)
+    crc = zlib.crc32(data, crc) & 0xFFFFFFFF
+    return struct.pack(">I", len(data)) + tag + data + struct.pack(">I", crc)
+
+
+def encode_qr_matrix_png(modules: list[list[bool]], module_px: int | None = None) -> bytes:
+    """Encode a qrcode boolean matrix as an RGB PNG (white bg, black modules).
+
+    Pure Python (struct + zlib only) — no Pillow. Filter type 0 (None) so
+    tests can decompress IDAT and read corner pixels without an image library.
+    """
+    if not modules:
+        raise RuntimeError("QR matrix is empty")
+    n = len(modules)
+    if any(len(row) != n for row in modules):
+        raise RuntimeError("QR matrix is not square")
+    scale = max(1, int(module_px if module_px is not None else _module_px(n)))
+    size = n * scale
+    white = b"\xff\xff\xff"
+    black = b"\x00\x00\x00"
+    rows: list[bytes] = []
+    for y in range(n):
+        row = modules[y]
+        scan = bytearray()
+        for x in range(n):
+            pix = black if row[x] else white
+            scan.extend(pix * scale)
+        line = b"\x00" + bytes(scan)  # filter None
+        rows.extend(line for _ in range(scale))
+    raw = b"".join(rows)
+    compressed = zlib.compress(raw, 9)
+    ihdr = struct.pack(">IIBBBBB", size, size, 8, 2, 0, 0, 0)
+    return (
+        _PNG_SIG
+        + _png_chunk(b"IHDR", ihdr)
+        + _png_chunk(b"IDAT", compressed)
+        + _png_chunk(b"IEND", b"")
+    )
+
+
+def png_ihdr_size(png: bytes) -> tuple[int, int]:
+    """Return (width, height) from a PNG IHDR; raises on bad signature/header."""
+    if len(png) < 33 or not png.startswith(_PNG_SIG):
+        raise ValueError("not a PNG")
+    length = struct.unpack(">I", png[8:12])[0]
+    if length != 13 or png[12:16] != b"IHDR":
+        raise ValueError("missing IHDR")
+    width, height = struct.unpack(">II", png[16:24])
+    return width, height
+
+
+def png_corner_rgb(png: bytes, x: int = 0, y: int = 0) -> tuple[int, int, int]:
+    """Read one RGB pixel from a filter-0 RGB8 PNG we wrote (tests / sanity)."""
+    width, height = png_ihdr_size(png)
+    if not (0 <= x < width and 0 <= y < height):
+        raise ValueError("pixel out of bounds")
+    # Walk chunks to concatenate IDAT.
+    pos = 8
+    idat = bytearray()
+    while pos + 8 <= len(png):
+        length = struct.unpack(">I", png[pos : pos + 4])[0]
+        tag = png[pos + 4 : pos + 8]
+        data = png[pos + 8 : pos + 8 + length]
+        pos = pos + 12 + length
+        if tag == b"IDAT":
+            idat.extend(data)
+        elif tag == b"IEND":
+            break
+    raw = zlib.decompress(bytes(idat))
+    stride = 1 + width * 3
+    if len(raw) != stride * height:
+        raise ValueError("unexpected PNG raster size")
+    off = y * stride + 1 + x * 3
+    return raw[off], raw[off + 1], raw[off + 2]
+
+
+def _matrix_with_quiet_zone(qr: qrcode.QRCode) -> list[list[bool]]:
+    """Boolean matrix including QR_BORDER quiet zone (get_matrix, not modules).
+
+    ``qr.modules`` is the core only — Authenticator needs the white border
+    baked into the raster, not just CSS padding around the <img>.
+    """
+    matrix = qr.get_matrix()
+    if not matrix:
+        raise RuntimeError("QR matrix is empty")
+    return matrix
+
+
+def qr_png_bytes(otpauth: str) -> bytes:
+    """High-contrast black-on-white PNG bytes (pure Python; no Pillow)."""
+    qr = _qr_factory(otpauth)
+    matrix = _matrix_with_quiet_zone(qr)
+    return encode_qr_matrix_png(matrix, _module_px(len(matrix)))
 
 
 def qr_png_data_url(otpauth: str) -> str:
-    """High-contrast black-on-white PNG as a data URL (optional Pillow).
+    """High-contrast black-on-white PNG as a data URL (no Pillow / libjpeg).
 
-    Used only when Pillow is installed. Default VPS path is SVG via
-    qr_svg_markup / qr_markup so Python 3.14 hosts need no libjpeg-dev.
-    Payload is always otpauth://totp/… (never the /setup/qr HTTPS enroll link).
+    Default enroll-page path. Payload is always otpauth://totp/…
+    (never the /setup/qr HTTPS enroll link).
     """
-    from PIL import Image  # optional dependency
-
-    qr = _qr_factory(otpauth)
-    img = qr.make_image(fill_color="black", back_color="white").convert("RGB")
-    # Upscale if matrix is unusually small so on-screen modules stay fat.
-    # Nearest-neighbor keeps module edges hard (no blur for cameras).
-    width, height = img.size
-    if width < QR_MIN_PX:
-        scale = max(2, (QR_MIN_PX + width - 1) // width)
-        img = img.resize(
-            (width * scale, height * scale),
-            resample=Image.Resampling.NEAREST,
-        )
-    buf = io.BytesIO()
-    img.save(buf, format="PNG", optimize=True)
-    b64 = base64.b64encode(buf.getvalue()).decode("ascii")
+    png = qr_png_bytes(otpauth)
+    b64 = base64.b64encode(png).decode("ascii")
     return f"data:image/png;base64,{b64}"
 
 
 def qr_svg_markup(otpauth: str) -> str:
-    """Pure-Python SVG QR: white quiet zone + black modules (no Pillow).
+    """Pure-Python SVG QR fallback (last resort when PNG encode fails).
 
-    Builds rects from the qrcode matrix so pip install on Python 3.14 never
-    needs to compile Pillow/libjpeg. Quiet zone comes from QR_BORDER (≥4).
+    Builds rects from the matrix *with* quiet zone. Prefer PNG — many
+    Authenticator cameras fail on SVG in mobile Safari.
     """
     qr = _qr_factory(otpauth)
-    modules = qr.modules
-    if not modules:
-        raise RuntimeError("QR matrix is empty")
-    n = qr.modules_count
-    module_px = max(1, (QR_MIN_PX + n - 1) // n)
+    modules = _matrix_with_quiet_zone(qr)
+    n = len(modules)
+    module_px = _module_px(n)
     size = n * module_px
     parts: list[str] = [
         (
@@ -311,20 +389,23 @@ def qr_svg_markup(otpauth: str) -> str:
 
 
 def qr_markup(otpauth: str) -> str:
-    """Embeddable QR: SVG by default; optional PNG <img> when Pillow exists."""
-    # Validate before optional Pillow path so a bad payload never falls through.
+    """Embeddable QR: PNG <img data-URL> by default; SVG only if PNG fails."""
     require_otpauth_payload(otpauth)
-    if pillow_available():
+    try:
+        data_url = qr_png_data_url(otpauth)
+        size = QR_MIN_PX
         try:
-            data_url = qr_png_data_url(otpauth)
+            w, h = png_ihdr_size(base64.b64decode(data_url.split(",", 1)[1]))
+            size = max(QR_MIN_PX, w, h)
         except Exception:
-            data_url = None
-        if data_url:
-            return (
-                f'<img class="qr-img" src="{data_url}" width="{QR_MIN_PX}" '
-                f'height="{QR_MIN_PX}" alt="Authenticator QR code" decoding="sync"/>'
-            )
-    return qr_svg_markup(otpauth)
+            pass
+        return (
+            f'<img class="qr-img" src="{data_url}" width="{size}" '
+            f'height="{size}" alt="Authenticator QR code" decoding="sync"/>'
+        )
+    except Exception:
+        logger.exception("PNG QR encode failed; falling back to SVG")
+        return qr_svg_markup(otpauth)
 
 
 def format_manual_key(secret: str) -> str:

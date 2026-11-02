@@ -3,13 +3,11 @@
 from __future__ import annotations
 
 import base64
-import io
 import re
 import time
 from urllib.parse import parse_qs, unquote, urlparse
 
 import pyotp
-import pytest
 from fastapi.testclient import TestClient
 
 from app import totp_gate
@@ -19,8 +17,15 @@ from app.main import app
 TEST_SECRET = "JBSWY3DPEHPK3PXP"
 
 
+def _png_from_markup(markup: str) -> bytes:
+    assert 'src="data:image/png;base64,' in markup
+    m = re.search(r'src="data:image/png;base64,([A-Za-z0-9+/=]+)"', markup)
+    assert m is not None
+    return base64.b64decode(m.group(1))
+
+
 def _assert_qr_markup_scannable(markup: str) -> None:
-    """Accept PNG data-URL or inline SVG; both need white background + otpauth guard."""
+    """Accept PNG data-URL (default) or inline SVG fallback."""
     assert 'aria-label="Authenticator QR code"' in markup or 'alt="Authenticator QR code"' in markup
     if "<svg" in markup:
         assert 'fill="#ffffff"' in markup or "fill='#ffffff'" in markup
@@ -33,6 +38,13 @@ def _assert_qr_markup_scannable(markup: str) -> None:
     else:
         assert 'src="data:image/png;base64,' in markup
         assert "qr-img" in markup
+        png = _png_from_markup(markup)
+        w, h = totp_qr.png_ihdr_size(png)
+        assert w >= totp_qr.QR_MIN_PX
+        assert h >= totp_qr.QR_MIN_PX
+        assert w == h
+        assert totp_qr.png_corner_rgb(png, 0, 0) == (255, 255, 255)
+        assert totp_qr.png_corner_rgb(png, w - 1, h - 1) == (255, 255, 255)
 
 
 def _enable(monkeypatch, tmp_path):
@@ -74,8 +86,9 @@ def test_setup_qr_valid_once_then_gone(monkeypatch, tmp_path):
     assert "works once" in body.lower() or "This link works once" in body
     assert TEST_SECRET in body
     assert "otpauth://totp/" in totp_gate.provisioning_uri(TEST_SECRET)
-    # PNG (optional Pillow) or pure SVG — must be scannable otpauth QR.
+    # Default is pure-Python PNG data-URL (SVG only as fallback).
     qr_chunk = body.split('class="qr-wrap"', 1)[1].split("</div>", 1)[0]
+    assert 'src="data:image/png;base64,' in qr_chunk
     _assert_qr_markup_scannable(qr_chunk)
     assert "Copy" in body
     assert "Cache-Control" in first.headers
@@ -149,40 +162,61 @@ def test_require_otpauth_payload_rejects_http_and_bare_secrets():
             pass
 
 
-def test_qr_svg_is_large_high_contrast_without_pillow():
-    """Default path: pure SVG with white quiet zone — no Pillow/libjpeg needed."""
+def test_qr_png_default_pure_python_no_pillow():
+    """Default path: zlib PNG data-URL — no Pillow/libjpeg needed."""
+    uri = totp_gate.provisioning_uri(TEST_SECRET)
+    assert uri.startswith("otpauth://totp/")
+    # Matrix payload checked before encode.
+    qr = totp_qr._qr_factory(uri)
+    assert totp_qr.qr_encoded_payload(qr).startswith("otpauth://totp/")
+    assert totp_qr.QR_BORDER >= 4
+    assert totp_qr.QR_BOX_SIZE >= 8
+    # Quiet-zone corners (get_matrix includes border) are white (False).
+    matrix = totp_qr._matrix_with_quiet_zone(qr)
+    assert matrix[0][0] is False
+    assert matrix[-1][-1] is False
+    assert len(matrix) == qr.modules_count + 2 * totp_qr.QR_BORDER
+
+    data_url = totp_qr.qr_png_data_url(uri)
+    assert data_url.startswith("data:image/png;base64,")
+    raw = base64.b64decode(data_url.split(",", 1)[1])
+    assert raw.startswith(b"\x89PNG\r\n\x1a\n")
+    w, h = totp_qr.png_ihdr_size(raw)
+    assert w >= totp_qr.QR_MIN_PX
+    assert h >= totp_qr.QR_MIN_PX
+    assert w == h
+    assert totp_qr.png_corner_rgb(raw, 0, 0) == (255, 255, 255)
+    assert totp_qr.png_corner_rgb(raw, w - 1, 0) == (255, 255, 255)
+    assert totp_qr.png_corner_rgb(raw, 0, h - 1) == (255, 255, 255)
+    assert totp_qr.png_corner_rgb(raw, w - 1, h - 1) == (255, 255, 255)
+
+    markup = totp_qr.qr_markup(uri)
+    assert markup.lstrip().startswith("<img")
+    assert 'src="data:image/png;base64,' in markup
+    _assert_qr_markup_scannable(markup)
+
+
+def test_qr_svg_fallback_still_large_high_contrast():
+    """SVG remains available as last-resort fallback (Authenticator prefers PNG)."""
     uri = totp_gate.provisioning_uri(TEST_SECRET)
     assert uri.startswith("otpauth://totp/")
     svg = totp_qr.qr_svg_markup(uri)
     _assert_qr_markup_scannable(svg)
     assert totp_qr.QR_BORDER >= 4
-    # Corner module of the matrix is quiet-zone white (border ≥4); first painted
-    # content after the full-size white rect must be black modules only.
     assert svg.count('fill="#ffffff"') >= 1
     assert svg.count('fill="#000000"') >= 1
 
 
-def test_qr_markup_falls_back_to_svg_without_pillow(monkeypatch):
+def test_qr_markup_falls_back_to_svg_when_png_fails(monkeypatch):
     uri = totp_gate.provisioning_uri(TEST_SECRET)
-    monkeypatch.setattr(totp_qr, "pillow_available", lambda: False)
+
+    def _boom(_otpauth: str) -> str:
+        raise RuntimeError("forced PNG failure")
+
+    monkeypatch.setattr(totp_qr, "qr_png_data_url", _boom)
     markup = totp_qr.qr_markup(uri)
     assert markup.lstrip().startswith("<svg")
     _assert_qr_markup_scannable(markup)
-
-
-@pytest.mark.skipif(not totp_qr.pillow_available(), reason="Pillow optional")
-def test_qr_png_optional_when_pillow_installed():
-    uri = totp_gate.provisioning_uri(TEST_SECRET)
-    assert uri.startswith("otpauth://totp/")
-    data_url = totp_qr.qr_png_data_url(uri)
-    assert data_url.startswith("data:image/png;base64,")
-    raw = base64.b64decode(data_url.split(",", 1)[1])
-    from PIL import Image
-
-    img = Image.open(io.BytesIO(raw))
-    assert img.size[0] >= totp_qr.QR_MIN_PX
-    assert img.size[1] >= totp_qr.QR_MIN_PX
-    assert img.getpixel((0, 0)) == (255, 255, 255)
 
 
 def test_setup_page_qr_payload_is_otpauth(monkeypatch, tmp_path):

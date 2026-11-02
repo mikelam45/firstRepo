@@ -46,18 +46,21 @@
     .qr-wrap {
       align-self: center;
       background: #ffffff;
-      padding: 20px;
+      padding: 28px;
       border-radius: 12px;
       line-height: 0;
       margin: 0 0 12px;
+      box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08);
     }
-    /* Fixed CSS size — avoid shrink/scale that softens QR modules for cameras. */
+    /* Fixed CSS size — avoid shrink/scale that softens QR modules for cameras.
+       Prefer raster PNG <img>; SVG is last-resort fallback only. */
     .qr-wrap .qr-img,
     .qr-wrap img,
     .qr-wrap svg {
-      width: 280px;
+      width: min(320px, 72vw);
       max-width: 100%;
-      height: 280px;
+      height: auto;
+      aspect-ratio: 1 / 1;
       display: block;
       background: #ffffff;
       image-rendering: pixelated;
@@ -124,10 +127,10 @@
 <body>
   <div class="phone">
     <p class="mark">LingoCoach</p>
-    <p class="muted">In <strong>Google Authenticator</strong> (or Authy / 1Password), choose <strong>Scan a QR code</strong> — not the iPhone Camera app — to enroll <strong>__ISSUER__:__ACCOUNT__</strong>.</p>
+    <p class="muted">Open <strong>Google Authenticator</strong> → <strong>+</strong> → <strong>Scan a QR code</strong> (not the iPhone Camera app) to enroll <strong>__ISSUER__:__ACCOUNT__</strong>.</p>
     <p class="warn">This link works once. After you leave or refresh, it will not open again. Keep the manual key until your authenticator shows codes.</p>
     <div class="qr-wrap">__QR_MARKUP__</div>
-    <p class="scan-tip">This QR encodes an Authenticator setup URI (otpauth), not a website. If iPhone Camera opens a webpage, you scanned the wrong code — use Authenticator’s scanner, or enter the manual key below.</p>
+    <p class="scan-tip">Hold Authenticator steady over the PNG above (bright screen, no zoom blur). This QR is an otpauth setup URI, not a website. If Camera opens Safari, you used the wrong scanner — switch to Authenticator, or type the manual key below.</p>
     <p class="key-label">Manual setup key (base32) — Authenticator → Enter a setup key</p>
     <div class="key-row">
       <p class="key" id="manual">__MANUAL_KEY__</p>
