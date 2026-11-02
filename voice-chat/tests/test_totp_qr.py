@@ -251,23 +251,24 @@ def test_setup_qr_valid_once_then_gone(monkeypatch, tmp_path):
     assert "works once" in body.lower() or "This link works once" in body
     assert TEST_SECRET in body
     assert expected.startswith("otpauth://totp/")
-    # Dinner_recipe-style: primary is a large otpauth QR for iPhone Camera.
+    # Primary: Enter a setup key. SVG QR remains as secondary (GA in-app).
+    assert 'id="setup-key-primary"' in body
     assert 'id="qr-primary"' in body
     assert "qr-wrap" in body
-    assert "iPhone Camera" in body or "相機" in body
-    assert "請改用相機" in body or "Camera" in body
+    assert body.find("輸入設定密鑰") < body.find('id="qr-primary"')
+    assert body.find("Enter a setup key") < body.find('id="qr-primary"')
     # QR is visible (not collapsed under <details>).
     assert "<details" not in body
     qr_chunk = _qr_wrap_inner(body)
     assert "<svg" in qr_chunk
     _assert_qr_markup_scannable(qr_chunk)
-    # Manual setup key + otpauth deep link remain as backup / phone path.
-    assert "Enter a setup key" in body or "輸入設定密鑰" in body or "Can’t scan" in body or "Can't scan" in body
+    assert "Enter a setup key" in body
+    assert "輸入設定密鑰" in body
     assert "Copy" in body
     assert totp_qr.format_manual_key(TEST_SECRET) in body
     assert 'id="otpauth-link"' in body
     assert f'href="{expected}"' in body or f'href="{expected.replace("&", "&amp;")}"' in body
-    assert "Open in Authenticator" in body
+    assert "Open in Google Authenticator" in body
     assert "Cache-Control" in first.headers
     assert "no-store" in first.headers.get("cache-control", "")
 
@@ -285,9 +286,7 @@ def test_setup_page_includes_otpauth_href(monkeypatch, tmp_path):
     response = client.get("/setup/qr", params={"token": raw})
     assert response.status_code == 200
     body = response.text
-    expected = pyotp.TOTP(TEST_SECRET).provisioning_uri(
-        name=totp_gate.ACCOUNT, issuer_name=totp_gate.ISSUER
-    )
+    expected = totp_gate.provisioning_uri(TEST_SECRET)
     assert expected.startswith("otpauth://totp/")
     # href may HTML-escape & as &amp;
     escaped = expected.replace("&", "&amp;")
@@ -296,7 +295,7 @@ def test_setup_page_includes_otpauth_href(monkeypatch, tmp_path):
     assert "/setup/qr?token=" not in body
     # Deep link must not be an https enroll URL.
     assert 'href="https://' not in body.split('id="otpauth-link"', 1)[1].split(">", 1)[0]
-    # Light page + primary QR (Dinner_recipe Mac→iPhone Camera flow).
+    # Light page + SVG QR (secondary GA in-app scan).
     assert 'color-scheme: only light' in body or "color-scheme: only light" in body
     assert 'name="color-scheme"' in body and 'content="light"' in body
     assert "qr-wrap" in body
@@ -311,9 +310,10 @@ def test_setup_html_crisp_onpage_qr_matches_iphone_camera_failure_mode(
 ):
     """Page markup must be screen-scan reliable — not 'OpenCV can read the PNG'.
 
-    iPhone Camera / GA photograph the Mac Chrome display. The on-page QR
-    therefore has to be SVG (or table) modules in a forced-light white
-    island, not a CSS-scaled bitmap that Retina blurs or dark mode inverts.
+    Google Authenticator’s in-app scanner photographs the Mac Chrome display.
+    The on-page QR therefore has to be SVG (or table) modules in a forced-light
+    white island, not a CSS-scaled bitmap that Retina blurs or dark mode inverts.
+    Setup key remains the primary enroll path (Camera is not a GA handoff).
     """
     _enable(monkeypatch, tmp_path)
     raw, _ = totp_qr.mint_enroll_token()
@@ -358,19 +358,27 @@ def test_setup_html_crisp_onpage_qr_matches_iphone_camera_failure_mode(
     assert len(matrix) == len(totp_qr._qr_factory(expected).matrix) + 2 * totp_qr.QR_BORDER
     assert matrix == totp_qr._matrix_with_quiet_zone(totp_qr._qr_factory(expected))
 
-    # 3) Camera instructions first (Traditional Chinese + English).
-    camera_zh = body.find("相機")
-    ga_inapp = body.find("內建掃碼")
-    assert camera_zh != -1
-    assert "請改用" in body
-    assert "iPhone Camera" in body or "Camera" in body
+    # 3) Setup key is primary; Camera is warned off (not a GA handoff).
+    setup_zh = body.find("輸入設定密鑰")
+    setup_en = body.find("Enter a setup key")
+    qr_pos = body.find('id="qr-primary"')
+    assert setup_zh != -1 and setup_en != -1 and qr_pos != -1
+    assert setup_zh < qr_pos
+    assert setup_en < qr_pos
+    assert 'id="setup-key-primary"' in body
+    assert body.find('id="setup-key-primary"') < qr_pos
+    assert "安全金鑰" in body
+    assert "Passwords" in body or "密碼" in body
+    assert "Do not use Camera" in body or "do not use" in body.lower()
     assert "white square" in body.lower() or "白色方塊" in body
-    # Chinese Camera instruction appears before the QR wrap and before GA in-app.
-    assert camera_zh < body.find('id="qr-primary"')
-    assert ga_inapp != -1
-    assert camera_zh < ga_inapp
+    # Must not tell the user to open Camera as the way into GA.
+    lowered = body.lower()
+    assert "open the iphone camera app (not google authenticator" not in lowered
+    assert "請改用系統相機" not in body
+    assert "use iphone camera, not ga" not in lowered
+    assert "請忽略" in body or "ignore" in lowered
 
-    # 4) Single primary QR of otpauth; backups remain.
+    # 4) SVG QR of otpauth remains as secondary; setup key + deep link present.
     assert "/setup/qr?token=" not in body
     assert totp_qr.format_manual_key(TEST_SECRET) in body
     assert 'id="otpauth-link"' in body
@@ -411,10 +419,15 @@ def test_otpauth_uri_google_authenticator_shape():
     qs = parse_qs(parsed.query)
     assert qs["secret"] == [TEST_SECRET]
     assert qs["issuer"] == [totp_gate.ISSUER]
-    # Round-trip: pyotp accepts the secret and mint matches.
-    assert pyotp.TOTP(TEST_SECRET).provisioning_uri(
+    assert qs["algorithm"] == ["SHA1"]
+    assert qs["digits"] == ["6"]
+    assert qs["period"] == ["30"]
+    # Round-trip: pyotp default URI is the same label/secret; we add SHA1/6/30.
+    base = pyotp.TOTP(TEST_SECRET).provisioning_uri(
         name=totp_gate.ACCOUNT, issuer_name="LingoCoach"
-    ) == uri
+    )
+    assert uri.startswith(base)
+    assert pyotp.TOTP(TEST_SECRET).verify(pyotp.TOTP(TEST_SECRET).now(), valid_window=1)
 
 
 def test_qr_modules_encode_otpauth_not_https_enroll_url():
@@ -591,9 +604,7 @@ def test_setup_page_qr_payload_is_otpauth(monkeypatch, tmp_path, qr_decoder_read
     response = client.get("/setup/qr", params={"token": raw})
     assert response.status_code == 200
     body = response.text
-    expected = pyotp.TOTP(TEST_SECRET).provisioning_uri(
-        name=totp_gate.ACCOUNT, issuer_name="LingoCoach"
-    )
+    expected = totp_gate.provisioning_uri(TEST_SECRET)
     assert expected.startswith("otpauth://totp/")
     escaped = expected.replace("&", "&amp;")
     assert f'href="{escaped}"' in body or f'href="{expected}"' in body
@@ -625,6 +636,60 @@ def test_setup_page_qr_payload_is_otpauth(monkeypatch, tmp_path, qr_decoder_read
 def test_format_manual_key_groups_base32():
     assert totp_qr.format_manual_key(TEST_SECRET) == "JBSW Y3DP EHPK 3PXP"
     assert totp_qr.format_manual_key("abcd") == "ABCD"
+
+
+def test_setup_page_forbids_camera_as_ga_handoff(monkeypatch, tmp_path):
+    """iPhone Camera is not the path into Google Authenticator.
+
+    Primary copy is Enter a setup key / 輸入設定密鑰. Camera is warned to
+    open Apple Passwords / 安全金鑰, not GA. SVG QR stays as secondary.
+    """
+    _enable(monkeypatch, tmp_path)
+    raw, _ = totp_qr.mint_enroll_token()
+    client = TestClient(app)
+    response = client.get("/setup/qr", params={"token": raw})
+    assert response.status_code == 200
+    body = response.text
+    lowered = body.lower()
+
+    setup_zh = body.find("輸入設定密鑰")
+    setup_en = body.find("Enter a setup key")
+    qr_pos = body.find('id="qr-primary"')
+    otpauth_pos = body.find('id="otpauth-link"')
+    assert setup_zh != -1 and setup_en != -1
+    assert qr_pos != -1 and otpauth_pos != -1
+    assert min(setup_zh, setup_en) < qr_pos
+    assert body.find('id="setup-key-primary"') < qr_pos
+    assert "LingoCoach" in body
+    assert "基於時間" in body
+    assert "Time based" in body
+    assert 'id="copy-key"' in body
+    assert f'data-raw="{TEST_SECRET}"' in body
+    assert totp_qr.format_manual_key(TEST_SECRET) in body
+
+    # Forbidden: Camera as the way into GA.
+    assert "open the iphone camera app (not google authenticator" not in lowered
+    assert "請改用系統相機" not in body
+    assert "use iphone camera, not ga’s in-app scanner" not in lowered
+    assert "use iphone camera, not ga's in-app scanner" not in lowered
+    assert "not google authenticator’s in-app scanner first" not in lowered
+    assert "not google authenticator's in-app scanner first" not in lowered
+
+    # Explicit Camera → Apple Passwords / 安全金鑰 warning.
+    assert "安全金鑰" in body
+    assert "Passwords" in body
+    assert "do not use camera" in lowered
+    assert "google authenticator" in lowered
+
+    # otpauth URI still valid; SVG QR still present as secondary.
+    expected = totp_gate.provisioning_uri(TEST_SECRET)
+    assert expected.startswith("otpauth://totp/")
+    escaped = expected.replace("&", "&amp;")
+    assert f'href="{escaped}"' in body or f'href="{expected}"' in body
+    assert "Open in Google Authenticator" in body
+    qr_chunk = _qr_wrap_inner(body)
+    assert "<svg" in qr_chunk
+    _assert_qr_markup_scannable(qr_chunk)
 
 
 def test_setup_qr_expired_is_gone(monkeypatch, tmp_path):
@@ -744,7 +809,9 @@ def test_cli_prints_url_not_secret(monkeypatch, tmp_path, capsys):
     assert "103-195-5-86.as-cloud-xip.com:8066" in out
     assert TEST_SECRET not in out
     assert "otpauth://" not in out
-    assert "iPhone Camera" in out or "Mac" in out
+    assert "Mac" in out
+    assert "setup key" in out.lower()
+    assert "scan the white square with iPhone Camera" not in out
 
 
 def test_google_authenticator_key_uri_format_and_qr_roundtrip(qr_decoder_ready):
@@ -754,9 +821,7 @@ def test_google_authenticator_key_uri_format_and_qr_roundtrip(qr_decoder_ready):
     QR PNG must decode byte-for-byte to that URI.
     """
     secret = pyotp.random_base32()
-    uri = pyotp.TOTP(secret).provisioning_uri(
-        name=totp_gate.ACCOUNT, issuer_name=totp_gate.ISSUER
-    )
+    uri = totp_gate.provisioning_uri(secret)
     assert uri.startswith("otpauth://totp/")
     parsed = urlparse(uri)
     assert parsed.scheme == "otpauth"
@@ -765,10 +830,10 @@ def test_google_authenticator_key_uri_format_and_qr_roundtrip(qr_decoder_ready):
     qs = parse_qs(parsed.query)
     assert qs.get("secret") == [secret]
     assert qs.get("issuer") == [totp_gate.ISSUER]
-    # No algorithm/digits/period overrides — GA defaults (SHA1/6/30).
-    assert "algorithm" not in qs
-    assert "digits" not in qs
-    assert "period" not in qs
+    # Google Key Uri Format: SHA1 / 6 / 30 made explicit (pyotp omits defaults).
+    assert qs.get("algorithm") == ["SHA1"]
+    assert qs.get("digits") == ["6"]
+    assert qs.get("period") == ["30"]
     # Refuse encoding the enroll page into modules.
     with pytest.raises(ValueError):
         totp_qr.require_otpauth_payload(

@@ -6,7 +6,7 @@ Usage (from voice-chat/):
 
 Writes .totp_secret (mode 600) if missing, then prints the otpauth:// URI once
 so you can add it in Google Authenticator / Authy. With --qr-link, mints a
-one-time HTTPS page that shows a QR (see app.totp_qr). The secret is not committed.
+one-time HTTPS page with a setup key + SVG QR (see app.totp_qr). The secret is not committed.
 """
 
 from __future__ import annotations

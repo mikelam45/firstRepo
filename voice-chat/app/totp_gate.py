@@ -101,9 +101,22 @@ def create_secret_file() -> tuple[str, str]:
 
 
 def provisioning_uri(secret: str | None = None) -> str:
+    """Google Key Uri Format otpauth://totp/… (SHA1 / 6 digits / 30s).
+
+    pyotp omits algorithm/digits/period when they are the defaults. We keep
+    them explicit so Google Authenticator and other apps see the same values
+    as pyotp.TOTP(secret) (must not change the generated codes).
+    """
     value = secret if secret is not None else (_secret or "")
     totp = pyotp.TOTP(value)
-    return totp.provisioning_uri(name=ACCOUNT, issuer_name=ISSUER)
+    uri = totp.provisioning_uri(name=ACCOUNT, issuer_name=ISSUER)
+    if "algorithm=" not in uri:
+        uri += "&algorithm=SHA1"
+    if "digits=" not in uri:
+        uri += "&digits=6"
+    if "period=" not in uri:
+        uri += "&period=30"
+    return uri
 
 
 def consume_setup_uri() -> str | None:

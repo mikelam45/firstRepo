@@ -82,7 +82,7 @@ Or use `~/lingocoach/voice-chat/.env` with mode `600` (also gitignored). Do not 
 
 **TOTP enroll:** add the same base32 secret (or the printed `otpauth://` URI from `python -m app.totp_setup`) in Google Authenticator / Authy / 1Password as issuer **LingoCoach**. After deploy, open `/login` on your public URL, enter the 6-digit code, then the coach unlocks (HttpOnly cookie, 7 days; **Secure** when HTTPS is enabled).
 
-**One-time QR page (Dinner_recipe-style — Mac Chrome → iPhone Camera):** the secret/QR is **not** left on a permanent public URL. On the VPS, with the app already serving HTTPS and `LINGOCOACH_TOTP_SECRET` set:
+**One-time enroll page (Mac Chrome → Google Authenticator setup key):** the secret/QR is **not** left on a permanent public URL. On the VPS, with the app already serving HTTPS and `LINGOCOACH_TOTP_SECRET` set:
 
 ```bash
 cd ~/lingocoach/voice-chat
@@ -99,21 +99,20 @@ cd ~/lingocoach/voice-chat
 
 That prints `https://103-195-5-86.as-cloud-xip.com:8066/setup/qr?token=…` (shape: `/setup/qr?token=<high-entropy>`). Every `qr` / `new-qr` call mints a **new** random `?token=` (overwrites hashed `.totp_qr_token` and invalidates any previous enroll URL immediately). Open the **latest** URL **once on the Mac** (Chrome). Leave the page open (do not refresh).
 
-**Primary — scan with iPhone Camera (matches GA “請改用相機”):**
+**Primary — Enter a setup key in Google Authenticator (do not use iPhone Camera):**
 
-1. On the Mac, open the enroll URL; keep the large QR on screen.
-2. On the iPhone, open the **Camera** app (or Google Authenticator → **+** → **Scan a QR code**).
-3. Point at the QR. Tap the Authenticator banner → **Add**.
-4. Open `/login` and enter the 6-digit code.
+1. On the Mac, open the enroll URL; keep the page on screen.
+2. On the iPhone, open **Google Authenticator** → **+** → **Enter a setup key** / **輸入設定密鑰**.
+3. Account: `LingoCoach`. Key: paste the huge base32 key (Copy). Type: **Time based** / **基於時間**.
+4. Tap **Add**, then open `/login` and enter the 6-digit code.
 
-**Backup — Enter a setup key / 輸入設定密鑰:**
+Do **not** scan this page with the iPhone Camera app. Camera opens Apple Passwords / 安全金鑰, **not** Google Authenticator. If GA shows 「請改用相機」, ignore that prompt and use the setup key.
 
-1. Google Authenticator → **+** → **Enter a setup key** (not Scan a QR code).
-2. Account: `unlock` (or `LingoCoach:unlock`). Type: **Time based**.
-3. Paste the large base32 key (Copy). Spaces are optional.
-4. Tap **Add**, then `/login`.
+**Secondary — scan from inside Google Authenticator (or Android):**
 
-**On the phone browser:** tap **Open in Authenticator** (otpauth:// deep link) if you opened the enroll URL on the phone instead of the Mac. After restart/deploy, remint with `./lingocoachctl.sh qr` (or `new-qr`) and use the newly printed URL — do not reuse an older `?token=` from chat/history. The token is stored **hashed** in gitignored `voice-chat/.totp_qr_token` (mode 600), expires in ~20 minutes, is **replaced on every remint**, and is **invalidated after the first successful page load**. A refresh or second visit returns 404.
+Google Authenticator → **+** → **Scan a QR code**, pointed at the white SVG QR on the Mac. Not the Camera app.
+
+**If the page is opened on the iPhone:** tap **Open in Google Authenticator** (`otpauth://` deep link). iOS may still offer Passwords; if so, Cancel and use the setup key. After restart/deploy, remint with `./lingocoachctl.sh qr` (or `new-qr`) and use the newly printed URL — do not reuse an older `?token=` from chat/history. The token is stored **hashed** in gitignored `voice-chat/.totp_qr_token` (mode 600), expires in ~20 minutes, is **replaced on every remint**, and is **invalidated after the first successful page load**. A refresh or second visit returns 404.
 
 When `LINGOCOACH_TOTP_SECRET` / `TOTP_SECRET` / `.totp_secret` is absent, the gate stays off (open access). On a public VPS, keep the secret set.
 

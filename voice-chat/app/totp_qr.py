@@ -1,19 +1,20 @@
-"""One-time Authenticator enrollment page (Dinner_recipe-style GA QR).
+"""One-time Authenticator enrollment page (Google Authenticator on iPhone).
 
 Every CLI mint (``python -m app.totp_qr`` / ``./lingocoachctl.sh qr`` /
 ``new-qr``) generates a fresh cryptographically random one-time token via
 ``secrets.token_urlsafe``, stores only its hash + expiry next to
 .totp_secret (mode 600), and immediately invalidates any previous token.
 Never reuses an unexpired record; never derives the token from the TOTP
-secret. GET /setup/qr?token=… shows a large otpauth:// SVG-module QR on a
-forced-light island (Mac Chrome display → iPhone Camera), plus Enter a
-setup key and an otpauth:// deep link for phone browsers. First successful
+secret. GET /setup/qr?token=… shows a huge grouped setup key (primary:
+Google Authenticator → + → Enter a setup key / 輸入設定密鑰), a secondary
+otpauth:// SVG-module QR for GA’s in-app scanner / Android, and an
+otpauth:// deep link if the page is opened on the phone. First successful
 page load also invalidates the token. TTL defaults to 20 minutes.
 
 QR modules encode otpauth://totp/… only — never the HTTPS enroll URL.
-iPhone GA’s “請改用相機” flow: open Camera, point at the white square, Add.
-OpenCV-decoding the PNG is not enough — the on-screen QR must stay crisp
-on a Retina Mac (SVG rects + no dark-mode invert).
+Do **not** tell users to scan with iPhone Camera: modern iOS Camera treats
+``otpauth://`` as Apple Passwords / 安全金鑰 and does not hand off to
+Google Authenticator. GA’s “請改用相機” is the wrong product advice here.
 
 Usage (from voice-chat/):
   .venv/bin/python -m app.totp_qr
@@ -45,13 +46,12 @@ import segno
 from app import totp_gate
 
 # On-screen QR is a grid of SVG <rect> modules (same segno matrix as PNG).
-# Chrome rasterizes those rects with shape-rendering:crispEdges, so a Mac
-# Retina display stays hard-edged for iPhone Camera. A CSS-scaled PNG is
-# what OpenCV can decode from bytes while iPhone/GA fail on the monitor.
+# Secondary path only: Google Authenticator → + → Scan a QR code (or Android).
+# iPhone Camera must not be the advised path (opens Apple 安全金鑰, not GA).
 # Quiet zone ≥4, prefer 8. Display ~360–420 CSS px. PNG remains a hidden
 # fallback only — never the only scannable surface.
 # Critical: QR *modules* encode otpauth://totp/… only — never the HTTPS
-# /setup/qr?token=… page URL (Camera would open a webpage instead of GA).
+# /setup/qr?token=… page URL (a browser would open a webpage instead of GA).
 QR_BOX_SIZE = 10  # PNG fallback module scale in px
 QR_BORDER = 8  # modules; GA expects ≥4 — 8 helps phone cameras on a monitor
 QR_MIN_PX = 320  # PNG fallback raster size
@@ -237,8 +237,8 @@ def otpauth_uri() -> str | None:
 def require_otpauth_payload(otpauth: str) -> str:
     """Refuse anything that is not an Authenticator otpauth://totp/ URI.
 
-    Encoding the enroll page (`https://…/setup/qr?token=…`) makes iPhone
-    Camera open Safari instead of offering Google Authenticator.
+    Encoding the enroll page (`https://…/setup/qr?token=…`) makes a phone
+    camera open a webpage instead of offering an authenticator.
     """
     if not isinstance(otpauth, str):
         raise ValueError("QR payload must be an otpauth://totp/ string")
@@ -477,10 +477,10 @@ def qr_png_data_url(otpauth: str) -> str:
 def qr_svg_module_markup(otpauth: str) -> str:
     """On-screen QR: SVG ``<rect>`` per dark run from the segno matrix.
 
-    This is what Mac Chrome paints onto the display. iPhone Camera photographs
-    those pixels — not the PNG bytes OpenCV decoded. Hard-edged black/white
-    rects with ``shape-rendering="crispEdges"`` stay scannable on Retina;
-    a CSS-scaled ``<img>`` PNG does not.
+    This is what Mac Chrome paints onto the display. Google Authenticator’s
+    in-app scanner photographs those pixels — not the PNG bytes OpenCV
+    decoded. Hard-edged black/white rects with ``shape-rendering="crispEdges"``
+    stay scannable on Retina; a CSS-scaled ``<img>`` PNG does not.
     """
     qr, _payload = _segno_qr(otpauth)
     matrix = _matrix_with_quiet_zone(qr)
@@ -556,10 +556,10 @@ def _html_attr_escape(value: str) -> str:
 
 
 def render_setup_page(template: str, secret: str, otpauth: str) -> str:
-    """Embed primary otpauth SVG QR, grouped manual key, and otpauth deep link.
+    """Embed grouped setup key (primary), SVG QR (secondary), otpauth deep link.
 
     otpauth must be otpauth://totp/… — encoded into on-screen SVG modules
-    (Mac Chrome → iPhone Camera) and as a secondary deep-link href.
+    (GA in-app scanner / Android) and as a phone-browser deep-link href.
     """
     uri = require_otpauth_payload(otpauth)
     markup = qr_markup(uri)
@@ -591,7 +591,8 @@ def main(argv: list[str] | None = None) -> int:
             print(
                 "Mint a one-time Authenticator enroll page link.\n"
                 "  python -m app.totp_qr [--base URL] [--ttl SECONDS]\n"
-                "Open the URL on the phone browser; tap otpauth or paste the key.\n"
+                "Open the URL on Mac Chrome. In Google Authenticator: + → "
+                "Enter a setup key / 輸入設定密鑰 (do not use iPhone Camera).\n"
                 "Requires LINGOCOACH_TOTP_SECRET / TOTP_SECRET / .totp_secret.\n"
                 "URL from LINGOCOACH_PUBLIC_BASE or LINGOCOACH_DOMAIN + port."
             )
@@ -619,8 +620,9 @@ def main(argv: list[str] | None = None) -> int:
     )
     print(f"Expires in ~{max(0, exp - int(time.time()))}s; works once (first successful page load).")
     print(
-        "Open on Mac Chrome; scan the white square with iPhone Camera "
-        "(not GA in-app scanner). Leave page open. Then /login."
+        "Open on Mac Chrome. In Google Authenticator: + → Enter a setup key "
+        "(do not use iPhone Camera — it opens Apple Passwords / 安全金鑰, not GA). "
+        "Leave page open. Then /login."
     )
     return 0
 

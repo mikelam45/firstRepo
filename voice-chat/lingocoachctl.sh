@@ -10,7 +10,8 @@
 # stop-all  — stop app unit and caddy.service
 # status    — OK/FAIL for unit, loopback /health, caddy, optional public URL;
 #             briefly retries /health when the unit is already active
-# qr        — mint a fresh one-time Authenticator QR enroll URL (~20 min TTL)
+# qr        — mint a one-time enroll URL (~20 min TTL, single use). Open on
+#             Mac Chrome; GA → + → Enter a setup key (not iPhone Camera).
 # new-qr    — alias for qr
 #
 # Never prints secrets from lingocoach.env.
@@ -441,7 +442,8 @@ cmd_qr() {
   echo "  Public base: ${base}"
   echo "  Always remints (never reuses ?token=); previous links invalidated immediately."
   echo "  TTL ≈ 20 minutes; single use (first successful page load)."
-  echo "  Open on Mac Chrome; scan the white square with iPhone Camera (not GA in-app scanner)."
+  echo "  Open on Mac Chrome. Google Authenticator → + → Enter a setup key"
+  echo "  (do not use iPhone Camera — it opens Apple Passwords / 安全金鑰, not GA)."
   # Always calls Python mint (secrets.token_urlsafe); overwrites .totp_qr_token.
   # Prints the new HTTPS URL + expiry note; never the TOTP secret.
   LINGOCOACH_PUBLIC_BASE="$base" "$py" -m app.totp_qr --base "$base"
@@ -449,7 +451,7 @@ cmd_qr() {
 
 usage() {
   # Prefer SCRIPT_DIR: $0 may be relative and break after cd.
-  sed -n '2,16p' "${SCRIPT_DIR}/lingocoachctl.sh"
+  sed -n '2,17p' "${SCRIPT_DIR}/lingocoachctl.sh"
 }
 
 cmd="${1:-}"

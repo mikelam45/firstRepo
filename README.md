@@ -38,7 +38,7 @@ cd voice-chat
 # Then put LINGOCOACH_TOTP_SECRET=<that value> in ~/lingocoach.env (VPS) or export it locally.
 ```
 
-**One-time enroll page (Mac Chrome → iPhone Camera / Google Authenticator):** after the secret is set on the VPS, mint a single-use link (hash stored in gitignored `.totp_qr_token`, mode 600; expires ~20 minutes; invalidated after the first successful page load):
+**One-time enroll page (Mac Chrome → Google Authenticator setup key):** after the secret is set on the VPS, mint a single-use link (hash stored in gitignored `.totp_qr_token`, mode 600; expires ~20 minutes; invalidated after the first successful page load):
 
 ```bash
 cd ~/lingocoach/voice-chat
@@ -51,6 +51,6 @@ cd ~/lingocoach/voice-chat
 # Prints: https://103-195-5-86.as-cloud-xip.com:8066/setup/qr?token=…
 ```
 
-Open that URL **on the Mac** (Chrome). Leave the page open. On the iPhone, open the **Camera** app (or Google Authenticator → **+** → **Scan a QR code**), point at the large QR, and Add. If Camera fails, use **Enter a setup key** on the same page, or open the URL on the phone and tap **Open in Authenticator**. Then go to `/login` and enter the 6-digit code. Do not leave `/setup/qr` without a token — it is not a permanent public page.
+Open that URL **on the Mac** (Chrome). Leave the page open. On the iPhone, open **Google Authenticator** → **+** → **Enter a setup key** / **輸入設定密鑰**. Account: `LingoCoach`. Paste the huge setup key (Copy). Type: **Time based** / **基於時間** → Add. Do **not** scan with the iPhone Camera app: Camera opens Apple Passwords / 安全金鑰, not Google Authenticator. If GA shows 「請改用相機」, ignore that and use the setup key. Secondary: Google Authenticator → **+** → **Scan a QR code** (in-app, not Camera) pointed at the white SVG QR. If you opened the URL on the iPhone, tap **Open in Google Authenticator**; iOS may still offer Passwords — Cancel and use the setup key. Then go to `/login` and enter the 6-digit code. Do not leave `/setup/qr` without a token — it is not a permanent public page.
 
 Open `http://127.0.0.1:8066/login` (or `https://YOUR_DOMAIN:8066/login` on a VPS with `--https`), enter the current code, then use the coach as usual. On HTTPS deploys the session cookie `lc_session` is HttpOnly **and Secure**.
