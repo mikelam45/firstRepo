@@ -26,10 +26,17 @@ import sys
 import time
 from pathlib import Path
 
+import base64
+
 import qrcode
-from qrcode.image.svg import SvgPathImage
 
 from app import totp_gate
+
+# Phone cameras (Google Authenticator) scan raster QR far more reliably than
+# CSS-scaled SVG. Target ~260–320 CSS px with a solid white quiet zone.
+QR_BOX_SIZE = 10
+QR_BORDER = 4  # modules; GA expects ≥4
+QR_MIN_PX = 260
 
 logger = logging.getLogger("lingocoach")
 
@@ -168,32 +175,94 @@ def otpauth_uri() -> str | None:
     return totp_gate.provisioning_uri(secret)
 
 
-def qr_svg_markup(otpauth: str) -> str:
-    """Offline SVG QR (no Pillow). Safe to embed in HTML."""
+def _qr_factory(otpauth: str) -> qrcode.QRCode:
     qr = qrcode.QRCode(
         version=None,
         error_correction=qrcode.constants.ERROR_CORRECT_M,
-        box_size=8,
-        border=2,
+        box_size=QR_BOX_SIZE,
+        border=QR_BORDER,
     )
     qr.add_data(otpauth)
     qr.make(fit=True)
+    return qr
+
+
+def qr_png_data_url(otpauth: str) -> str:
+    """High-contrast black-on-white PNG as a data URL (Pillow).
+
+    Preferred for Google Authenticator camera scans: fixed modules, solid
+    quiet zone, no SVG anti-alias / CSS-shrink blur.
+    """
+    from PIL import Image
+
+    qr = _qr_factory(otpauth)
+    img = qr.make_image(fill_color="black", back_color="white").convert("RGB")
+    # Upscale if matrix is unusually small so on-screen modules stay fat.
+    # Nearest-neighbor keeps module edges hard (no blur for cameras).
+    width, height = img.size
+    if width < QR_MIN_PX:
+        scale = max(2, (QR_MIN_PX + width - 1) // width)
+        img = img.resize(
+            (width * scale, height * scale),
+            resample=Image.Resampling.NEAREST,
+        )
+    buf = io.BytesIO()
+    img.save(buf, format="PNG", optimize=True)
+    b64 = base64.b64encode(buf.getvalue()).decode("ascii")
+    return f"data:image/png;base64,{b64}"
+
+
+def qr_svg_markup(otpauth: str) -> str:
+    """Fallback SVG QR with white background + black modules (no Pillow)."""
+    from qrcode.image.svg import SvgPathImage
+
+    qr = _qr_factory(otpauth)
     img = qr.make_image(image_factory=SvgPathImage)
     buf = io.BytesIO()
     img.save(buf)
     svg = buf.getvalue().decode("utf-8")
     if svg.startswith("<?xml"):
         svg = svg.split("?>", 1)[-1].lstrip()
-    # Keep contrast on the dark login-style page.
-    svg = svg.replace("<svg ", '<svg role="img" aria-label="Authenticator QR code" ', 1)
+    # Explicit white rect so dark page chrome cannot show through.
+    if "<svg" in svg and "<rect" not in svg[:200].lower():
+        svg = svg.replace(
+            ">",
+            ' style="background:#ffffff">'
+            '<rect width="100%" height="100%" fill="#ffffff"/>',
+            1,
+        )
+    svg = svg.replace(
+        "<svg ",
+        '<svg role="img" aria-label="Authenticator QR code" ',
+        1,
+    )
     return svg
 
 
-def render_setup_page(template: str, secret: str, otpauth: str) -> str:
-    svg = qr_svg_markup(otpauth)
+def qr_markup(otpauth: str) -> str:
+    """Embeddable QR: PNG <img> when Pillow is available, else SVG."""
+    try:
+        data_url = qr_png_data_url(otpauth)
+    except Exception:
+        return qr_svg_markup(otpauth)
     return (
-        template.replace("__QR_SVG__", svg)
-        .replace("__MANUAL_KEY__", secret)
+        f'<img class="qr-img" src="{data_url}" width="280" height="280" '
+        f'alt="Authenticator QR code" decoding="sync"/>'
+    )
+
+
+def format_manual_key(secret: str) -> str:
+    """Group base32 into 4-char chunks for easier phone typing."""
+    clean = "".join(ch for ch in secret.strip().upper() if ch.isalnum())
+    return " ".join(clean[i : i + 4] for i in range(0, len(clean), 4))
+
+
+def render_setup_page(template: str, secret: str, otpauth: str) -> str:
+    markup = qr_markup(otpauth)
+    return (
+        template.replace("__QR_MARKUP__", markup)
+        .replace("__MANUAL_KEY__", format_manual_key(secret))
+        .replace("__MANUAL_KEY_RAW__", secret.strip())
         .replace("__ISSUER__", totp_gate.ISSUER)
         .replace("__ACCOUNT__", totp_gate.ACCOUNT)
     )

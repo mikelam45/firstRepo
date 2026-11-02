@@ -46,26 +46,67 @@
     .qr-wrap {
       align-self: center;
       background: #ffffff;
-      padding: 12px;
+      padding: 20px;
       border-radius: 12px;
       line-height: 0;
+      margin: 0 0 12px;
+    }
+    .qr-wrap .qr-img,
+    .qr-wrap img {
+      width: min(280px, 72vw);
+      height: auto;
+      display: block;
+      image-rendering: pixelated;
+      image-rendering: crisp-edges;
+      background: #ffffff;
+    }
+    .qr-wrap svg {
+      width: min(280px, 72vw);
+      height: auto;
+      display: block;
+      background: #ffffff;
+    }
+    .scan-tip {
+      margin: 0 0 20px;
+      color: var(--muted);
+      font-size: 0.88rem;
+      line-height: 1.4;
+      text-align: center;
+    }
+    .key-label { font-size: 0.92rem; color: var(--muted); margin: 0 0 8px; }
+    .key-row {
+      display: flex;
+      gap: 8px;
+      align-items: stretch;
       margin: 0 0 20px;
     }
-    .qr-wrap svg { width: min(240px, 70vw); height: auto; display: block; }
-    .key-label { font-size: 0.92rem; color: var(--muted); margin: 0 0 8px; }
     .key {
-      margin: 0 0 20px;
+      flex: 1;
+      margin: 0;
       padding: 14px;
       border-radius: 12px;
       border: 1px solid var(--line);
       background: var(--bg-2);
       font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
-      font-size: 0.95rem;
-      letter-spacing: 0.06em;
+      font-size: 1.05rem;
+      letter-spacing: 0.08em;
       word-break: break-all;
-      line-height: 1.5;
+      line-height: 1.55;
       user-select: all;
     }
+    .copy {
+      flex: 0 0 auto;
+      min-width: 72px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: var(--bg-2);
+      color: var(--ink);
+      font-weight: 600;
+      font-size: 0.92rem;
+      cursor: pointer;
+      padding: 0 12px;
+    }
+    .copy:active { background: var(--line); }
     .primary {
       display: inline-flex;
       align-items: center;
@@ -87,10 +128,48 @@
     <p class="mark">LingoCoach</p>
     <p class="muted">Scan this QR with Google Authenticator (or Authy / 1Password) to enroll <strong>__ISSUER__:__ACCOUNT__</strong>.</p>
     <p class="warn">This link works once. After you leave or refresh, it will not open again. Keep the manual key until your authenticator shows codes.</p>
-    <div class="qr-wrap">__QR_SVG__</div>
-    <p class="key-label">Manual key (base32)</p>
-    <p class="key" id="manual">__MANUAL_KEY__</p>
+    <div class="qr-wrap">__QR_MARKUP__</div>
+    <p class="scan-tip">Tip: hold the phone steady, fill the viewfinder with the white square, and avoid screen glare. If scan fails, enter the manual key below.</p>
+    <p class="key-label">Manual key (base32) — type or paste into Authenticator</p>
+    <div class="key-row">
+      <p class="key" id="manual">__MANUAL_KEY__</p>
+      <button type="button" class="copy" id="copy-key" data-raw="__MANUAL_KEY_RAW__">Copy</button>
+    </div>
     <a class="primary" href="/login">Continue to unlock</a>
   </div>
+  <script>
+    (function () {
+      var btn = document.getElementById("copy-key");
+      if (!btn) return;
+      btn.addEventListener("click", function () {
+        var raw = btn.getAttribute("data-raw") || "";
+        var done = function () {
+          btn.textContent = "Copied";
+          setTimeout(function () { btn.textContent = "Copy"; }, 1500);
+        };
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(raw).then(done).catch(function () {
+            var el = document.getElementById("manual");
+            if (el) {
+              var range = document.createRange();
+              range.selectNodeContents(el);
+              var sel = window.getSelection();
+              sel.removeAllRanges();
+              sel.addRange(range);
+            }
+          });
+        } else {
+          var el = document.getElementById("manual");
+          if (el) {
+            var range = document.createRange();
+            range.selectNodeContents(el);
+            var sel = window.getSelection();
+            sel.removeAllRanges();
+            sel.addRange(range);
+          }
+        }
+      });
+    })();
+  </script>
 </body>
 </html>

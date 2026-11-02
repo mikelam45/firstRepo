@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+import base64
+import io
 import time
+from urllib.parse import parse_qs, unquote, urlparse
 
+import pyotp
 from fastapi.testclient import TestClient
 
 from app import totp_gate
@@ -52,7 +56,10 @@ def test_setup_qr_valid_once_then_gone(monkeypatch, tmp_path):
     assert "works once" in body.lower() or "This link works once" in body
     assert TEST_SECRET in body
     assert "otpauth://totp/" in totp_gate.provisioning_uri(TEST_SECRET)
-    assert 'aria-label="Authenticator QR code"' in body or "<svg" in body.lower()
+    # Prefer PNG data-URL for Google Authenticator camera reliability.
+    assert 'src="data:image/png;base64,' in body
+    assert 'alt="Authenticator QR code"' in body
+    assert "Copy" in body
     assert "Cache-Control" in first.headers
     assert "no-store" in first.headers.get("cache-control", "")
 
@@ -60,6 +67,48 @@ def test_setup_qr_valid_once_then_gone(monkeypatch, tmp_path):
     assert second.status_code == 404
     assert TEST_SECRET not in second.text
     assert not totp_qr.token_file_path().is_file()
+
+
+def test_otpauth_uri_google_authenticator_shape():
+    """otpauth must be Issuer:account + base32 secret + issuer query (URL-encoded)."""
+    uri = totp_gate.provisioning_uri(TEST_SECRET)
+    assert uri.startswith("otpauth://totp/")
+    parsed = urlparse(uri)
+    assert parsed.scheme == "otpauth"
+    assert parsed.netloc == "totp"
+    # Path is /LingoCoach:unlock (possibly percent-encoded).
+    label = unquote(parsed.path.lstrip("/"))
+    assert label == f"{totp_gate.ISSUER}:{totp_gate.ACCOUNT}"
+    qs = parse_qs(parsed.query)
+    assert qs["secret"] == [TEST_SECRET]
+    assert qs["issuer"] == [totp_gate.ISSUER]
+    # Round-trip: pyotp accepts the secret and mint matches.
+    assert pyotp.TOTP(TEST_SECRET).provisioning_uri(
+        name=totp_gate.ACCOUNT, issuer_name=totp_gate.ISSUER
+    ) == uri
+
+
+def test_qr_png_is_large_high_contrast():
+    uri = totp_gate.provisioning_uri(TEST_SECRET)
+    data_url = totp_qr.qr_png_data_url(uri)
+    assert data_url.startswith("data:image/png;base64,")
+    raw = base64.b64decode(data_url.split(",", 1)[1])
+    from PIL import Image
+
+    img = Image.open(io.BytesIO(raw))
+    assert img.size[0] >= totp_qr.QR_MIN_PX
+    assert img.size[1] >= totp_qr.QR_MIN_PX
+    # Corner quiet zone should be white (high contrast pad).
+    assert img.getpixel((0, 0)) == (255, 255, 255)
+    # Markup wraps PNG for the setup page.
+    markup = totp_qr.qr_markup(uri)
+    assert 'src="data:image/png;base64,' in markup
+    assert "qr-img" in markup
+
+
+def test_format_manual_key_groups_base32():
+    assert totp_qr.format_manual_key(TEST_SECRET) == "JBSW Y3DP EHPK 3PXP"
+    assert totp_qr.format_manual_key("abcd") == "ABCD"
 
 
 def test_setup_qr_expired_is_gone(monkeypatch, tmp_path):
