@@ -11,10 +11,21 @@ The API is a small shell so the environment can be tested before the multimodal 
 
 ## MacBook
 
-Requires Python 3.12.
+Keep this checkout at `~/firstrepo/RAG_portal`. That folder is the local development copy. Do not deploy it to the VPS.
+
+Requires Python 3.12 and git.
 
 ```bash
+mkdir -p ~/firstrepo
+git clone https://github.com/mikelam45/firstRepo.git ~/firstrepo/RAG_portal
+cd ~/firstrepo/RAG_portal
 bash scripts/dev.sh
+```
+
+If `main` does not have these scripts yet, check out the development branch after clone:
+
+```bash
+git checkout cursor/multimodal-rag-portal-1e46
 ```
 
 The first run creates `.venv`, installs `backend/requirements.txt`, and copies `.env.development.example` to `.env.development`. The server listens on `http://127.0.0.1:8000`.
@@ -42,7 +53,7 @@ Tests:
 Do this only after the Mac tests pass. On the server:
 
 ```bash
-git clone <this-repo>
+git clone https://github.com/mikelam45/firstRepo.git
 cd firstRepo
 cp .env.production.example .env.production
 # Edit PORTAL_API_TOKEN. Keep APP_ENV=production.
