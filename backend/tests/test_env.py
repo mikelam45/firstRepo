@@ -15,7 +15,11 @@ def client(tmp_path, monkeypatch):
 def test_development_health_and_note(client):
     health = client.get("/health")
     assert health.status_code == 200
-    assert health.json() == {"status": "ok", "env": "development"}
+    assert health.json() == {
+        "status": "ok",
+        "env": "development",
+        "openrouter_configured": False,
+    }
 
     created = client.post("/api/notes", json={"body": "Mac dev note"})
     assert created.status_code == 201

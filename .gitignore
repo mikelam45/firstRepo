@@ -5,5 +5,11 @@ __pycache__/
 .env
 .env.development
 .env.production
+.env.*
+!.env.development.example
+!.env.production.example
+.env_*
+*.env
+openrouter_key/
 data/
 *.db

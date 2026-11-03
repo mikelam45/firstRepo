@@ -149,8 +149,9 @@
     <p class="lede">
       Each function keeps its own model. Prices sit next to the choices, recorded on
       <time id="price-date" datetime="2026-11-03">3 Nov 2026</time>.
-      The page does not call a model provider, so it loads without an API key.
+      The page loads without an API key.
     </p>
+    <p class="note" id="openrouter-status" role="status">OpenRouter is not configured. Choices and recorded prices still load.</p>
     <p class="note" id="cost-note">
       A single total is not shown. Text, images, and video use different units, so adding them would not mean anything. Text is USD per 1M tokens, images are USD per 1M image-output tokens or USD per megapixel, and video is USD per second. Each function below shows its own unit price.
     </p>
@@ -309,6 +310,18 @@
       }
     }
 
+    function renderOpenRouter(payload) {
+      const statusLine = document.getElementById("openrouter-status");
+      if (!statusLine) return;
+      if (payload.openrouter_status === "key_accepted") {
+        statusLine.textContent = "OpenRouter accepted the configured key.";
+      } else if (payload.openrouter_status === "key_rejected") {
+        statusLine.textContent = "OpenRouter did not accept the configured key. Choices and recorded prices still load.";
+      } else {
+        statusLine.textContent = "OpenRouter is not configured. Choices and recorded prices still load.";
+      }
+    }
+
     function unsaved() {
       if (!state.saved) return false;
       const selection = currentSelection();
@@ -325,6 +338,7 @@
       document.getElementById("price-date").dateTime = payload.prices_recorded_on;
       document.getElementById("cost-note").textContent = payload.cost_note;
       document.getElementById("price-source").textContent = "Price source: " + payload.price_source + ".";
+      renderOpenRouter(payload);
       renderOptions();
       renderSummary();
     }

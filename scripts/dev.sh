@@ -16,5 +16,10 @@ if [ "${APP_ENV}" != "development" ]; then
   echo "On the VPS, copy .env.production.example to .env.production and run scripts/vps-up.sh." >&2
   exit 1
 fi
+# Read the Mac OpenRouter file when it exists. Never print the key.
+# A missing file still starts development with the key unset.
+# shellcheck disable=SC1091
+source scripts/load-openrouter-key.sh
+load_openrouter_key
 mkdir -p "${DATA_DIR:-data}"
 exec .venv/bin/uvicorn app.main:app --app-dir backend --reload --host 127.0.0.1 --port "${PORT:-8099}"

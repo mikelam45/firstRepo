@@ -16,6 +16,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 from .catalog import public_state
+from .openrouter_key import openrouter_status_fields
 from .selection import load_selection, parse_selection, save_selection
 
 ALLOWED_ENVS = ("development", "production")
@@ -77,7 +78,9 @@ def model_selection_page() -> FileResponse:
 def get_models() -> dict[str, object]:
     settings = get_settings()
     selection = load_selection(settings.data_dir)
-    return public_state(selection)
+    payload = public_state(selection)
+    payload.update(openrouter_status_fields())
+    return payload
 
 
 @app.put("/api/models")
@@ -96,11 +99,12 @@ def put_models(
 
 
 @app.get("/health")
-def health() -> dict[str, str]:
+def health() -> dict[str, object]:
     settings = get_settings()
     with connect(settings) as connection:
         connection.execute("SELECT 1").fetchone()
-    return {"status": "ok", "env": settings.env}
+    configured = openrouter_status_fields(probe=False)
+    return {"status": "ok", "env": settings.env, **configured}
 
 
 @app.get("/api/notes")
