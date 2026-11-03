@@ -9,9 +9,14 @@ from __future__ import annotations
 import os
 import sqlite3
 from pathlib import Path
+from typing import Any
 
-from fastapi import FastAPI, Header, HTTPException
+from fastapi import Body, FastAPI, Header, HTTPException
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
+
+from .catalog import public_state
+from .selection import load_selection, parse_selection, save_selection
 
 ALLOWED_ENVS = ("development", "production")
 
@@ -58,6 +63,36 @@ def require_write_access(settings: Settings, authorization: str | None) -> None:
     expected = f"Bearer {settings.token}"
     if authorization != expected:
         raise HTTPException(status_code=401, detail="Unauthorized")
+
+
+PAGE = Path(__file__).resolve().parent / "static" / "index.html"
+
+
+@app.get("/")
+def model_selection_page() -> FileResponse:
+    return FileResponse(PAGE)
+
+
+@app.get("/api/models")
+def get_models() -> dict[str, object]:
+    settings = get_settings()
+    selection = load_selection(settings.data_dir)
+    return public_state(selection)
+
+
+@app.put("/api/models")
+def put_models(
+    body: Any = Body(...),
+    authorization: str | None = Header(default=None),
+) -> dict[str, object]:
+    settings = get_settings()
+    require_write_access(settings, authorization)
+    try:
+        selection = parse_selection(body)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    save_selection(settings.data_dir, selection)
+    return public_state(selection)
 
 
 @app.get("/health")

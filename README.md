@@ -19,10 +19,15 @@ bash scripts/dev.sh
 
 The first run creates `.venv`, installs `backend/requirements.txt`, and copies `.env.development.example` to `.env.development`. The server listens on `http://127.0.0.1:8000`.
 
+Open that URL in a browser to assign a model to each function. The page lists the provider, model id, a one-line use, and the recorded unit price. It does not call OpenRouter, so it loads without `OPENROUTER_API_KEY`. Choices are stored in `data/model-selection.json` (or `$DATA_DIR/model-selection.json`).
+
 ```bash
 curl http://127.0.0.1:8000/health
+curl http://127.0.0.1:8000/api/models
 curl -X POST http://127.0.0.1:8000/api/notes -H 'content-type: application/json' -d '{"body":"hello from the mac"}'
 ```
+
+`GET /api/models` is open in both modes. `PUT /api/models` is open in development. In production it requires `Authorization: Bearer $PORTAL_API_TOKEN`, the same rule as creating a note. The body is the five function keys (`rag_qa`, `translation`, `cantonese_script`, `image_gen`, `video_gen`) mapped to model ids from the catalog.
 
 Tests:
 
