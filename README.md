@@ -4,21 +4,21 @@ Two machines, two modes.
 
 | Machine | Role | Command |
 | --- | --- | --- |
-| MacBook | Development | `bash scripts/dev.sh` |
+| MacBook | Development at `/Users/mikelam/firstRepo/RAG_portal` | `bash scripts/dev.sh` |
 | Linux VPS | Production, after dev is tested | `bash scripts/vps-up.sh` |
 
 The API is a small shell so the environment can be tested before the multimodal portal is built on top of it. Development stores notes in SQLite and leaves writes open on localhost. Production requires `PORTAL_API_TOKEN` on writes and refuses to serve if that token is missing.
 
 ## MacBook
 
-Keep this checkout at `~/firstrepo/RAG_portal`. That folder is the local development copy. Do not deploy it to the VPS.
+Keep this checkout at `/Users/mikelam/firstRepo/RAG_portal`. That folder is the local development copy on the Mac. Do not deploy it to the VPS.
 
 Requires Python 3.12 and git.
 
 ```bash
-mkdir -p ~/firstrepo
-git clone https://github.com/mikelam45/firstRepo.git ~/firstrepo/RAG_portal
-cd ~/firstrepo/RAG_portal
+mkdir -p /Users/mikelam/firstRepo
+git clone https://github.com/mikelam45/firstRepo.git /Users/mikelam/firstRepo/RAG_portal
+cd /Users/mikelam/firstRepo/RAG_portal
 bash scripts/dev.sh
 ```
 
