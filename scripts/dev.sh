@@ -17,4 +17,4 @@ if [ "${APP_ENV}" != "development" ]; then
   exit 1
 fi
 mkdir -p "${DATA_DIR:-data}"
-exec .venv/bin/uvicorn app.main:app --app-dir backend --reload --host 127.0.0.1 --port "${PORT:-8000}"
+exec .venv/bin/uvicorn app.main:app --app-dir backend --reload --host 127.0.0.1 --port "${PORT:-8099}"
