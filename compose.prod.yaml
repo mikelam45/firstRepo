@@ -1,0 +1,20 @@
+# Production stack for a Linux VPS. Do not use this on the MacBook.
+# The API listens on localhost only. Put Caddy or nginx in front for HTTPS.
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file:
+      - .env.production
+    environment:
+      APP_ENV: production
+      DATA_DIR: /data
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - fieldnote-data:/data
+
+volumes:
+  fieldnote-data:
