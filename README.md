@@ -13,7 +13,7 @@ The API is a small shell so the environment can be tested before the multimodal 
 
 Keep this checkout at `/Users/mikelam/firstRepo/RAG_portal`. That folder is the local development copy on the Mac. Do not deploy it to the VPS.
 
-Requires Python 3.12 and git.
+Requires Python 3.12 or 3.13 (preferred) and git. Python 3.14 works with the pinned FastAPI/pydantic wheels in `backend/requirements.txt`. Homebrew's `python3` on a new Mac is often 3.14; that used to fail because older pydantic-core compiled from source with PyO3, which only supports up to 3.13. `scripts/dev.sh` prefers `python3.12`, then `python3.13`, then `python3`.
 
 ```bash
 mkdir -p /Users/mikelam/firstRepo

@@ -1,5 +1,7 @@
-fastapi==0.115.6
+# Wheels exist for CPython 3.12–3.14 (pydantic-core 2.27.2 cannot build on 3.14).
+fastapi==0.118.3
 uvicorn==0.34.0
-pydantic==2.10.6
+pydantic==2.12.5
+pydantic-core==2.41.5
 httpx==0.28.1
 pytest==8.3.4

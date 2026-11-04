@@ -74,3 +74,14 @@ def test_dev_port_default_is_8099():
     dev = (REPO_ROOT / "scripts" / "dev.sh").read_text(encoding="utf-8")
     assert "PORT=8099" in example
     assert "${PORT:-8099}" in dev
+
+
+def test_cloud_install_prefers_312_then_313_and_pins_cp314_wheels():
+    script = (REPO_ROOT / "scripts" / "cloud-install.sh").read_text(encoding="utf-8")
+    assert script.index("python3.12") < script.index("python3.13")
+    assert "--only-binary=pydantic-core" in script
+    assert "brew install python@3.12" in script
+    req = (REPO_ROOT / "backend" / "requirements.txt").read_text(encoding="utf-8")
+    assert "pydantic==2.12.5" in req
+    assert "pydantic-core==2.41.5" in req
+    assert "fastapi==0.118.3" in req
