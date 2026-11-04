@@ -6,10 +6,13 @@ from app.catalog import DEFAULT_SELECTION, get_model
 from app.chat import MISSING_KEY_DETAIL, OPENROUTER_CHAT_URL
 from app.image_refs import MAX_REFERENCE_BYTES, MAX_REFERENCES
 from app.images import (
+    EXPRESSION_VARIANTS,
+    MOVEMENT_VARIANTS,
     OPENROUTER_IMAGE_TIMEOUT_SECONDS,
     OPENROUTER_IMAGES_TIMEOUT_SECONDS,
     OPENROUTER_IMAGES_URL,
     assemble_prompt,
+    variant_suffix,
 )
 from app.main import PAGE, app
 from app.openrouter_key import MAC_KEY_PATH
@@ -499,6 +502,14 @@ def test_page_has_guided_fields_and_output_controls(tmp_path, monkeypatch):
     assert 'id="image-width"' in html
     assert 'id="image-height"' in html
     assert 'id="image-generate"' in html
+    assert 'id="image-count"' in html
+    assert "1 photo" in html
+    assert "10 photos" in html
+    assert "11 photos" not in html
+    assert "neutral" in html
+    assert "slight smile" in html
+    assert "walking" in html
+    assert "body.n" in html
     assert "/api/images/generate" in html
     assert "not sent as chat completions" in html
     assert "google/gemini-3.1-flash-image" not in html
@@ -696,3 +707,70 @@ def test_leftover_gemini_image_is_not_used(tmp_path, monkeypatch):
     assert response.status_code == 200
     assert response.json()["model_id"] == "black-forest-labs/flux.2-pro"
     assert seen["json"]["model"] == "black-forest-labs/flux.2-pro"
+
+
+def test_generate_count_eleven_is_400(tmp_path, monkeypatch):
+    _install_key(tmp_path, monkeypatch)
+    seen = _mock_images(monkeypatch)
+    client = _client(monkeypatch, tmp_path)
+    response = client.post("/api/images/generate", json={"prompt": "a lamp", "n": 11})
+    assert response.status_code == 400
+    detail = response.json()["detail"].lower()
+    assert "1" in detail
+    assert "10" in detail
+    assert seen["calls"] == 0
+    alias = client.post("/api/images/generate", json={"prompt": "a lamp", "count": 11})
+    assert alias.status_code == 400
+    assert seen["calls"] == 0
+    zero = client.post("/api/images/generate", json={"prompt": "a lamp", "n": 0})
+    assert zero.status_code == 400
+    assert seen["calls"] == 0
+
+
+def test_generate_n_three_varies_expression_and_movement(tmp_path, monkeypatch):
+    _install_key(tmp_path, monkeypatch)
+    seen = _mock_images(monkeypatch)
+    client = _client(monkeypatch, tmp_path)
+    response = client.post(
+        "/api/images/generate",
+        json={
+            "prompt": "a portrait of a tea master",
+            "n": 3,
+            "width": 1024,
+            "height": 1024,
+            "format": "png",
+        },
+    )
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["n"] == 3
+    assert len(payload["images"]) == 3
+    assert seen["calls"] == 3
+    assert len(seen["payloads"]) == 3
+    suffixes = [variant_suffix(index) for index in range(3)]
+    assert suffixes == [
+        "Facial expression: neutral. Movement: idle.",
+        "Facial expression: slight smile. Movement: walking.",
+        "Facial expression: smile. Movement: turning.",
+    ]
+    assert EXPRESSION_VARIANTS[:3] == ("neutral", "slight smile", "smile")
+    assert MOVEMENT_VARIANTS[:3] == ("idle", "walking", "turning")
+    prompts = [row["prompt"] for row in seen["payloads"]]
+    assert len(set(prompts)) == 3
+    for index, (outbound, suffix) in enumerate(zip(seen["payloads"], suffixes)):
+        assert outbound["n"] == 1
+        assert outbound["model"] == "black-forest-labs/flux.2-pro"
+        assert outbound["prompt"].startswith("a portrait of a tea master")
+        assert suffix in outbound["prompt"]
+        assert suffix not in prompts[(index + 1) % 3]
+        assert "messages" not in outbound
+        assert "size" not in outbound
+    assert payload["images"][0]["caption"] == "neutral, idle"
+    assert payload["images"][1]["caption"] == "slight smile, walking"
+    assert payload["images"][2]["caption"] == "smile, turning"
+    files = list((tmp_path / "data" / "images").glob("*.png"))
+    assert len(files) == 3
+    listed = client.get("/api/images")
+    assert listed.status_code == 200
+    assert len(listed.json()[0]["images"]) == 3
+    _assert_secret_absent(response.text)

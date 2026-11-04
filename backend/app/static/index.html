@@ -347,13 +347,25 @@
           </label>
           <label class="field">Count
             <select id="image-count">
-              <option value="1" selected>1 image</option>
-              <option value="4">Storyboard 4 frames</option>
-              <option value="6">Storyboard 6 frames</option>
-              <option value="8">Storyboard 8 frames</option>
+              <option value="1" selected>1 photo</option>
+              <option value="2">2 photos</option>
+              <option value="3">3 photos</option>
+              <option value="4">4 photos</option>
+              <option value="5">5 photos</option>
+              <option value="6">6 photos</option>
+              <option value="7">7 photos</option>
+              <option value="8">8 photos</option>
+              <option value="9">9 photos</option>
+              <option value="10">10 photos</option>
+              <option value="storyboard-4">Storyboard 4 frames</option>
+              <option value="storyboard-6">Storyboard 6 frames</option>
+              <option value="storyboard-8">Storyboard 8 frames</option>
             </select>
           </label>
         </div>
+        <p class="meta" id="image-count-hint">
+          1 to 10 photos. Extra photos vary facial expression (neutral, slight smile, smile, focused, speaking, surprised) and movement (idle, walking, turning, reaching, sitting, stepping). Recorded price is shown times the photo count.
+        </p>
         <label class="field" id="image-beats-field" hidden>Storyboard beats (one per line)
           <textarea id="image-beats" rows="6" placeholder="Beat 1&#10;Beat 2&#10;Beat 3"></textarea>
         </label>
@@ -463,9 +475,21 @@
       return value === "strict" ? "Strict RAG" : "Mix model + RAG";
     }
 
-    function priceSummary(prices) {
+    function scaleRecordedAmount(amount, n) {
+      const value = Number(amount);
+      if (!Number.isFinite(value) || !n || n <= 1) return String(amount);
+      const scaled = (value * n).toFixed(6).replace(/\.?0+$/, "");
+      return scaled || String(amount);
+    }
+
+    function priceSummary(prices, multiplier) {
+      const n = Number(multiplier) > 1 ? Number(multiplier) : 1;
       return (prices || []).map(function (price) {
-        return price.label + " " + price.amount_usd + " " + price.unit;
+        if (n === 1) {
+          return price.label + " " + price.amount_usd + " " + price.unit;
+        }
+        return price.label + " " + price.amount_usd + " × " + n + " = "
+          + scaleRecordedAmount(price.amount_usd, n) + " " + price.unit;
       }).join("; ");
     }
 
@@ -499,8 +523,9 @@
         line.appendChild(missing);
       } else {
         const text = document.createElement("span");
+        const multiplier = functionId === "image_gen" ? selectedPriceMultiplier() : 1;
         text.textContent = (fn ? fn.label : functionId) + " model: " + option.id
-          + " · " + priceSummary(option.prices)
+          + " · " + priceSummary(option.prices, multiplier)
           + " (recorded " + state.catalog.prices_recorded_on + ", not a live quote). ";
         line.appendChild(text);
       }
@@ -1086,14 +1111,30 @@
       if (aspect) document.getElementById("image-resolution").value = aspect;
     }
 
+    function selectedImageMode() {
+      const raw = String((document.getElementById("image-count") || {}).value || "1");
+      if (raw.indexOf("storyboard-") === 0) {
+        return { mode: "storyboard", count: Number(raw.slice("storyboard-".length)) || 4 };
+      }
+      const count = Number(raw) || 1;
+      return { mode: "photos", count: Math.max(1, Math.min(10, count)) };
+    }
+
+    function selectedPriceMultiplier() {
+      const sel = selectedImageMode();
+      return sel.count || 1;
+    }
+
     function updateBeatsVisibility() {
-      const count = Number(document.getElementById("image-count").value) || 1;
-      document.getElementById("image-beats-field").hidden = count <= 1;
+      const sel = selectedImageMode();
+      document.getElementById("image-beats-field").hidden = sel.mode !== "storyboard";
+      if (state.functionId === "image_gen") renderChatModel();
     }
 
     function storyboardBeats() {
-      const count = Number(document.getElementById("image-count").value) || 1;
-      if (count <= 1) return null;
+      const sel = selectedImageMode();
+      if (sel.mode !== "storyboard") return null;
+      const count = sel.count;
       const lines = document.getElementById("image-beats").value.split(/\n/).map((line) => line.trim()).filter(Boolean);
       const beats = [];
       for (let index = 0; index < count; index += 1) {
@@ -1350,8 +1391,13 @@
         format: fieldValue("image-format"),
         reference_ids: (state.refs || []).map((file) => file.id).slice(0, MAX_REFS),
       }, personPayload());
-      const frames = storyboardBeats();
-      if (frames) body.frames = frames;
+      const imageMode = selectedImageMode();
+      if (imageMode.mode === "storyboard") {
+        const frames = storyboardBeats();
+        if (frames) body.frames = frames;
+      } else {
+        body.n = imageMode.count;
+      }
       try {
         const response = await fetch("/api/images/generate", {
           method: "POST",
@@ -1368,8 +1414,9 @@
         const line = document.getElementById("chat-model");
         line.replaceChildren();
         const used = document.createElement("span");
+        const generatedCount = payload.image_base64 ? 1 : (payload.images || []).length || payload.n || 1;
         used.textContent = "Used " + payload.model_id + " · "
-          + priceSummary(payload.prices) + " (recorded " + payload.prices_recorded_on + ", not a live quote). ";
+          + priceSummary(payload.prices, generatedCount) + " (recorded " + payload.prices_recorded_on + ", not a live quote). ";
         line.appendChild(used);
         const link = document.createElement("a");
         link.href = "/setup";

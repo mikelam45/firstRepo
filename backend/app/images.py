@@ -56,6 +56,25 @@ MAX_PROMPT_CHARS = 8000
 MAX_FIELD_CHARS = 2000
 ALLOWED_FORMATS = ("png", "jpeg", "webp")
 ALLOWED_FRAME_COUNTS = frozenset({1, 4, 6, 8})
+MIN_IMAGE_COUNT = 1
+MAX_IMAGE_COUNT = 10
+DEFAULT_IMAGE_COUNT = 1
+EXPRESSION_VARIANTS: tuple[str, ...] = (
+    "neutral",
+    "slight smile",
+    "smile",
+    "focused",
+    "speaking",
+    "surprised",
+)
+MOVEMENT_VARIANTS: tuple[str, ...] = (
+    "idle",
+    "walking",
+    "turning",
+    "reaching",
+    "sitting",
+    "stepping",
+)
 PROVIDER_RASTER_FORMATS = frozenset({"png", "jpeg"})
 GEMINI_IMAGE_ID = "google/gemini-3.1-flash-image"
 IMAGE_REGION_SETUP_HINT = REGION_SETUP_HINT.replace("text model", "image model")
@@ -389,6 +408,42 @@ def resolve_frames(value: object) -> list[str]:
     return beats
 
 
+def resolve_count(value: object) -> int:
+    """Portal photo count. Provider ``n`` stays 1; extra photos are sequential calls."""
+    if value is None or value == "":
+        return DEFAULT_IMAGE_COUNT
+    try:
+        count = int(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        raise ImageError(
+            400,
+            f"n must be an integer from {MIN_IMAGE_COUNT} to {MAX_IMAGE_COUNT}.",
+        ) from None
+    if count < MIN_IMAGE_COUNT or count > MAX_IMAGE_COUNT:
+        raise ImageError(
+            400,
+            f"n must be an integer from {MIN_IMAGE_COUNT} to {MAX_IMAGE_COUNT}.",
+        )
+    return count
+
+
+def variant_spec(index: int) -> tuple[str, str]:
+    expression = EXPRESSION_VARIANTS[index % len(EXPRESSION_VARIANTS)]
+    movement = MOVEMENT_VARIANTS[index % len(MOVEMENT_VARIANTS)]
+    return expression, movement
+
+
+def variant_suffix(index: int) -> str:
+    expression, movement = variant_spec(index)
+    return f"Facial expression: {expression}. Movement: {movement}."
+
+
+def variant_prompt(base: str, index: int, total: int) -> str:
+    if total <= 1:
+        return base
+    return f"{base}\n\n{variant_suffix(index)}"
+
+
 def _provider_output_format(requested: str) -> str:
     if requested in PROVIDER_RASTER_FORMATS:
         return requested
@@ -549,6 +604,7 @@ def public_job(job: dict[str, Any]) -> dict[str, Any]:
         "width": job.get("width"),
         "height": job.get("height"),
         "format": job.get("format"),
+        "n": int(job.get("n") or len(images) or DEFAULT_IMAGE_COUNT),
         "prices": list(job.get("prices") or []),
         "prices_recorded_on": job.get("prices_recorded_on") or PRICES_RECORDED_ON,
         "images": images,
@@ -754,7 +810,16 @@ def generate_images(
         1024 if body.get("height") is None else body.get("height"),
     )
     fmt = resolve_format(body.get("format", "png"))
-    frames = resolve_frames(body.get("frames"))
+    frames_value = body.get("frames")
+    storyboard = isinstance(frames_value, list) and len(frames_value) > 1
+    count = resolve_count(body.get("n") if body.get("n") not in (None, "") else body.get("count"))
+    if storyboard:
+        frames = resolve_frames(frames_value)
+        count = len(frames)
+    else:
+        if frames_value is not None:
+            resolve_frames(frames_value)
+        frames = [""] * count
     raw_ids = body.get("reference_ids") or []
     if not isinstance(raw_ids, list):
         raise ImageError(400, "reference_ids must be a list.")
@@ -782,7 +847,10 @@ def generate_images(
     image_rows: list[dict[str, Any]] = []
     try:
         for index, caption in enumerate(frames):
-            frame_prompt = _frame_prompt(prompt, caption, index, len(frames))
+            if storyboard:
+                frame_prompt = _frame_prompt(prompt, caption, index, len(frames))
+            else:
+                frame_prompt = variant_prompt(prompt, index, count)
             raw, media_type = _post_openrouter_image(
                 api_key=api_key,
                 model_id=model_id,
@@ -799,10 +867,14 @@ def generate_images(
             path = folder / filename
             path.write_bytes(converted)
             written.append(path)
+            row_caption = caption
+            if not storyboard and count > 1:
+                expression, movement = variant_spec(index)
+                row_caption = f"{expression}, {movement}"
             image_rows.append(
                 {
                     "index": index,
-                    "caption": caption,
+                    "caption": row_caption,
                     "filename": filename,
                     "stored_path": relative,
                 }
@@ -825,6 +897,7 @@ def generate_images(
         "width": width,
         "height": height,
         "format": fmt,
+        "n": count,
         "prices": meta["prices"],
         "prices_recorded_on": meta["prices_recorded_on"],
         "images": image_rows,
