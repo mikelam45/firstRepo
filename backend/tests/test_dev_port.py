@@ -231,18 +231,34 @@ def test_main_defaults_to_8099_and_succeeds_when_free(monkeypatch):
 def test_dev_sh_reclaims_port_before_uvicorn():
     script = (REPO_ROOT / "scripts" / "dev.sh").read_text(encoding="utf-8")
     reclaim_at = script.index("python -m app.dev_port")
+    banner_at = script.index("Open this URL in Safari or Chrome on this Mac:")
     uvicorn_at = script.index("exec .venv/bin/uvicorn")
-    assert reclaim_at < uvicorn_at
+    assert reclaim_at < banner_at < uvicorn_at
+    assert "http://127.0.0.1:${PORT:-8099}" in script
+    assert "not reachable from Cursor Cloud" in script
     assert "127.0.0.1" in script
     assert "${PORT:-8099}" in script
+    assert "--host 127.0.0.1" in script
     assert "--port" in script
     assert "load_openrouter_key" in script
+    assert "--host 0.0.0.0" not in script
+
+
+def test_dev_status_script_curls_loopback_health():
+    script = (REPO_ROOT / "scripts" / "dev-status.sh").read_text(encoding="utf-8")
+    assert "http://127.0.0.1:${PORT}/health" in script
+    assert "nothing is listening" in script
+    assert "OPENROUTER" not in script
 
 
 def test_readme_says_second_dev_sh_replaces_own_server_only():
     readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
     assert "replaces the previous development server on 8099" in readme
     assert "foreign process on that port is left alone" in readme
+    assert "Open `http://127.0.0.1:8099` in Safari or Chrome on this MacBook itself." in readme
+    assert "Cursor Cloud cannot load 127.0.0.1 on the laptop" in readme
+    assert "bash scripts/dev-status.sh" in readme
+    assert "lsof -nP -iTCP:8099 -sTCP:LISTEN" in readme
 
 
 def test_production_port_stays_8000():

@@ -25,4 +25,8 @@ mkdir -p "${DATA_DIR:-data}"
 # Replace a previous copy of this app on 127.0.0.1:${PORT:-8099}.
 # A foreign process listening on that port is left alone (exit 1).
 PYTHONPATH=backend .venv/bin/python -m app.dev_port
+echo
+echo "Open this URL in Safari or Chrome on this Mac: http://127.0.0.1:${PORT:-8099}"
+echo "This address is not reachable from Cursor Cloud or another machine."
+echo
 exec .venv/bin/uvicorn app.main:app --app-dir backend --reload --host 127.0.0.1 --port "${PORT:-8099}"

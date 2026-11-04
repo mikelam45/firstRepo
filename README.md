@@ -30,6 +30,8 @@ git checkout cursor/multimodal-rag-portal-1e46
 
 The first run creates `.venv`, installs `backend/requirements.txt`, and copies `.env.development.example` to `.env.development`. The server listens on `http://127.0.0.1:8099`. A second `scripts/dev.sh` replaces the previous development server on 8099; a foreign process on that port is left alone.
 
+Open `http://127.0.0.1:8099` in Safari or Chrome on this MacBook itself. Cursor Cloud cannot load 127.0.0.1 on the laptop; a link in the cloud chat is the agent VM, not the Mac app. If the page fails on the Mac, run `bash scripts/dev-status.sh` and `lsof -nP -iTCP:8099 -sTCP:LISTEN`.
+
 Open that URL in a browser to assign a model to each function. The page lists the provider, model id, a one-line use, and the recorded unit price. It loads without an OpenRouter key. Choices are stored in `data/model-selection.json` (or `$DATA_DIR/model-selection.json`). The same page has a chat panel that sends the saved text model (`rag_qa` by default) to OpenRouter. Image and video functions are rejected; they are not chat completions.
 
 `scripts/dev.sh` reads `/Users/mikelam/firstRepo/openrouter_key/.env_RAG_portal` when that file is present and `OPENROUTER_API_KEY` is not already set. It exports `OPENROUTER_API_KEY` for uvicorn and does not print the key. The file stays outside this checkout and is not committed. `.gitignore` ignores `.env` files, including a copy named `.env_RAG_portal`, so the key file cannot land in git. The file may contain `OPENROUTER_API_KEY=...`, `OPENROUTER_KEY=...`, or the raw key on one line. Blank lines and comments are ignored. If the file is missing, development still starts and the key stays unset.

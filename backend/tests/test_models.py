@@ -4,7 +4,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.catalog import DEFAULT_SELECTION, FUNCTION_IDS
-from app.main import app
+from app.main import PAGE, app
 
 LABELS = (
     "RAG and document analysis",
@@ -31,9 +31,16 @@ def _prices(payload):
     return found
 
 
+def test_packaged_index_html_exists():
+    assert PAGE.is_file()
+    assert PAGE.name == "index.html"
+    assert "Fieldnote model selection" in PAGE.read_text(encoding="utf-8")
+
+
 def test_page_lists_every_function(client):
     page = client.get("/")
     assert page.status_code == 200
+    assert page.status_code != 404
     assert "text/html" in page.headers["content-type"]
     for label in LABELS:
         assert label in page.text

@@ -73,6 +73,8 @@ def require_write_access(settings: Settings, authorization: str | None) -> None:
 
 
 PAGE = Path(__file__).resolve().parent / "static" / "index.html"
+if not PAGE.is_file():
+    raise FileNotFoundError(f"Packaged portal page is missing: {PAGE}")
 
 
 @app.get("/")
