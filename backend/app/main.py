@@ -160,6 +160,8 @@ class ImageGenerateIn(BaseModel):
     height: int | None = None
     format: str = "png"
     resolution: str = ""
+    n: int | None = None
+    count: int | None = None
     frames: list[str] | None = None
     reference_ids: list[str] = Field(default_factory=list)
 

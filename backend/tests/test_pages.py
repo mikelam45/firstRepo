@@ -49,6 +49,11 @@ def test_home_and_setup_are_distinct_html_pages(tmp_path, monkeypatch):
     assert "Shoes" in home.text
     assert "expression" in home.text
     assert "Action on objects" in home.text
+    assert "1 photo" in home.text
+    assert "10 photos" in home.text
+    assert "11 photos" not in home.text
+    assert "slight smile" in home.text
+    assert "walking" in home.text
     assert 'id="image-panel"' in home.text
     assert 'id="ref-slots"' in home.text
     assert "Reference photos" in home.text
