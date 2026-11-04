@@ -88,9 +88,14 @@ def test_home_and_setup_are_distinct_html_pages(tmp_path, monkeypatch):
     assert "Traditional Chinese (繁體)" in home.text
     assert "/api/translation/files" in home.text
     assert "/api/dse/files" in home.text
+    assert "/api/dse/ocr" in home.text
     assert "DSE Math assistant" in home.text
     assert 'data-function="dse_math"' in home.text
     assert 'id="dse-controls"' in home.text
+    assert "Read question from photo" in home.text
+    assert 'id="dse-ocr-file"' in home.text
+    assert 'id="dse-ocr-read"' in home.text
+    assert 'id="dse-ocr-preview"' in home.text
     assert "Document upload" in home.text
     assert "Chat" in home.text
     assert "OpenRouter connection" not in home.text

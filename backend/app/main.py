@@ -37,6 +37,7 @@ from .dse import (
     resolve_dse_paper,
     resolve_dse_topic,
 )
+from .ocr import OcrError, transcribe_question_photo
 from .image_refs import (
     ImageRefError,
     delete_reference,
@@ -413,6 +414,23 @@ def post_chat(
             result["artifacts"] = artifacts
         return result
     except ChatError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+
+
+@app.post("/api/dse/ocr")
+def post_dse_ocr(
+    file: UploadFile = File(...),
+    authorization: str | None = Header(default=None),
+) -> dict[str, object]:
+    settings = get_settings()
+    require_write_access(settings, authorization)
+    filename = file.filename or ""
+    data = file.file.read()
+    try:
+        return transcribe_question_photo(
+            settings.data_dir, filename=filename, data=data
+        )
+    except (ChatError, OcrError) as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
 

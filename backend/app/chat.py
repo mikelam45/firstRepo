@@ -1,9 +1,10 @@
-"""Call OpenRouter chat completions for text functions only.
+"""Call OpenRouter chat completions for text functions and DSE photo OCR.
 
-Image and video functions are rejected here. They never go to
-``/api/v1/chat/completions``. Prices in the reply come from the recorded
-catalog, not a live quote. The OpenRouter key, request body, and raw
-provider payload stay out of return values and logs. A short
+Image generation and video jobs are rejected here. They never go to
+``/api/v1/chat/completions``. Photo OCR is a vision chat completion with an
+``image_url`` data URI, not the Images API. Prices in text replies come from
+the recorded catalog, not a live quote. The OpenRouter key, request body, and
+raw provider payload stay out of return values and logs. A short
 ``error.message`` and the HTTP status may be shown to the user.
 """
 
@@ -27,6 +28,7 @@ from .rag import (
 
 OPENROUTER_CHAT_URL = "https://openrouter.ai/api/v1/chat/completions"
 OPENROUTER_CHAT_TIMEOUT_SECONDS = 20.0
+OPENROUTER_VISION_TIMEOUT_SECONDS = 60.0
 CHAT_FUNCTIONS = TEXT_FUNCTIONS
 GENERIC_COMPLETION_ERROR = "OpenRouter did not return a chat completion."
 MAX_PROVIDER_ERROR_CHARS = 400
@@ -310,3 +312,78 @@ def complete_chat(
     result = recorded_model(function_id, model_id)
     result["reply"] = text
     return result
+
+
+def is_region_or_missing_model_error(exc: ChatError) -> bool:
+    lowered = exc.detail.lower()
+    return (
+        "not available in your region" in lowered
+        or "http 404" in lowered
+        or "no endpoints found" in lowered
+        or "model is not available" in lowered
+    )
+
+
+def complete_vision(
+    *,
+    model_id: str,
+    messages: list[dict[str, Any]],
+    timeout: float = OPENROUTER_VISION_TIMEOUT_SECONDS,
+) -> str:
+    """Vision chat completion. Returns assistant text only. Never logs the key."""
+    if model_id.startswith("google/gemini"):
+        raise ChatError(400, "Gemini vision models are not used for DSE photo OCR.")
+    api_key = load_openrouter_api_key()
+    if not api_key:
+        raise ChatError(503, MISSING_KEY_DETAIL)
+
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "model": model_id,
+        "messages": messages,
+        "stream": False,
+    }
+    try:
+        response = httpx.post(
+            OPENROUTER_CHAT_URL,
+            json=payload,
+            headers=headers,
+            timeout=timeout,
+            follow_redirects=False,
+        )
+        status_code = response.status_code
+    except Exception:
+        raise ChatError(502, GENERIC_COMPLETION_ERROR) from None
+
+    body: Any = None
+    try:
+        body = response.json()
+    except Exception:
+        body = None
+
+    if status_code != 200:
+        raise _openrouter_failure(
+            status_code=status_code,
+            payload=body,
+            model_id=model_id,
+            api_key=api_key,
+        )
+    if body is None:
+        raise ChatError(502, GENERIC_COMPLETION_ERROR)
+
+    provider = _provider_error_message(body, api_key)
+    if provider:
+        raise ChatError(502, f"OpenRouter returned HTTP {status_code}: {provider}")
+
+    text = _assistant_text(body)
+    if text is None:
+        raise _openrouter_failure(
+            status_code=status_code,
+            payload=body,
+            model_id=model_id,
+            api_key=api_key,
+        )
+    return text

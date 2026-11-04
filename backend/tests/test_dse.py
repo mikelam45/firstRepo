@@ -65,6 +65,10 @@ def test_functions_page_contains_dse_math(tmp_path, monkeypatch):
     assert 'id="dse-mode-explain"' in home.text
     assert 'id="dse-language"' in home.text
     assert "/api/dse/files" in home.text
+    assert "/api/dse/ocr" in home.text
+    assert "Read question from photo" in home.text
+    assert 'id="dse-ocr-file"' in home.text
+    assert 'id="dse-ocr-read"' in home.text
     assert "/api/dse/ask" in home.text or 'function: state.functionId' in home.text
     assert "Number &amp; Algebra" in home.text or "Number & Algebra" in home.text
     assert "Paper 1" in home.text

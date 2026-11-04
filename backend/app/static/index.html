@@ -155,6 +155,22 @@
             <option value="paper_2">Paper 2</option>
           </select>
         </label>
+        <div class="dse-ocr" id="dse-ocr-controls">
+          <p class="meta">
+            Photo of a printed question. Jpeg, png, webp, or heic. Maximum 10 MB.
+            This is not a syllabus upload.
+          </p>
+          <label class="field">Question photo
+            <input id="dse-ocr-file" type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif,.jpg,.jpeg,.png,.webp,.heic,.heif">
+          </label>
+          <div class="dse-ocr-preview" id="dse-ocr-preview" hidden>
+            <img id="dse-ocr-thumb" alt="Question photo preview">
+          </div>
+          <div class="savebar">
+            <button type="button" id="dse-ocr-read">Read question from photo</button>
+            <span id="dse-ocr-state" role="status"></span>
+          </div>
+        </div>
       </fieldset>
       <label class="field">Message
         <textarea id="chat-message" rows="4" placeholder="Ask a question"></textarea>
@@ -1005,6 +1021,86 @@
             : "Ask about a concept or uploaded syllabus notes";
         }
       });
+    });
+
+    let dseOcrPreviewUrl = null;
+
+    function setDseOcrStatus(kind, message) {
+      const status = document.getElementById("dse-ocr-state");
+      status.className = kind === "error" ? "error" : "";
+      status.dataset.status = kind || "";
+      status.textContent = message;
+    }
+
+    function applyOcrText(text) {
+      const box = document.getElementById("chat-message");
+      const current = box.value;
+      if (!current.trim()) {
+        box.value = text;
+      } else {
+        box.value = current.replace(/\s+$/, "") + "\n\n" + text;
+      }
+    }
+
+    document.getElementById("dse-ocr-file").addEventListener("change", (event) => {
+      const input = event.target;
+      const file = input.files && input.files[0];
+      const preview = document.getElementById("dse-ocr-preview");
+      const thumb = document.getElementById("dse-ocr-thumb");
+      if (dseOcrPreviewUrl) {
+        URL.revokeObjectURL(dseOcrPreviewUrl);
+        dseOcrPreviewUrl = null;
+      }
+      if (!file) {
+        preview.hidden = true;
+        thumb.removeAttribute("src");
+        setDseOcrStatus("", "");
+        return;
+      }
+      dseOcrPreviewUrl = URL.createObjectURL(file);
+      thumb.src = dseOcrPreviewUrl;
+      preview.hidden = false;
+      setDseOcrStatus("", "");
+    });
+
+    document.getElementById("dse-ocr-read").addEventListener("click", async () => {
+      const button = document.getElementById("dse-ocr-read");
+      const input = document.getElementById("dse-ocr-file");
+      const file = input.files && input.files[0];
+      if (!file) {
+        setDseOcrStatus("error", "Choose a photo of the question.");
+        return;
+      }
+      if (file.size > 10 * 1024 * 1024) {
+        setDseOcrStatus("error", "File exceeds the 10 MB limit.");
+        return;
+      }
+      button.disabled = true;
+      setDseOcrStatus("reading", "Reading…");
+      const body = new FormData();
+      body.append("file", file, file.name);
+      try {
+        const response = await fetch("/api/dse/ocr", {
+          method: "POST",
+          headers: authHeaders(false),
+          body,
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          const detail = payload.detail;
+          setDseOcrStatus(
+            "error",
+            typeof detail === "string" ? detail : "Could not read the photo (" + response.status + ")."
+          );
+          return;
+        }
+        applyOcrText(payload.text || "");
+        setDseOcrStatus("done", "Done.");
+      } catch (error) {
+        setDseOcrStatus("error", "Could not read the photo.");
+      } finally {
+        button.disabled = false;
+      }
     });
 
     document.getElementById("chat-send").addEventListener("click", async () => {

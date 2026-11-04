@@ -151,8 +151,8 @@ button {
   cursor: pointer;
 }
 button:disabled { opacity: 0.6; cursor: wait; }
-#save-state, #chat-state, #openrouter-state, #upload-state, #image-state, #image-enhance-state { font-size: 0.95rem; }
-#save-state.error, #chat-state.error, #openrouter-state.error, #upload-state.error, #image-state.error, #image-enhance-state.error { color: var(--rust); }
+#save-state, #chat-state, #openrouter-state, #upload-state, #image-state, #image-enhance-state, #dse-ocr-state { font-size: 0.95rem; }
+#save-state.error, #chat-state.error, #openrouter-state.error, #upload-state.error, #image-state.error, #image-enhance-state.error, #dse-ocr-state.error { color: var(--rust); }
 button.secondary {
   background: transparent;
   color: var(--green);
@@ -328,6 +328,25 @@ pre.chat-reply,
 }
 @media (max-width: 640px) {
   .chat .language-row { grid-template-columns: 1fr; }
+}
+.dse-ocr {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
+.dse-ocr-preview {
+  margin: 8px 0;
+}
+.dse-ocr-preview img {
+  display: block;
+  max-width: 180px;
+  max-height: 180px;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: white;
 }
 .chat-download {
   display: inline-block;

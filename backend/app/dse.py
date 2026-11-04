@@ -2,7 +2,8 @@
 
 This is the first portal slice, not the full 3-tier Socratic product. It reuses
 the RAG file store (collection ``dse_math``), strict/mixed grounding, and the
-OpenRouter chat helper. Image and video APIs are never used here.
+OpenRouter chat helper. Photo OCR is a separate vision chat completion
+(``POST /api/dse/ocr``), not the Images API and not the FLUX image_gen path.
 """
 
 from __future__ import annotations

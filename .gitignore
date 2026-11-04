@@ -18,6 +18,7 @@ data/extracts/
 data/translated/
 data/images/
 data/image-refs/
+data/dse-ocr/
 data/image-jobs.json
 data/rag-files.json
 data/openrouter.env
