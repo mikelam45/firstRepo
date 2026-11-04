@@ -38,16 +38,19 @@ Open that URL in a browser to assign a model to each function. The page lists th
 
 The app resolves the key in this order: `OPENROUTER_API_KEY` in the process environment, then the file named by `OPENROUTER_ENV_FILE`, then `/Users/mikelam/firstRepo/openrouter_key/.env_RAG_portal`. `GET /api/models` includes `openrouter_configured` (`true` or `false`) and `openrouter_status` (`key_accepted`, `key_rejected`, or `not_configured`). The response never includes the key. When a key is configured, the server sends `GET https://openrouter.ai/api/v1/key` with `Authorization: Bearer` and a short timeout, and reports only that status. The public models list is not used for this check, because it answers without a key. The key endpoint's body can include a shortened label, so the app reads the HTTP status and nothing else. `GET /health` includes `openrouter_configured` and does not call OpenRouter.
 
+The home page has an **OpenRouter connection** section above the model picker. It shows the status in plain language and `openrouter_configured`. It does not show the full key. After a save in that browser tab it may show a mask with the last four characters. `POST /api/openrouter/key` with `{ "api_key": "..." }` sets `OPENROUTER_API_KEY` in the server process, writes `OPENROUTER_API_KEY=...` to the Mac env file when that path or its parent exists (mode 0600), or to `$DATA_DIR/openrouter.env` on machines without `/Users/mikelam/firstRepo`, then runs the same key check. An empty body is `400` so a working key is not wiped. `POST /api/openrouter/test` retests the currently loaded key and returns `200` even when the key is rejected. Both POSTs are open in development. In production they require `Authorization: Bearer $PORTAL_API_TOKEN`, the same rule as `PUT /api/models`. Neither response includes the key.
+
 ```bash
 curl http://127.0.0.1:8099/health
 curl http://127.0.0.1:8099/api/models
+curl -X POST http://127.0.0.1:8099/api/openrouter/test
 curl -X POST http://127.0.0.1:8099/api/notes -H 'content-type: application/json' -d '{"body":"hello from the mac"}'
 curl -X POST http://127.0.0.1:8099/api/chat -H 'content-type: application/json' -d '{"message":"hello","function":"rag_qa"}'
 ```
 
 `POST /api/chat` uses the saved model for `rag_qa`, `translation`, or `cantonese_script` (`function` defaults to `rag_qa`). With no OpenRouter key it returns 503, names the Mac file, and does not include a secret. The home page still loads. A successful reply includes the model id and the recorded catalog unit price, not a live quote.
 
-`GET /api/models` is open in both modes. `PUT /api/models` and `POST /api/chat` are open in development. In production they require `Authorization: Bearer $PORTAL_API_TOKEN`, the same rule as creating a note. The model-selection body is the five function keys (`rag_qa`, `translation`, `cantonese_script`, `image_gen`, `video_gen`) mapped to model ids from the catalog.
+`GET /api/models` is open in both modes. `PUT /api/models`, `POST /api/chat`, `POST /api/openrouter/key`, and `POST /api/openrouter/test` are open in development. In production they require `Authorization: Bearer $PORTAL_API_TOKEN`, the same rule as creating a note. The model-selection body is the five function keys (`rag_qa`, `translation`, `cantonese_script`, `image_gen`, `video_gen`) mapped to model ids from the catalog.
 
 Tests:
 

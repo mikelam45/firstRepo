@@ -48,6 +48,10 @@ def test_page_lists_every_function(client):
     assert "Chat" in page.text
     assert "not sent as chat completions" in page.text
     assert 'id="chat-send"' in page.text
+    assert "OpenRouter connection" in page.text
+    assert 'id="openrouter-save"' in page.text
+    assert 'id="openrouter-test"' in page.text
+    assert "openrouter_configured" in page.text
 
 
 def test_get_returns_defaults_and_a_priced_unit(client):

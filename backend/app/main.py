@@ -17,7 +17,11 @@ from pydantic import BaseModel, Field
 
 from .catalog import public_state
 from .chat import ChatError, complete_chat, resolve_chat_function
-from .openrouter_key import openrouter_status_fields
+from .openrouter_key import (
+    normalize_submitted_key,
+    openrouter_status_fields,
+    save_openrouter_api_key,
+)
 from .selection import load_selection, parse_selection, save_selection
 
 ALLOWED_ENVS = ("development", "production")
@@ -53,6 +57,10 @@ class NoteIn(BaseModel):
 class ChatIn(BaseModel):
     message: str = Field(min_length=1, max_length=8000)
     function: str = "rag_qa"
+
+
+class OpenRouterKeyIn(BaseModel):
+    api_key: str = ""
 
 
 def connect(settings: Settings) -> sqlite3.Connection:
@@ -104,6 +112,28 @@ def put_models(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     save_selection(settings.data_dir, selection)
     return public_state(selection)
+
+
+@app.post("/api/openrouter/key")
+def post_openrouter_key(
+    body: OpenRouterKeyIn,
+    authorization: str | None = Header(default=None),
+) -> dict[str, object]:
+    settings = get_settings()
+    require_write_access(settings, authorization)
+    api_key = normalize_submitted_key(body.api_key)
+    if not api_key:
+        raise HTTPException(status_code=400, detail="api_key must not be empty.")
+    return save_openrouter_api_key(api_key, settings.data_dir)
+
+
+@app.post("/api/openrouter/test")
+def post_openrouter_test(
+    authorization: str | None = Header(default=None),
+) -> dict[str, object]:
+    settings = get_settings()
+    require_write_access(settings, authorization)
+    return openrouter_status_fields()
 
 
 @app.post("/api/chat")

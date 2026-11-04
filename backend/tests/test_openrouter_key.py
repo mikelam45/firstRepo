@@ -315,6 +315,7 @@ def test_gitignore_keeps_env_files_untracked():
             ".env_RAG_portal",
             "openrouter.env",
             "openrouter_key/.env_RAG_portal",
+            "data/openrouter.env",
         ],
         cwd=REPO_ROOT,
         capture_output=True,
@@ -329,6 +330,7 @@ def test_gitignore_keeps_env_files_untracked():
         ".env_RAG_portal",
         "openrouter.env",
         "openrouter_key/.env_RAG_portal",
+        "data/openrouter.env",
     ):
         assert path in ignored.stdout
     tracked_examples = subprocess.run(
@@ -340,3 +342,193 @@ def test_gitignore_keeps_env_files_untracked():
     )
     assert tracked_examples.returncode == 1
     assert SECRET not in ignored.stdout
+
+
+def _assert_public_status(body: dict) -> None:
+    assert set(body) == {"openrouter_configured", "openrouter_status"}
+    assert body["openrouter_status"] in {"key_accepted", "key_rejected", "not_configured"}
+    assert isinstance(body["openrouter_configured"], bool)
+
+
+def _mock_key_http(monkeypatch, status_code=200, error=None):
+    seen = {"calls": 0}
+
+    def fake_get(url, headers=None, timeout=None, follow_redirects=None):
+        seen["calls"] += 1
+        seen["url"] = url
+        seen["headers"] = headers
+        seen["timeout"] = timeout
+        if error:
+            raise error
+
+        class Response:
+            text = f"provider echoed {SECRET}"
+
+        response = Response()
+        response.status_code = status_code
+        return response
+
+    monkeypatch.setattr("app.openrouter_key.httpx.get", fake_get)
+    return seen
+
+
+def test_get_models_includes_openrouter_status_fields(tmp_path, monkeypatch):
+    client = _client(monkeypatch, tmp_path)
+    body = client.get("/api/models").json()
+    assert body["openrouter_configured"] is False
+    assert body["openrouter_status"] == "not_configured"
+    _assert_secret_absent(str(body))
+
+
+def test_post_key_dummy_accepted_does_not_return_secret(tmp_path, monkeypatch):
+    _mock_key_http(monkeypatch, status_code=200)
+    client = _client(monkeypatch, tmp_path)
+    data_dir = tmp_path / "data"
+    response = client.post("/api/openrouter/key", json={"api_key": f'  "{SECRET}"  '})
+    assert response.status_code == 200
+    _assert_secret_absent(response.text)
+    body = response.json()
+    _assert_public_status(body)
+    assert body["openrouter_configured"] is True
+    assert body["openrouter_status"] == "key_accepted"
+    assert os.environ["OPENROUTER_API_KEY"] == SECRET
+    saved = data_dir / "openrouter.env"
+    assert saved.is_file()
+    assert oct(saved.stat().st_mode & 0o777) == "0o600"
+    assert saved.read_text(encoding="utf-8") == f"OPENROUTER_API_KEY={SECRET}\n"
+    models = client.get("/api/models")
+    assert models.json()["openrouter_configured"] is True
+    assert models.json()["openrouter_status"] == "key_accepted"
+    _assert_secret_absent(models.text)
+    assert load_openrouter_api_key() == SECRET
+
+
+def test_post_key_dummy_rejected_stays_configured_without_secret(tmp_path, monkeypatch):
+    _mock_key_http(monkeypatch, status_code=401)
+    client = _client(monkeypatch, tmp_path)
+    response = client.post("/api/openrouter/key", json={"api_key": SECRET})
+    assert response.status_code == 200
+    body = response.json()
+    _assert_public_status(body)
+    assert body["openrouter_configured"] is True
+    assert body["openrouter_status"] == "key_rejected"
+    _assert_secret_absent(response.text)
+
+
+def test_post_test_with_no_key_is_not_configured(tmp_path, monkeypatch):
+    def fake_get(*args, **kwargs):
+        raise AssertionError("OpenRouter should not be called")
+
+    monkeypatch.setattr("app.openrouter_key.httpx.get", fake_get)
+    client = _client(monkeypatch, tmp_path)
+    response = client.post("/api/openrouter/test")
+    assert response.status_code == 200
+    _assert_public_status(response.json())
+    assert response.json() == {
+        "openrouter_configured": False,
+        "openrouter_status": "not_configured",
+    }
+    empty_json = client.post("/api/openrouter/test", json={})
+    assert empty_json.status_code == 200
+    assert empty_json.json()["openrouter_status"] == "not_configured"
+
+
+def test_post_test_with_mocked_accepted_key(tmp_path, monkeypatch):
+    monkeypatch.setenv("OPENROUTER_API_KEY", SECRET)
+    _mock_key_http(monkeypatch, status_code=200)
+    client = _client(monkeypatch, tmp_path)
+    response = client.post("/api/openrouter/test")
+    assert response.status_code == 200
+    body = response.json()
+    _assert_public_status(body)
+    assert body["openrouter_configured"] is True
+    assert body["openrouter_status"] == "key_accepted"
+    _assert_secret_absent(response.text)
+
+
+def test_production_openrouter_posts_require_token(tmp_path, monkeypatch):
+    monkeypatch.setenv("APP_ENV", "production")
+    monkeypatch.setenv("DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("PORTAL_API_TOKEN", "test-token")
+    _mock_key_http(monkeypatch, status_code=200)
+    client = TestClient(app)
+
+    assert client.post("/api/openrouter/test").status_code == 401
+    assert client.post("/api/openrouter/key", json={"api_key": SECRET}).status_code == 401
+    _assert_secret_absent(client.post("/api/openrouter/key", json={"api_key": SECRET}).text)
+
+    tested = client.post(
+        "/api/openrouter/test",
+        headers={"Authorization": "Bearer test-token"},
+    )
+    assert tested.status_code == 200
+    assert tested.json()["openrouter_status"] == "not_configured"
+
+    saved = client.post(
+        "/api/openrouter/key",
+        json={"api_key": SECRET},
+        headers={"Authorization": "Bearer test-token"},
+    )
+    assert saved.status_code == 200
+    assert saved.json()["openrouter_status"] == "key_accepted"
+    _assert_secret_absent(saved.text)
+
+
+def test_empty_key_is_400_and_does_not_wipe(tmp_path, monkeypatch):
+    _mock_key_http(monkeypatch, status_code=200)
+    client = _client(monkeypatch, tmp_path)
+    saved = client.post("/api/openrouter/key", json={"api_key": SECRET})
+    assert saved.status_code == 200
+    assert os.environ["OPENROUTER_API_KEY"] == SECRET
+
+    for payload in ({"api_key": ""}, {"api_key": "   "}, {"api_key": '""'}, {}):
+        response = client.post("/api/openrouter/key", json=payload)
+        assert response.status_code == 400
+        assert response.json()["detail"] == "api_key must not be empty."
+        _assert_secret_absent(response.text)
+        assert os.environ["OPENROUTER_API_KEY"] == SECRET
+
+
+def test_post_key_writes_mac_path_when_parent_exists(tmp_path, monkeypatch):
+    parent = tmp_path / "openrouter_key"
+    parent.mkdir()
+    mac = parent / ".env_RAG_portal"
+    monkeypatch.setattr("app.openrouter_key.MAC_KEY_PATH", mac)
+    _mock_key_http(monkeypatch, status_code=200)
+    client = _client(monkeypatch, tmp_path)
+    response = client.post("/api/openrouter/key", json={"api_key": SECRET})
+    assert response.status_code == 200
+    assert mac.is_file()
+    assert oct(mac.stat().st_mode & 0o777) == "0o600"
+    assert mac.read_text(encoding="utf-8") == f"OPENROUTER_API_KEY={SECRET}\n"
+    fallback = tmp_path / "data" / "openrouter.env"
+    assert not fallback.exists()
+    _assert_secret_absent(response.text)
+
+
+def test_post_key_creates_mac_parent_when_repo_exists(tmp_path, monkeypatch):
+    repo = tmp_path / "firstRepo"
+    repo.mkdir()
+    mac = repo / "openrouter_key" / ".env_RAG_portal"
+    monkeypatch.setattr("app.openrouter_key.MAC_REPO_ROOT", repo)
+    monkeypatch.setattr("app.openrouter_key.MAC_KEY_PATH", mac)
+    _mock_key_http(monkeypatch, status_code=200)
+    client = _client(monkeypatch, tmp_path)
+    response = client.post("/api/openrouter/key", json={"api_key": SECRET})
+    assert response.status_code == 200
+    assert mac.is_file()
+    assert mac.parent.is_dir()
+    assert not (tmp_path / "data" / "openrouter.env").exists()
+
+
+def test_page_has_openrouter_connection_controls(tmp_path, monkeypatch):
+    client = _client(monkeypatch, tmp_path)
+    page = client.get("/")
+    assert page.status_code == 200
+    assert "OpenRouter connection" in page.text
+    assert 'id="openrouter-key"' in page.text
+    assert 'id="openrouter-save"' in page.text
+    assert 'id="openrouter-test"' in page.text
+    assert "/api/openrouter/key" in page.text
+    assert "/api/openrouter/test" in page.text
+    _assert_secret_absent(page.text)

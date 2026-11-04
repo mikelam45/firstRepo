@@ -138,8 +138,16 @@
       cursor: pointer;
     }
     button:disabled { opacity: 0.6; cursor: wait; }
-    #save-state, #chat-state { font-size: 0.95rem; }
-    #save-state.error, #chat-state.error { color: var(--rust); }
+    #save-state, #chat-state, #openrouter-state { font-size: 0.95rem; }
+    #save-state.error, #chat-state.error, #openrouter-state.error { color: var(--rust); }
+    button.secondary {
+      background: transparent;
+      color: var(--green);
+      box-shadow: inset 0 0 0 1px var(--green);
+    }
+    .connection { margin-top: 24px; }
+    .connection label.field { display: block; font-size: 0.92rem; color: var(--muted); }
+    .connection input[type="password"] { min-width: min(100%, 28rem); }
     .good-for { margin: 2px 0 0; }
     .chat { margin-top: 20px; }
     .chat label.field { display: block; font-size: 0.92rem; color: var(--muted); }
@@ -170,10 +178,31 @@
       <time id="price-date" datetime="2026-11-03">3 Nov 2026</time>.
       The page loads without an API key.
     </p>
-    <p class="note" id="openrouter-status" role="status">OpenRouter is not configured. Choices and recorded prices still load.</p>
     <p class="note" id="cost-note">
       A single total is not shown. Text, images, and video use different units, so adding them would not mean anything. Text is USD per 1M tokens, images are USD per 1M image-output tokens or USD per megapixel, and video is USD per second. Each function below shows its own unit price.
     </p>
+
+    <section class="connection" aria-labelledby="openrouter-title">
+      <h2 id="openrouter-title">OpenRouter connection</h2>
+      <p class="note" id="openrouter-status" role="status">Status: not configured.</p>
+      <p class="meta" id="openrouter-configured">openrouter_configured: false</p>
+      <p class="meta" id="openrouter-key-mask" hidden></p>
+      <p class="meta">
+        Paste a new key to save it for this server process. The full key is never shown.
+        An empty save is rejected so a working key is not wiped. In production, use the
+        token field next to Save selection.
+      </p>
+      <form id="openrouter-form">
+        <label class="field">API key
+          <input id="openrouter-key" type="password" autocomplete="off" spellcheck="false" placeholder="Paste a new key">
+        </label>
+        <div class="savebar">
+          <button type="submit" id="openrouter-save">Save</button>
+          <button type="button" class="secondary" id="openrouter-test">Retest</button>
+          <span id="openrouter-state" role="status"></span>
+        </div>
+      </form>
+    </section>
 
     <div class="layout">
       <form id="picker">
@@ -238,7 +267,7 @@
     <p class="source" id="price-source"></p>
   </main>
   <script>
-    const state = { catalog: null, saved: null };
+    const state = { catalog: null, saved: null, keyLast4: null };
 
     function tagClass(quality) {
       return String(quality || "").toLowerCase().replace(/\s+/g, "-");
@@ -352,15 +381,34 @@
       }
     }
 
+    function statusLabel(status) {
+      if (status === "key_accepted") return "key accepted";
+      if (status === "key_rejected") return "key rejected";
+      return "not configured";
+    }
+
+    function authHeaders() {
+      const headers = { "content-type": "application/json" };
+      const token = document.getElementById("token").value.trim();
+      if (token) headers.Authorization = "Bearer " + token;
+      return headers;
+    }
+
     function renderOpenRouter(payload) {
       const statusLine = document.getElementById("openrouter-status");
+      const configuredLine = document.getElementById("openrouter-configured");
+      const maskLine = document.getElementById("openrouter-key-mask");
       if (!statusLine) return;
-      if (payload.openrouter_status === "key_accepted") {
-        statusLine.textContent = "OpenRouter accepted the configured key.";
-      } else if (payload.openrouter_status === "key_rejected") {
-        statusLine.textContent = "OpenRouter did not accept the configured key. Choices and recorded prices still load.";
+      const status = statusLabel(payload.openrouter_status);
+      statusLine.textContent = "Status: " + status + ".";
+      const configured = payload.openrouter_configured === true;
+      configuredLine.textContent = "openrouter_configured: " + (configured ? "true" : "false");
+      if (state.keyLast4) {
+        maskLine.hidden = false;
+        maskLine.textContent = "Saved key: ••••" + state.keyLast4;
       } else {
-        statusLine.textContent = "OpenRouter is not configured. Choices and recorded prices still load.";
+        maskLine.hidden = true;
+        maskLine.textContent = "";
       }
     }
 
@@ -423,9 +471,7 @@
       button.disabled = true;
       status.className = "";
       status.textContent = "Saving…";
-      const headers = { "content-type": "application/json" };
-      const token = document.getElementById("token").value.trim();
-      if (token) headers.Authorization = "Bearer " + token;
+      const headers = authHeaders();
       try {
         const response = await fetch("/api/models", {
           method: "PUT",
@@ -454,6 +500,70 @@
       }
     });
 
+    async function postOpenRouter(url, body) {
+      const buttonSave = document.getElementById("openrouter-save");
+      const buttonTest = document.getElementById("openrouter-test");
+      const status = document.getElementById("openrouter-state");
+      buttonSave.disabled = true;
+      buttonTest.disabled = true;
+      try {
+        const response = await fetch(url, {
+          method: "POST",
+          headers: authHeaders(),
+          body: JSON.stringify(body),
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          status.className = "error";
+          const detail = payload.detail;
+          status.textContent = typeof detail === "string" ? detail : "Request failed (" + response.status + ").";
+          return null;
+        }
+        renderOpenRouter(payload);
+        status.className = "";
+        return payload;
+      } catch (error) {
+        status.className = "error";
+        status.textContent = "Request failed.";
+        return null;
+      } finally {
+        buttonSave.disabled = false;
+        buttonTest.disabled = false;
+      }
+    }
+
+    document.getElementById("openrouter-form").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const status = document.getElementById("openrouter-state");
+      const input = document.getElementById("openrouter-key");
+      let apiKey = input.value.trim();
+      if (apiKey.length >= 2 && apiKey[0] === apiKey[apiKey.length - 1] && (apiKey[0] === '"' || apiKey[0] === "'")) {
+        apiKey = apiKey.slice(1, -1).trim();
+      }
+      if (!apiKey) {
+        status.className = "error";
+        status.textContent = "Enter a key to save. An empty save is rejected.";
+        return;
+      }
+      status.className = "";
+      status.textContent = "Saving…";
+      const payload = await postOpenRouter("/api/openrouter/key", { api_key: apiKey });
+      if (!payload) return;
+      state.keyLast4 = apiKey.slice(-4);
+      input.value = "";
+      renderOpenRouter(payload);
+      status.textContent = "Saved. Status: " + statusLabel(payload.openrouter_status) + ".";
+    });
+
+    document.getElementById("openrouter-test").addEventListener("click", async () => {
+      const status = document.getElementById("openrouter-state");
+      status.className = "";
+      status.textContent = "Testing…";
+      const payload = await postOpenRouter("/api/openrouter/test", {});
+      if (!payload) return;
+      status.textContent = "Retest: " + statusLabel(payload.openrouter_status) + ".";
+    });
+
     document.getElementById("chat-function").addEventListener("change", renderChatModel);
 
     document.getElementById("chat-send").addEventListener("click", async () => {
@@ -469,9 +579,7 @@
       button.disabled = true;
       status.className = "";
       status.textContent = "Sending…";
-      const headers = { "content-type": "application/json" };
-      const token = document.getElementById("token").value.trim();
-      if (token) headers.Authorization = "Bearer " + token;
+      const headers = authHeaders();
       try {
         const response = await fetch("/api/chat", {
           method: "POST",

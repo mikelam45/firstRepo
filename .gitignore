@@ -9,7 +9,9 @@ __pycache__/
 !.env.development.example
 !.env.production.example
 .env_*
+.env_RAG_portal
 *.env
 openrouter_key/
 data/
+data/openrouter.env
 *.db
