@@ -162,7 +162,7 @@ def test_translation_uses_that_function_model(tmp_path, monkeypatch):
     client.put("/api/models", json=updated)
     response = client.post(
         "/api/chat",
-        json={"message": "hello", "function": "translation"},
+        json={"message": "hello", "function": "translation", "target_language": "en"},
     )
     assert response.status_code == 200
     assert response.json()["reply"] == "translated"

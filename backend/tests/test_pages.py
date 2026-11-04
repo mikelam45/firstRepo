@@ -33,6 +33,13 @@ def test_home_and_setup_are_distinct_html_pages(tmp_path, monkeypatch):
     assert 'id="rag-upload"' in home.text
     assert 'id="chat-send"' in home.text
     assert 'id="grounding-control"' in home.text
+    assert 'id="translation-languages"' in home.text
+    assert 'id="source-language"' in home.text
+    assert 'id="target-language"' in home.text
+    assert "Auto detect" in home.text
+    assert "Simplified Chinese (简体)" in home.text
+    assert "Traditional Chinese (繁體)" in home.text
+    assert "/api/translation/files" in home.text
     assert "Document upload" in home.text
     assert "Chat" in home.text
     assert "OpenRouter connection" not in home.text

@@ -305,15 +305,31 @@ pre.chat-reply,
 }
 .chat-sources a { color: var(--green); }
 .chat-source-excerpt { color: var(--muted); }
-.chat fieldset.grounding {
+.chat fieldset.grounding,
+.chat fieldset.languages {
   background: transparent;
   border: 0;
   padding: 0;
   margin: 0 0 14px;
 }
-.chat fieldset.grounding legend {
+.chat fieldset.grounding legend,
+.chat fieldset.languages legend {
   padding: 0;
   margin-bottom: 4px;
+}
+.chat .language-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+@media (max-width: 640px) {
+  .chat .language-row { grid-template-columns: 1fr; }
+}
+.chat-download {
+  display: inline-block;
+  margin-top: 8px;
+  color: var(--green);
+  font-size: 0.9rem;
 }
 .chat-grounding {
   display: inline-block;

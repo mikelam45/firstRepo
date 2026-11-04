@@ -23,6 +23,8 @@ from .chat import (
     recorded_model,
     resolve_chat_function,
     resolve_grounding,
+    resolve_source_language,
+    resolve_target_language,
 )
 from .openrouter_key import (
     normalize_submitted_key,
@@ -31,14 +33,19 @@ from .openrouter_key import (
 )
 from .region import extra_hidden_ids, reset_probe_cache
 from .rag import (
+    COLLECTION_RAG,
+    COLLECTION_TRANSLATION,
+    DEFAULT_TRANSLATION_MESSAGE,
     GROUNDING_STRICT,
     NO_DOCUMENTS_STRICT_REPLY,
     RagError,
     build_rag_context,
+    build_translation_context,
     delete_file,
     get_stored_file,
     list_files,
     order_sources,
+    resolve_collection,
     save_upload,
 )
 from .selection import load_selection, parse_selection, save_selection
@@ -74,9 +81,11 @@ class NoteIn(BaseModel):
 
 
 class ChatIn(BaseModel):
-    message: str = Field(min_length=1, max_length=8000)
+    message: str = Field(default="", max_length=8000)
     function: str = "rag_qa"
     grounding: str = "mixed"
+    target_language: str | None = None
+    source_language: str | None = None
 
 
 class OpenRouterKeyIn(BaseModel):
@@ -193,17 +202,19 @@ def post_chat(
     settings = get_settings()
     require_write_access(settings, authorization)
     message = body.message.strip()
-    if not message:
-        raise HTTPException(status_code=400, detail="message must not be empty.")
     try:
         function_id = resolve_chat_function(body.function)
         grounding = resolve_grounding(body.grounding)
+        target_language = resolve_target_language(function_id, body.target_language)
+        source_language = resolve_source_language(function_id, body.source_language)
         hidden = extra_hidden_ids()
         selection = load_selection(settings.data_dir, extra_hidden=hidden)
         model_id = selection[function_id]
         messages = None
         sources: list[dict[str, str]] | None = None
         if function_id == "rag_qa":
+            if not message:
+                raise HTTPException(status_code=400, detail="message must not be empty.")
             messages, sources = build_rag_context(
                 settings.data_dir, message, grounding
             )
@@ -213,7 +224,29 @@ def post_chat(
                 result["grounding"] = grounding
                 result["sources"] = []
                 return result
+        elif function_id == "translation":
+            assert target_language is not None
+            assert source_language is not None
+            translation_files = list_files(
+                settings.data_dir, collection=COLLECTION_TRANSLATION
+            )
+            if not message:
+                if not translation_files:
+                    raise HTTPException(
+                        status_code=400, detail="message must not be empty."
+                    )
+                message = DEFAULT_TRANSLATION_MESSAGE
+            messages, sources = build_translation_context(
+                settings.data_dir,
+                message,
+                target_language=target_language,
+                source_language=source_language,
+            )
+            if not sources:
+                sources = None
         else:
+            if not message:
+                raise HTTPException(status_code=400, detail="message must not be empty.")
             messages = format_reply_messages(message)
         result = complete_chat(
             message=message,
@@ -230,9 +263,13 @@ def post_chat(
 
 
 @app.get("/api/rag/files")
-def get_rag_files() -> list[dict[str, object]]:
+def get_rag_files(collection: str = COLLECTION_RAG) -> list[dict[str, object]]:
     settings = get_settings()
-    return list_files(settings.data_dir)
+    try:
+        chosen = resolve_collection(collection)
+    except RagError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+    return list_files(settings.data_dir, collection=chosen)
 
 
 @app.get("/api/rag/files/{file_id}/content")
@@ -256,6 +293,7 @@ def get_rag_file_content(
 @app.post("/api/rag/files", status_code=201)
 def post_rag_file(
     file: UploadFile = File(...),
+    collection: str = COLLECTION_RAG,
     authorization: str | None = Header(default=None),
 ) -> dict[str, object]:
     settings = get_settings()
@@ -263,13 +301,55 @@ def post_rag_file(
     filename = file.filename or ""
     data = file.file.read()
     try:
-        return save_upload(settings.data_dir, filename=filename, data=data)
+        chosen = resolve_collection(collection)
+        return save_upload(
+            settings.data_dir, filename=filename, data=data, collection=chosen
+        )
     except RagError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
 
 @app.delete("/api/rag/files/{file_id}")
 def delete_rag_file(
+    file_id: str,
+    authorization: str | None = Header(default=None),
+) -> dict[str, object]:
+    settings = get_settings()
+    require_write_access(settings, authorization)
+    try:
+        return delete_file(settings.data_dir, file_id)
+    except RagError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+
+
+@app.get("/api/translation/files")
+def get_translation_files() -> list[dict[str, object]]:
+    settings = get_settings()
+    return list_files(settings.data_dir, collection=COLLECTION_TRANSLATION)
+
+
+@app.post("/api/translation/files", status_code=201)
+def post_translation_file(
+    file: UploadFile = File(...),
+    authorization: str | None = Header(default=None),
+) -> dict[str, object]:
+    settings = get_settings()
+    require_write_access(settings, authorization)
+    filename = file.filename or ""
+    data = file.file.read()
+    try:
+        return save_upload(
+            settings.data_dir,
+            filename=filename,
+            data=data,
+            collection=COLLECTION_TRANSLATION,
+        )
+    except RagError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+
+
+@app.delete("/api/translation/files/{file_id}")
+def delete_translation_file(
     file_id: str,
     authorization: str | None = Header(default=None),
 ) -> dict[str, object]:

@@ -1,9 +1,12 @@
-"""Store uploaded RAG files, extract text, and build chat context.
+"""Store uploaded RAG and translation files, extract text, and build chat context.
 
 Files live under ``$DATA_DIR/uploads/``. Extracts are ``$DATA_DIR/extracts/<id>.txt``.
 The index is ``$DATA_DIR/rag-files.json``. Extraction failures are recorded; they
-do not raise. Legacy ``.doc`` and ``.xls`` are accepted and marked as needing
-conversion. ``.pptx`` is not accepted (no extra dependency).
+do not raise. Legacy ``.doc``, ``.xls``, and ``.ppt`` are accepted and marked as
+needing conversion. ``.pptx`` is extracted with python-pptx.
+
+Each file is tagged ``collection`` ``rag`` or ``translation`` so the two
+libraries do not mix. Legacy rows without a collection are treated as ``rag``.
 """
 
 from __future__ import annotations
@@ -33,6 +36,8 @@ ALLOWED_EXTENSIONS = {
     ".pdf",
     ".docx",
     ".doc",
+    ".pptx",
+    ".ppt",
     ".txt",
     ".md",
     ".xlsx",
@@ -40,12 +45,43 @@ ALLOWED_EXTENSIONS = {
     ".csv",
     ".json",
 }
+TRANSLATION_EXTENSIONS = {
+    ".pdf",
+    ".docx",
+    ".doc",
+    ".pptx",
+    ".ppt",
+    ".xlsx",
+    ".xls",
+    ".txt",
+    ".md",
+}
+
+COLLECTION_RAG = "rag"
+COLLECTION_TRANSLATION = "translation"
+ALLOWED_COLLECTIONS = frozenset({COLLECTION_RAG, COLLECTION_TRANSLATION})
+
+TARGET_EN = "en"
+TARGET_ZH_CN = "zh_cn"
+TARGET_ZH_HK = "zh_hk"
+ALLOWED_TARGET_LANGUAGES = frozenset({TARGET_EN, TARGET_ZH_CN, TARGET_ZH_HK})
+ALLOWED_SOURCE_LANGUAGES = ALLOWED_TARGET_LANGUAGES | {"auto"}
+DEFAULT_SOURCE_LANGUAGE = "auto"
+DEFAULT_TRANSLATION_MESSAGE = "Translate the uploaded documents."
+LANGUAGE_LABELS = {
+    TARGET_EN: "English",
+    TARGET_ZH_CN: "Simplified Chinese (简体)",
+    TARGET_ZH_HK: "Traditional Chinese (繁體)",
+}
 
 DOC_CONVERSION_NOTE = (
     "This .doc file needs conversion to .docx or .txt before text can be extracted."
 )
 XLS_CONVERSION_NOTE = (
     "This .xls file needs conversion to .xlsx before text can be extracted."
+)
+PPT_CONVERSION_NOTE = (
+    "This .ppt file needs conversion to .pptx before text can be extracted."
 )
 GROUNDING_STRICT = "strict"
 GROUNDING_MIXED = "mixed"
@@ -84,6 +120,25 @@ MIXED_SYSTEM = (
     + "\n" + FORMAT_REPLY_INSTRUCTION
 )
 GROUNDED_SYSTEM = MIXED_SYSTEM
+TRANSLATION_BASE = (
+    "You are a professional translator. "
+    "Output the translation in the target language only, except proper nouns "
+    "that are conventionally left in their original form. "
+    "Do not add commentary, preambles, or a second language unless the user asks."
+)
+TRANSLATION_TRADITIONAL = (
+    "The target is Traditional Chinese (繁體). Write 繁體, not 简体. "
+    "Do not convert to Simplified Chinese."
+)
+TRANSLATION_SIMPLIFIED = (
+    "The target is Simplified Chinese (简体). Write 简体, not 繁體. "
+    "Do not use 粵文 particles (such as 嘅, 咗, 喺, 唔) unless the user asks for Cantonese."
+)
+TRANSLATION_ENGLISH = "The target is English. Write natural, fluent English."
+TRANSLATION_FILE_HEADINGS = (
+    "If several source documents are provided, start each translation with a "
+    "Markdown heading using the file name."
+)
 
 
 class RagError(Exception):
@@ -173,12 +228,33 @@ def extension_of(filename: str) -> str:
     return Path(filename).suffix.lower()
 
 
+def file_collection(row: dict[str, Any]) -> str:
+    value = row.get("collection")
+    if value in ALLOWED_COLLECTIONS:
+        return str(value)
+    return COLLECTION_RAG
+
+
+def resolve_collection(value: str | None) -> str:
+    chosen = (value or COLLECTION_RAG).strip() or COLLECTION_RAG
+    if chosen not in ALLOWED_COLLECTIONS:
+        raise RagError(400, "collection must be 'rag' or 'translation'.")
+    return chosen
+
+
+def allowed_extensions_for(collection: str) -> set[str]:
+    if collection == COLLECTION_TRANSLATION:
+        return TRANSLATION_EXTENSIONS
+    return ALLOWED_EXTENSIONS
+
+
 def public_record(row: dict[str, Any]) -> dict[str, Any]:
     record = {
         "id": row["id"],
         "name": row["name"],
         "size": row["size"],
         "type": row["type"],
+        "collection": file_collection(row),
         "stored_path": row["stored_path"],
         "extracted_chars": row["extracted_chars"],
         "created_at": row["created_at"],
@@ -299,6 +375,36 @@ def _extract_docx(data: bytes) -> str:
     return "\n".join(parts)
 
 
+def _shape_text(shape: Any) -> list[str]:
+    parts: list[str] = []
+    if getattr(shape, "has_text_frame", False):
+        text = (shape.text_frame.text or "").strip()
+        if text:
+            parts.append(text)
+    if getattr(shape, "has_table", False):
+        for row in shape.table.rows:
+            cells = [cell.text.strip() for cell in row.cells]
+            parts.append(" | ".join(cells))
+    return parts
+
+
+def _extract_pptx(data: bytes) -> str:
+    from pptx import Presentation
+
+    presentation = Presentation(io.BytesIO(data))
+    slides: list[str] = []
+    for index, slide in enumerate(presentation.slides, start=1):
+        parts: list[str] = []
+        for shape in slide.shapes:
+            parts.extend(_shape_text(shape))
+        if slide.has_notes_slide:
+            notes = (slide.notes_slide.notes_text_frame.text or "").strip()
+            if notes:
+                parts.append(notes)
+        slides.append(f"## Slide {index}\n" + "\n".join(parts) if parts else f"## Slide {index}")
+    return "\n\n".join(slides)
+
+
 def extract_text(suffix: str, data: bytes) -> tuple[str, str | None]:
     """Return ``(text, error)``. ``error`` is set when extraction fails or is skipped."""
     try:
@@ -318,24 +424,41 @@ def extract_text(suffix: str, data: bytes) -> tuple[str, str | None]:
             return _extract_docx(data), None
         if suffix == ".doc":
             return "", DOC_CONVERSION_NOTE
+        if suffix == ".pptx":
+            return _extract_pptx(data), None
+        if suffix == ".ppt":
+            return "", PPT_CONVERSION_NOTE
     except Exception as exc:
         kind = suffix.lstrip(".") or "file"
         return "", f"Could not extract text from this {kind} file ({type(exc).__name__})."
     return "", f"No extractor for {suffix}."
 
 
-def list_files(data_dir: Path) -> list[dict[str, Any]]:
-    return [public_record(row) for row in load_index(data_dir)]
+def list_files(data_dir: Path, collection: str = COLLECTION_RAG) -> list[dict[str, Any]]:
+    chosen = resolve_collection(collection)
+    return [
+        public_record(row)
+        for row in load_index(data_dir)
+        if file_collection(row) == chosen
+    ]
 
 
-def save_upload(data_dir: Path, *, filename: str, data: bytes) -> dict[str, Any]:
+def save_upload(
+    data_dir: Path,
+    *,
+    filename: str,
+    data: bytes,
+    collection: str = COLLECTION_RAG,
+) -> dict[str, Any]:
     name = Path(filename or "").name.strip()
     if not name:
         raise RagError(400, "Upload must include a filename.")
+    chosen = resolve_collection(collection)
     suffix = extension_of(name)
-    if suffix not in ALLOWED_EXTENSIONS:
-        allowed = ", ".join(sorted(ALLOWED_EXTENSIONS))
-        raise RagError(400, f"Unsupported file type. Accepted extensions: {allowed}.")
+    allowed = allowed_extensions_for(chosen)
+    if suffix not in allowed:
+        listed = ", ".join(sorted(allowed))
+        raise RagError(400, f"Unsupported file type. Accepted extensions: {listed}.")
     if len(data) > MAX_UPLOAD_BYTES:
         raise RagError(400, "File exceeds the 10 MB limit.")
 
@@ -354,6 +477,7 @@ def save_upload(data_dir: Path, *, filename: str, data: bytes) -> dict[str, Any]
         "name": name,
         "size": len(data),
         "type": suffix.lstrip("."),
+        "collection": chosen,
         "stored_path": stored_rel,
         "extracted_chars": len(text),
         "created_at": _utc_now(),
@@ -383,9 +507,15 @@ def delete_file(data_dir: Path, file_id: str) -> dict[str, Any]:
     return {"ok": True, "id": chosen}
 
 
-def load_extracts(data_dir: Path) -> list[dict[str, str]]:
+def load_extracts(
+    data_dir: Path,
+    collection: str = COLLECTION_RAG,
+) -> list[dict[str, str]]:
+    chosen = resolve_collection(collection)
     extracts: list[dict[str, str]] = []
     for row in load_index(data_dir):
+        if file_collection(row) != chosen:
+            continue
         file_id = str(row["id"])
         name = str(row.get("name") or file_id)
         path = extract_path(data_dir, file_id)
@@ -417,22 +547,25 @@ def grounding_instructions(grounding: str) -> str:
     return MIXED_SYSTEM
 
 
-def build_rag_context(
-    data_dir: Path,
-    message: str,
-    grounding: str = GROUNDING_MIXED,
-) -> tuple[list[dict[str, str]], list[dict[str, str]]]:
-    """Return chat messages and the files actually stuffed into the prompt."""
-    extracts = load_extracts(data_dir)
-    if not extracts:
-        return (
-            [
-                {"role": "system", "content": NO_DOCUMENTS_SYSTEM},
-                {"role": "user", "content": message},
-            ],
-            [],
-        )
+def translation_system_prompt(target_language: str, source_language: str) -> str:
+    parts = [TRANSLATION_BASE]
+    if target_language == TARGET_ZH_HK:
+        parts.append(TRANSLATION_TRADITIONAL)
+    elif target_language == TARGET_ZH_CN:
+        parts.append(TRANSLATION_SIMPLIFIED)
+    else:
+        parts.append(TRANSLATION_ENGLISH)
+    if source_language == DEFAULT_SOURCE_LANGUAGE:
+        parts.append("Detect the source language automatically.")
+    else:
+        label = LANGUAGE_LABELS.get(source_language, source_language)
+        parts.append(f"The source language is {label}.")
+    parts.append(TRANSLATION_FILE_HEADINGS)
+    parts.append(FORMAT_REPLY_INSTRUCTION)
+    return "\n".join(parts)
 
+
+def _stuff_extracts(extracts: list[dict[str, str]]) -> tuple[str, list[dict[str, str]]]:
     remaining = MAX_CONTEXT_CHARS
     parts: list[str] = []
     sources: list[dict[str, str]] = []
@@ -449,8 +582,57 @@ def build_rag_context(
         sources.append(_source_record(extract))
         if remaining <= 0:
             break
+    return "".join(parts), sources
 
-    system = grounding_instructions(grounding) + "\n\nUploaded extracts:" + "".join(parts)
+
+def build_rag_context(
+    data_dir: Path,
+    message: str,
+    grounding: str = GROUNDING_MIXED,
+) -> tuple[list[dict[str, str]], list[dict[str, str]]]:
+    """Return chat messages and the files actually stuffed into the prompt."""
+    extracts = load_extracts(data_dir, collection=COLLECTION_RAG)
+    if not extracts:
+        return (
+            [
+                {"role": "system", "content": NO_DOCUMENTS_SYSTEM},
+                {"role": "user", "content": message},
+            ],
+            [],
+        )
+
+    stuffed, sources = _stuff_extracts(extracts)
+    system = grounding_instructions(grounding) + "\n\nUploaded extracts:" + stuffed
+    return (
+        [
+            {"role": "system", "content": system},
+            {"role": "user", "content": message},
+        ],
+        sources,
+    )
+
+
+def build_translation_context(
+    data_dir: Path,
+    message: str,
+    *,
+    target_language: str,
+    source_language: str = DEFAULT_SOURCE_LANGUAGE,
+) -> tuple[list[dict[str, str]], list[dict[str, str]]]:
+    """Return translator messages and the translation files stuffed into the prompt."""
+    extracts = load_extracts(data_dir, collection=COLLECTION_TRANSLATION)
+    system = translation_system_prompt(target_language, source_language)
+    if not extracts:
+        return (
+            [
+                {"role": "system", "content": system},
+                {"role": "user", "content": message},
+            ],
+            [],
+        )
+
+    stuffed, sources = _stuff_extracts(extracts)
+    system = system + "\n\nSource documents:" + stuffed
     return (
         [
             {"role": "system", "content": system},

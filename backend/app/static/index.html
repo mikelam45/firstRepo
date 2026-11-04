@@ -30,7 +30,7 @@
 
     <section class="uploads" id="rag-upload" aria-labelledby="upload-title">
       <h2 id="upload-title">Document upload</h2>
-      <p class="meta">
+      <p class="meta" id="upload-hint">
         Accepted: .pdf, .docx, .doc, .txt, .md, .xlsx, .xls, .csv, .json. Maximum 10 MB.
         .doc and .xls are stored, but text extraction needs a converted copy.
         Chat for RAG uses the extracted text as context.
@@ -65,6 +65,26 @@
           <span class="detail">Answer only from uploaded document extracts.</span>
         </label>
       </fieldset>
+      <fieldset class="languages" id="translation-languages" hidden>
+        <legend>Language direction</legend>
+        <div class="language-row">
+          <label class="field">Source
+            <select id="source-language">
+              <option value="auto" selected>Auto detect</option>
+              <option value="en">English</option>
+              <option value="zh_cn">Simplified Chinese (简体)</option>
+              <option value="zh_hk">Traditional Chinese (繁體)</option>
+            </select>
+          </label>
+          <label class="field">Target
+            <select id="target-language" required>
+              <option value="en">English</option>
+              <option value="zh_cn">Simplified Chinese (简体)</option>
+              <option value="zh_hk">Traditional Chinese (繁體)</option>
+            </select>
+          </label>
+        </div>
+      </fieldset>
       <label class="field">Message
         <textarea id="chat-message" rows="4" placeholder="Ask a question"></textarea>
       </label>
@@ -90,6 +110,12 @@
   <script>
     const TEXT_FUNCTIONS = ["rag_qa", "translation", "cantonese_script"];
     const GROUNDING_KEY = "rag-grounding";
+    const TARGET_LANGUAGE_KEY = "translation-target-language";
+    const DEFAULT_TRANSLATION_MESSAGE = "Translate the uploaded documents.";
+    const RAG_ACCEPT = ".pdf,.docx,.doc,.txt,.md,.xlsx,.xls,.csv,.json";
+    const TRANSLATION_ACCEPT = ".pdf,.docx,.doc,.pptx,.ppt,.xlsx,.xls,.txt,.md";
+    const RAG_HINT = "Accepted: .pdf, .docx, .doc, .txt, .md, .xlsx, .xls, .csv, .json. Maximum 10 MB. .doc and .xls are stored, but text extraction needs a converted copy. Chat for RAG uses the extracted text as context.";
+    const TRANSLATION_HINT = "Accepted: .pdf, .docx, .doc, .pptx, .ppt, .xlsx, .xls, .txt, .md. Maximum 10 MB. .ppt, .doc, and .xls are stored, but text extraction needs a converted copy. Chat translates these documents into the target language.";
     const state = { catalog: null, saved: null, functionId: "rag_qa", files: [] };
 
     function loadStoredGrounding() {
@@ -116,6 +142,42 @@
       document.querySelectorAll('#grounding-control input[name="grounding"]').forEach((input) => {
         input.checked = input.value === value;
       });
+    }
+
+    function loadStoredTargetLanguage() {
+      try {
+        const value = localStorage.getItem(TARGET_LANGUAGE_KEY);
+        if (value === "en" || value === "zh_cn" || value === "zh_hk") return value;
+      } catch (error) {}
+      return "en";
+    }
+
+    function persistTargetLanguage(value) {
+      try {
+        localStorage.setItem(TARGET_LANGUAGE_KEY, value);
+      } catch (error) {}
+    }
+
+    function selectedTargetLanguage() {
+      const select = document.getElementById("target-language");
+      const value = select ? select.value : "en";
+      return value === "zh_cn" || value === "zh_hk" ? value : "en";
+    }
+
+    function selectedSourceLanguage() {
+      const select = document.getElementById("source-language");
+      const value = select ? select.value : "auto";
+      if (value === "en" || value === "zh_cn" || value === "zh_hk") return value;
+      return "auto";
+    }
+
+    function applyStoredTargetLanguage() {
+      const select = document.getElementById("target-language");
+      if (select) select.value = loadStoredTargetLanguage();
+    }
+
+    function filesEndpoint() {
+      return state.functionId === "translation" ? "/api/translation/files" : "/api/rag/files";
     }
 
     function groundingLabel(value) {
@@ -179,11 +241,35 @@
         button.setAttribute("aria-selected", button.getAttribute("data-function") === functionId ? "true" : "false");
       }
       const text = isTextFunction(functionId);
-      document.getElementById("rag-upload").hidden = functionId !== "rag_qa";
+      const showUpload = functionId === "rag_qa" || functionId === "translation";
+      document.getElementById("rag-upload").hidden = !showUpload;
       document.getElementById("grounding-control").hidden = functionId !== "rag_qa";
+      document.getElementById("translation-languages").hidden = functionId !== "translation";
       document.getElementById("chat-panel").hidden = !text;
       document.getElementById("media-note").hidden = text;
+      document.getElementById("chat-send").textContent = functionId === "translation" ? "Translate" : "Send";
+      const messageBox = document.getElementById("chat-message");
+      if (functionId === "translation") {
+        messageBox.placeholder = "Text to translate (optional if you uploaded documents)";
+        document.getElementById("upload-title").textContent = "Translation documents";
+        document.getElementById("upload-hint").textContent = TRANSLATION_HINT;
+        document.getElementById("upload-file").accept = TRANSLATION_ACCEPT;
+      } else {
+        messageBox.placeholder = "Ask a question";
+        document.getElementById("upload-title").textContent = "Document upload";
+        document.getElementById("upload-hint").textContent = RAG_HINT;
+        document.getElementById("upload-file").accept = RAG_ACCEPT;
+      }
       renderChatModel();
+      if (showUpload) {
+        state.files = [];
+        renderFiles();
+        loadFiles().catch(() => {
+          const status = document.getElementById("upload-state");
+          status.className = "error";
+          status.textContent = "Could not list files.";
+        });
+      }
     }
 
     function renderFiles() {
@@ -228,7 +314,7 @@
     }
 
     async function loadFiles() {
-      const response = await fetch("/api/rag/files");
+      const response = await fetch(filesEndpoint());
       if (!response.ok) throw new Error("Could not list files");
       const payload = await response.json();
       state.files = Array.isArray(payload) ? payload : (payload.files || []);
@@ -240,7 +326,7 @@
       status.className = "";
       status.textContent = "Deleting…";
       try {
-        const response = await fetch("/api/rag/files/" + encodeURIComponent(id), {
+        const response = await fetch(filesEndpoint() + "/" + encodeURIComponent(id), {
           method: "DELETE",
           headers: authHeaders(false),
         });
@@ -293,7 +379,7 @@
       const body = new FormData();
       body.append("file", file, file.name);
       try {
-        const response = await fetch("/api/rag/files", {
+        const response = await fetch(filesEndpoint(), {
           method: "POST",
           headers: authHeaders(false),
           body,
@@ -345,7 +431,16 @@
       article.appendChild(block);
     }
 
-    function appendChatMessage(role, text, sources, grounding) {
+    function appendMarkdownDownload(article, text) {
+      const link = document.createElement("a");
+      link.className = "chat-download";
+      link.href = "data:text/markdown;charset=utf-8," + encodeURIComponent(text);
+      link.download = "translation.md";
+      link.textContent = "Download Markdown";
+      article.appendChild(link);
+    }
+
+    function appendChatMessage(role, text, sources, grounding, options) {
       const log = document.getElementById("chat-log");
       log.hidden = false;
       const article = document.createElement("article");
@@ -357,7 +452,7 @@
       who.className = "chat-role";
       who.textContent = role === "user" ? "You" : "Assistant";
       article.appendChild(who);
-      if (role === "assistant" && grounding) {
+      if (role === "assistant" && grounding && state.functionId === "rag_qa") {
         const mode = document.createElement("div");
         mode.className = "chat-grounding";
         mode.textContent = groundingLabel(grounding);
@@ -371,18 +466,31 @@
       } else {
         article.appendChild(renderAssistantReply(text)); // parseChartFence, markdownTableToHtml, escapeHtml
         appendSources(article, sources);
+        if (options && options.downloadMarkdown) {
+          appendMarkdownDownload(article, text);
+        }
       }
       log.appendChild(article);
     }
 
+    document.getElementById("target-language").addEventListener("change", () => {
+      persistTargetLanguage(selectedTargetLanguage());
+    });
+
     document.getElementById("chat-send").addEventListener("click", async () => {
       const button = document.getElementById("chat-send");
       const status = document.getElementById("chat-state");
-      const message = document.getElementById("chat-message").value.trim();
+      let message = document.getElementById("chat-message").value.trim();
       if (!message) {
-        status.className = "error";
-        status.textContent = "Enter a message.";
-        return;
+        if (state.functionId === "translation" && state.files.length) {
+          message = DEFAULT_TRANSLATION_MESSAGE;
+        } else {
+          status.className = "error";
+          status.textContent = state.functionId === "translation"
+            ? "Enter text to translate or upload a document."
+            : "Enter a message.";
+          return;
+        }
       }
       if (!isTextFunction(state.functionId)) {
         status.className = "error";
@@ -392,15 +500,21 @@
       button.disabled = true;
       status.className = "";
       status.textContent = "Sending…";
+      const body = {
+        message,
+        function: state.functionId,
+      };
+      if (state.functionId === "rag_qa") body.grounding = selectedGrounding();
+      if (state.functionId === "translation") {
+        body.target_language = selectedTargetLanguage();
+        body.source_language = selectedSourceLanguage();
+        persistTargetLanguage(body.target_language);
+      }
       try {
         const response = await fetch("/api/chat", {
           method: "POST",
           headers: authHeaders(true),
-          body: JSON.stringify({
-            message,
-            function: state.functionId,
-            grounding: state.functionId === "rag_qa" ? selectedGrounding() : undefined,
-          }),
+          body: JSON.stringify(body),
         });
         const payload = await response.json().catch(() => ({}));
         if (!response.ok) {
@@ -421,7 +535,13 @@
         line.appendChild(link);
         persistGrounding(selectedGrounding());
         appendChatMessage("user", message);
-        appendChatMessage("assistant", payload.reply, payload.sources, payload.grounding);
+        appendChatMessage(
+          "assistant",
+          payload.reply,
+          payload.sources,
+          payload.grounding,
+          { downloadMarkdown: state.functionId === "translation" }
+        );
         status.className = "";
         status.textContent = "Reply from " + payload.model_id + ".";
       } catch (error) {
@@ -432,8 +552,9 @@
       }
     });
 
-    Promise.all([loadModels(), loadFiles()]).then(() => {
+    loadModels().then(() => {
       applyStoredGrounding();
+      applyStoredTargetLanguage();
       showFunction("rag_qa");
     }).catch(() => {
       document.getElementById("chat-state").className = "error";

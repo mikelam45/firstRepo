@@ -16,7 +16,14 @@ import httpx
 
 from .catalog import FUNCTION_LABELS, PRICES_RECORDED_ON, TEXT_FUNCTIONS, get_model
 from .openrouter_key import MAC_KEY_PATH, load_openrouter_api_key
-from .rag import ALLOWED_GROUNDING, FORMAT_REPLY_INSTRUCTION, GROUNDING_MIXED
+from .rag import (
+    ALLOWED_GROUNDING,
+    ALLOWED_SOURCE_LANGUAGES,
+    ALLOWED_TARGET_LANGUAGES,
+    DEFAULT_SOURCE_LANGUAGE,
+    FORMAT_REPLY_INSTRUCTION,
+    GROUNDING_MIXED,
+)
 
 OPENROUTER_CHAT_URL = "https://openrouter.ai/api/v1/chat/completions"
 OPENROUTER_CHAT_TIMEOUT_SECONDS = 20.0
@@ -71,6 +78,36 @@ def resolve_grounding(value: str | None) -> str:
     chosen = value.strip() if isinstance(value, str) else ""
     if chosen not in ALLOWED_GROUNDING:
         raise ChatError(400, "grounding must be 'strict' or 'mixed'.")
+    return chosen
+
+
+def resolve_target_language(function_id: str, value: str | None) -> str | None:
+    if function_id != "translation":
+        return None
+    chosen = value.strip() if isinstance(value, str) else ""
+    if not chosen:
+        raise ChatError(400, "target_language is required for translation.")
+    if chosen not in ALLOWED_TARGET_LANGUAGES:
+        raise ChatError(
+            400,
+            "target_language must be 'en', 'zh_cn', or 'zh_hk'.",
+        )
+    return chosen
+
+
+def resolve_source_language(function_id: str, value: str | None) -> str | None:
+    if function_id != "translation":
+        return None
+    if value is None:
+        return DEFAULT_SOURCE_LANGUAGE
+    chosen = value.strip() if isinstance(value, str) else ""
+    if not chosen:
+        return DEFAULT_SOURCE_LANGUAGE
+    if chosen not in ALLOWED_SOURCE_LANGUAGES:
+        raise ChatError(
+            400,
+            "source_language must be 'auto', 'en', 'zh_cn', or 'zh_hk'.",
+        )
     return chosen
 
 

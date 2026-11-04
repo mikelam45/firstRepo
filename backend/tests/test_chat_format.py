@@ -161,12 +161,14 @@ def test_rag_and_translation_prompts_include_format_contract(tmp_path, monkeypat
 
     translation = client.post(
         "/api/chat",
-        json={"message": "hello", "function": "translation"},
+        json={"message": "hello", "function": "translation", "target_language": "en"},
     )
     assert translation.status_code == 200
     assert translation.json()["reply"] == table_reply
     messages = seen["json"]["messages"]
-    assert messages[0] == {"role": "system", "content": FORMAT_REPLY_INSTRUCTION}
+    assert FORMAT_REPLY_INSTRUCTION in messages[0]["content"]
+    assert "professional translator" in messages[0]["content"]
+    assert "natural" in messages[0]["content"]
     assert messages[1] == {"role": "user", "content": "hello"}
     assert "sources" not in translation.json()
     assert seen["json"]["model"] == DEFAULT_SELECTION["translation"]

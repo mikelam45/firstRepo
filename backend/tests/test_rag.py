@@ -233,7 +233,10 @@ def test_translation_does_not_invent_sources(tmp_path, monkeypatch):
         files={"file": ("notes.txt", b"should not become a translation citation\n", "text/plain")},
     )
     assert uploaded.status_code == 201
-    chat = client.post("/api/chat", json={"message": "hello", "function": "translation"})
+    chat = client.post(
+        "/api/chat",
+        json={"message": "hello", "function": "translation", "target_language": "en"},
+    )
     assert chat.status_code == 200
     assert "sources" not in chat.json()
 
