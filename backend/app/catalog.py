@@ -43,6 +43,7 @@ FUNCTIONS: tuple[tuple[str, str], ...] = (
     ("rag_qa", "RAG and document analysis"),
     ("translation", "Standard translation"),
     ("cantonese_script", "Cantonese script writing"),
+    ("dse_math", "DSE Math assistant"),
     ("image_gen", "Image and storyboard"),
     ("video_gen", "Video generation"),
 )
@@ -50,7 +51,7 @@ FUNCTIONS: tuple[tuple[str, str], ...] = (
 FUNCTION_IDS: tuple[str, ...] = tuple(function_id for function_id, _label in FUNCTIONS)
 FUNCTION_LABELS: dict[str, str] = dict(FUNCTIONS)
 
-TEXT_FUNCTIONS = ("rag_qa", "translation", "cantonese_script")
+TEXT_FUNCTIONS = ("rag_qa", "translation", "cantonese_script", "dse_math")
 
 # Hong Kong: Google Gemini text/image ids 403 with "not available in your region".
 # They stay in the catalog for probes and leftover-file coercion, but public
@@ -63,6 +64,7 @@ DEFAULT_SELECTION: dict[str, str] = {
     "rag_qa": RECOMMENDED_HK_TEXT_MODEL,
     "translation": RECOMMENDED_HK_TEXT_MODEL,
     "cantonese_script": RECOMMENDED_HK_TEXT_MODEL,
+    "dse_math": RECOMMENDED_HK_TEXT_MODEL,
     "image_gen": RECOMMENDED_HK_IMAGE_MODEL,
     "video_gen": RECOMMENDED_HK_VIDEO_MODEL,
 }

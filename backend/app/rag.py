@@ -1,12 +1,12 @@
-"""Store uploaded RAG and translation files, extract text, and build chat context.
+"""Store uploaded RAG, translation, and DSE Math files, extract text, and build chat context.
 
 Files live under ``$DATA_DIR/uploads/``. Extracts are ``$DATA_DIR/extracts/<id>.txt``.
 The index is ``$DATA_DIR/rag-files.json``. Extraction failures are recorded; they
 do not raise. Legacy ``.doc``, ``.xls``, and ``.ppt`` are accepted and marked as
 needing conversion. ``.pptx`` is extracted with python-pptx.
 
-Each file is tagged ``collection`` ``rag`` or ``translation`` so the two
-libraries do not mix. Legacy rows without a collection are treated as ``rag``.
+Each file is tagged ``collection`` ``rag``, ``translation``, or ``dse_math`` so
+the libraries do not mix. Legacy rows without a collection are treated as ``rag``.
 """
 
 from __future__ import annotations
@@ -59,7 +59,10 @@ TRANSLATION_EXTENSIONS = {
 
 COLLECTION_RAG = "rag"
 COLLECTION_TRANSLATION = "translation"
-ALLOWED_COLLECTIONS = frozenset({COLLECTION_RAG, COLLECTION_TRANSLATION})
+COLLECTION_DSE_MATH = "dse_math"
+ALLOWED_COLLECTIONS = frozenset(
+    {COLLECTION_RAG, COLLECTION_TRANSLATION, COLLECTION_DSE_MATH}
+)
 
 TARGET_EN = "en"
 TARGET_ZH_CN = "zh_cn"
@@ -242,7 +245,9 @@ def file_collection(row: dict[str, Any]) -> str:
 def resolve_collection(value: str | None) -> str:
     chosen = (value or COLLECTION_RAG).strip() or COLLECTION_RAG
     if chosen not in ALLOWED_COLLECTIONS:
-        raise RagError(400, "collection must be 'rag' or 'translation'.")
+        raise RagError(
+            400, "collection must be 'rag', 'translation', or 'dse_math'."
+        )
     return chosen
 
 

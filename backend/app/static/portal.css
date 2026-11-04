@@ -308,14 +308,16 @@ pre.chat-reply,
 .chat-sources a { color: var(--green); }
 .chat-source-excerpt { color: var(--muted); }
 .chat fieldset.grounding,
-.chat fieldset.languages {
+.chat fieldset.languages,
+.chat fieldset.dse {
   background: transparent;
   border: 0;
   padding: 0;
   margin: 0 0 14px;
 }
 .chat fieldset.grounding legend,
-.chat fieldset.languages legend {
+.chat fieldset.languages legend,
+.chat fieldset.dse legend {
   padding: 0;
   margin-bottom: 4px;
 }

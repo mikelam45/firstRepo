@@ -18,6 +18,7 @@ LABELS = (
     "RAG and document analysis",
     "Standard translation",
     "Cantonese script writing",
+    "DSE Math assistant",
     "Image and storyboard",
     "Video generation",
 )
@@ -116,6 +117,7 @@ def test_get_returns_defaults_and_a_priced_unit(client):
     assert payload["selection"]["rag_qa"] == "deepseek/deepseek-chat"
     assert payload["selection"]["translation"] == "deepseek/deepseek-chat"
     assert payload["selection"]["cantonese_script"] == "deepseek/deepseek-chat"
+    assert payload["selection"]["dse_math"] == "deepseek/deepseek-chat"
     assert payload["selection"]["image_gen"] == RECOMMENDED_HK_IMAGE_MODEL
     assert payload["prices_recorded_on"] == "2026-11-03"
     _assert_gemini_absent(payload)
@@ -238,6 +240,7 @@ def test_saved_hidden_model_is_coerced(client, tmp_path):
         "rag_qa": "google/gemini-2.5-flash",
         "translation": "openai/gpt-4o",
         "cantonese_script": "google/gemini-2.5-flash",
+        "dse_math": "google/gemini-2.5-flash",
         "image_gen": "google/gemini-3.1-flash-image",
         "video_gen": "minimax/hailuo-2.3",
     }
@@ -249,6 +252,7 @@ def test_saved_hidden_model_is_coerced(client, tmp_path):
     assert payload["selection"]["rag_qa"] == "deepseek/deepseek-chat"
     assert payload["selection"]["translation"] == "openai/gpt-4o"
     assert payload["selection"]["cantonese_script"] == "deepseek/deepseek-chat"
+    assert payload["selection"]["dse_math"] == "deepseek/deepseek-chat"
     assert payload["selection"]["image_gen"] == "black-forest-labs/flux.2-pro"
     _assert_gemini_absent(payload)
 

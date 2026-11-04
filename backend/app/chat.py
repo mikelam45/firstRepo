@@ -54,13 +54,15 @@ def resolve_chat_function(function_id: str | None) -> str:
         raise ChatError(
             400,
             f"{chosen} is not a chat completion. POST /api/chat only accepts "
-            "rag_qa, translation, or cantonese_script.",
+            + ", ".join(CHAT_FUNCTIONS)
+            + ".",
         )
     if chosen not in CHAT_FUNCTIONS:
         raise ChatError(
             400,
             f"Unknown function: {chosen}. Allowed chat functions: "
-            "rag_qa, translation, cantonese_script.",
+            + ", ".join(CHAT_FUNCTIONS)
+            + ".",
         )
     return chosen
 
@@ -82,6 +84,10 @@ def resolve_grounding(value: str | None) -> str:
 
 
 def resolve_target_language(function_id: str, value: str | None) -> str | None:
+    if function_id == "dse_math":
+        from .dse import resolve_dse_language
+
+        return resolve_dse_language(value)
     if function_id != "translation":
         return None
     chosen = value.strip() if isinstance(value, str) else ""

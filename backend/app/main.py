@@ -26,6 +26,17 @@ from .chat import (
     resolve_source_language,
     resolve_target_language,
 )
+from .dse import (
+    DEFAULT_DSE_PRACTICE_MESSAGE,
+    MODE_PRACTICE,
+    NO_DSE_DOCUMENTS_STRICT_REPLY,
+    build_dse_context,
+    resolve_dse_difficulty,
+    resolve_dse_mode,
+    resolve_dse_module,
+    resolve_dse_paper,
+    resolve_dse_topic,
+)
 from .image_refs import (
     ImageRefError,
     delete_reference,
@@ -48,6 +59,7 @@ from .openrouter_key import (
 )
 from .region import extra_hidden_ids, reset_probe_cache
 from .rag import (
+    COLLECTION_DSE_MATH,
     COLLECTION_RAG,
     COLLECTION_TRANSLATION,
     DEFAULT_TRANSLATION_MESSAGE,
@@ -102,6 +114,22 @@ class ChatIn(BaseModel):
     grounding: str = "mixed"
     target_language: str | None = None
     source_language: str | None = None
+    mode: str | None = None
+    topic: str | None = None
+    difficulty: str | None = None
+    paper: str | None = None
+    module: str | None = None
+
+
+class DseAskIn(BaseModel):
+    message: str = Field(default="", max_length=8000)
+    grounding: str = "mixed"
+    target_language: str | None = None
+    mode: str | None = None
+    topic: str | None = None
+    difficulty: str | None = None
+    paper: str | None = None
+    module: str | None = None
 
 
 class OpenRouterKeyIn(BaseModel):
@@ -285,6 +313,13 @@ def post_chat(
         grounding = resolve_grounding(body.grounding)
         target_language = resolve_target_language(function_id, body.target_language)
         source_language = resolve_source_language(function_id, body.source_language)
+        dse_mode = resolve_dse_mode(body.mode) if function_id == "dse_math" else None
+        dse_topic = resolve_dse_topic(body.topic) if function_id == "dse_math" else None
+        dse_difficulty = (
+            resolve_dse_difficulty(body.difficulty) if function_id == "dse_math" else None
+        )
+        dse_paper = resolve_dse_paper(body.paper) if function_id == "dse_math" else None
+        dse_module = resolve_dse_module(body.module) if function_id == "dse_math" else None
         hidden = extra_hidden_ids()
         selection = load_selection(settings.data_dir, extra_hidden=hidden)
         model_id = selection[function_id]
@@ -301,6 +336,32 @@ def post_chat(
                 result["reply"] = NO_DOCUMENTS_STRICT_REPLY
                 result["grounding"] = grounding
                 result["sources"] = []
+                return result
+        elif function_id == "dse_math":
+            if not message:
+                if dse_mode == MODE_PRACTICE:
+                    message = DEFAULT_DSE_PRACTICE_MESSAGE
+                else:
+                    raise HTTPException(
+                        status_code=400, detail="message must not be empty."
+                    )
+            messages, sources = build_dse_context(
+                settings.data_dir,
+                message,
+                grounding=grounding,
+                target_language=target_language or "en",
+                mode=dse_mode or MODE_PRACTICE,
+                topic=dse_topic,
+                difficulty=dse_difficulty,
+                paper=dse_paper,
+                module=dse_module,
+            )
+            if grounding == GROUNDING_STRICT and not sources:
+                result = recorded_model(function_id, model_id)
+                result["reply"] = NO_DSE_DOCUMENTS_STRICT_REPLY
+                result["grounding"] = grounding
+                result["sources"] = []
+                result["mode"] = dse_mode
                 return result
         elif function_id == "translation":
             assert target_language is not None
@@ -333,6 +394,8 @@ def post_chat(
             messages=messages,
         )
         result["grounding"] = grounding
+        if function_id == "dse_math":
+            result["mode"] = dse_mode
         if sources is not None:
             result["sources"] = order_sources(sources, str(result.get("reply") or ""))
         if function_id == "translation":
@@ -351,6 +414,27 @@ def post_chat(
         return result
     except ChatError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+
+
+@app.post("/api/dse/ask")
+def post_dse_ask(
+    body: DseAskIn,
+    authorization: str | None = Header(default=None),
+) -> dict[str, object]:
+    return post_chat(
+        ChatIn(
+            message=body.message,
+            function="dse_math",
+            grounding=body.grounding,
+            target_language=body.target_language,
+            mode=body.mode,
+            topic=body.topic,
+            difficulty=body.difficulty,
+            paper=body.paper,
+            module=body.module,
+        ),
+        authorization,
+    )
 
 
 @app.post("/api/images/generate")
@@ -573,6 +657,45 @@ def post_translation_file(
             data=data,
             collection=COLLECTION_TRANSLATION,
         )
+    except RagError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+
+
+@app.get("/api/dse/files")
+def get_dse_files() -> list[dict[str, object]]:
+    settings = get_settings()
+    return list_files(settings.data_dir, collection=COLLECTION_DSE_MATH)
+
+
+@app.post("/api/dse/files", status_code=201)
+def post_dse_file(
+    file: UploadFile = File(...),
+    authorization: str | None = Header(default=None),
+) -> dict[str, object]:
+    settings = get_settings()
+    require_write_access(settings, authorization)
+    filename = file.filename or ""
+    data = file.file.read()
+    try:
+        return save_upload(
+            settings.data_dir,
+            filename=filename,
+            data=data,
+            collection=COLLECTION_DSE_MATH,
+        )
+    except RagError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+
+
+@app.delete("/api/dse/files/{file_id}")
+def delete_dse_file(
+    file_id: str,
+    authorization: str | None = Header(default=None),
+) -> dict[str, object]:
+    settings = get_settings()
+    require_write_access(settings, authorization)
+    try:
+        return delete_file(settings.data_dir, file_id)
     except RagError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 

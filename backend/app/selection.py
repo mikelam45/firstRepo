@@ -1,4 +1,4 @@
-"""Persist the five function-to-model choices under DATA_DIR."""
+"""Persist function-to-model choices under DATA_DIR."""
 
 from __future__ import annotations
 
@@ -64,7 +64,7 @@ def parse_selection(
 ) -> dict[str, str]:
     """Return the five choices or raise ValueError with a client-facing message."""
     if not isinstance(body, dict):
-        raise ValueError("Body must be a JSON object with the five function keys.")
+        raise ValueError("Body must be a JSON object with the function keys.")
     unknown_keys = sorted(set(body) - set(FUNCTION_IDS))
     missing_keys = [function_id for function_id in FUNCTION_IDS if function_id not in body]
     if unknown_keys or missing_keys:

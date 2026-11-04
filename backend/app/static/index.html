@@ -14,7 +14,7 @@
     </nav>
     <h1>Functions</h1>
     <p class="lede">
-      Ask a question, translate, or draft Cantonese script with the saved text model.
+      Ask a question, translate, draft Cantonese script, or practise HKDSE Math with the saved text model.
       Image and storyboard uses the OpenRouter Images API; those jobs are not sent as chat completions.
       Video stays off this form.
     </p>
@@ -23,6 +23,7 @@
       <button type="button" role="tab" id="tab-rag_qa" aria-selected="true" data-function="rag_qa">RAG and document analysis</button>
       <button type="button" role="tab" id="tab-translation" aria-selected="false" data-function="translation">Standard translation</button>
       <button type="button" role="tab" id="tab-cantonese_script" aria-selected="false" data-function="cantonese_script">Cantonese script writing</button>
+      <button type="button" role="tab" id="tab-dse_math" aria-selected="false" data-function="dse_math">DSE Math assistant</button>
       <button type="button" role="tab" id="tab-image_gen" class="media" aria-selected="false" data-function="image_gen">Image and storyboard</button>
       <button type="button" role="tab" id="tab-video_gen" class="media" aria-selected="false" data-function="video_gen">Video generation</button>
     </div>
@@ -90,6 +91,70 @@
             </select>
           </label>
         </div>
+      </fieldset>
+      <fieldset class="dse" id="dse-controls" hidden>
+        <legend>DSE Math assistant</legend>
+        <div class="language-row">
+          <label class="field">Explanation language
+            <select id="dse-language">
+              <option value="en" selected>English</option>
+              <option value="zh_cn">Simplified Chinese (简体)</option>
+              <option value="zh_hk">Traditional Chinese (繁體)</option>
+            </select>
+          </label>
+          <label class="field">Module
+            <select id="dse-module">
+              <option value="" selected>Any module</option>
+              <option value="compulsory">Compulsory Mathematics</option>
+              <option value="m1">M1 Calculus &amp; Statistics</option>
+              <option value="m2">M2 Algebra &amp; Calculus</option>
+            </select>
+          </label>
+        </div>
+        <fieldset class="grounding" id="dse-mode-control" aria-labelledby="dse-mode-title">
+          <legend id="dse-mode-title">Mode</legend>
+          <label class="option">
+            <input type="radio" name="dse-mode" id="dse-mode-practice" value="practice" checked>
+            <span class="option-title">Practice</span>
+            <span class="detail">Generate or grade a question with steps and a mark scheme.</span>
+          </label>
+          <label class="option">
+            <input type="radio" name="dse-mode" id="dse-mode-explain" value="explain">
+            <span class="option-title">Explain</span>
+            <span class="detail">Chat grounded on uploaded syllabus and notes.</span>
+          </label>
+        </fieldset>
+        <div class="language-row">
+          <label class="field">Topic
+            <select id="dse-topic">
+              <option value="" selected>Any topic</option>
+              <option value="number_algebra">Number &amp; Algebra</option>
+              <option value="measures_shape_space">Measures, Shape &amp; Space</option>
+              <option value="data_handling">Data Handling</option>
+              <option value="calculus">Calculus</option>
+            </select>
+          </label>
+          <label class="field">Difficulty
+            <select id="dse-difficulty">
+              <option value="" selected>Any difficulty</option>
+              <option value="easy">Easy</option>
+              <option value="mid">Mid</option>
+              <option value="hard">Hard</option>
+              <option value="dse_1">DSE 1</option>
+              <option value="dse_2">DSE 2</option>
+              <option value="dse_3">DSE 3</option>
+              <option value="dse_4">DSE 4</option>
+              <option value="dse_5star">DSE 5*</option>
+            </select>
+          </label>
+        </div>
+        <label class="field">Paper
+          <select id="dse-paper">
+            <option value="" selected>Any paper</option>
+            <option value="paper_1">Paper 1</option>
+            <option value="paper_2">Paper 2</option>
+          </select>
+        </label>
       </fieldset>
       <label class="field">Message
         <textarea id="chat-message" rows="4" placeholder="Ask a question"></textarea>
@@ -398,14 +463,18 @@
   </main>
   <script src="/static/chat_format.js"></script>
   <script>
-    const TEXT_FUNCTIONS = ["rag_qa", "translation", "cantonese_script"];
+    const TEXT_FUNCTIONS = ["rag_qa", "translation", "cantonese_script", "dse_math"];
     const GROUNDING_KEY = "rag-grounding";
     const TARGET_LANGUAGE_KEY = "translation-target-language";
+    const DSE_LANGUAGE_KEY = "dse-math-language";
+    const DSE_MODE_KEY = "dse-math-mode";
     const DEFAULT_TRANSLATION_MESSAGE = "Translate the uploaded documents.";
+    const DEFAULT_DSE_PRACTICE_MESSAGE = "Generate a HKDSE Mathematics practice question.";
     const RAG_ACCEPT = ".pdf,.docx,.doc,.txt,.md,.xlsx,.xls,.csv,.json";
     const TRANSLATION_ACCEPT = ".pdf,.docx,.doc,.pptx,.ppt,.xlsx,.xls,.txt,.md";
     const RAG_HINT = "Accepted: .pdf, .docx, .doc, .txt, .md, .xlsx, .xls, .csv, .json. Maximum 10 MB. .doc and .xls are stored, but text extraction needs a converted copy. Chat for RAG uses the extracted text as context.";
     const TRANSLATION_HINT = "Accepted: .pdf, .docx, .doc, .pptx, .ppt, .xlsx, .xls, .txt, .md. Maximum 10 MB. .ppt, .doc, and .xls are stored, but text extraction needs a converted copy. Chat translates these documents into the target language.";
+    const DSE_HINT = "Accepted: .pdf, .docx, .doc, .txt, .md, .xlsx, .xls, .csv, .json. Maximum 10 MB. Isolated from RAG and translation. Chat for DSE Math uses these syllabus and notes extracts.";
     const state = { catalog: null, saved: null, functionId: "rag_qa", files: [], refs: [] };
     const MAX_REFS = 5;
 
@@ -467,8 +536,66 @@
       if (select) select.value = loadStoredTargetLanguage();
     }
 
+    function loadStoredDseLanguage() {
+      try {
+        const value = localStorage.getItem(DSE_LANGUAGE_KEY);
+        if (value === "en" || value === "zh_cn" || value === "zh_hk") return value;
+      } catch (error) {}
+      return "en";
+    }
+
+    function persistDseLanguage(value) {
+      try {
+        localStorage.setItem(DSE_LANGUAGE_KEY, value);
+      } catch (error) {}
+    }
+
+    function selectedDseLanguage() {
+      const select = document.getElementById("dse-language");
+      const value = select ? select.value : "en";
+      return value === "zh_cn" || value === "zh_hk" ? value : "en";
+    }
+
+    function applyStoredDseLanguage() {
+      const select = document.getElementById("dse-language");
+      if (select) select.value = loadStoredDseLanguage();
+    }
+
+    function loadStoredDseMode() {
+      try {
+        const value = localStorage.getItem(DSE_MODE_KEY);
+        if (value === "practice" || value === "explain") return value;
+      } catch (error) {}
+      return "practice";
+    }
+
+    function persistDseMode(value) {
+      try {
+        localStorage.setItem(DSE_MODE_KEY, value);
+      } catch (error) {}
+    }
+
+    function selectedDseMode() {
+      const checked = document.querySelector('#dse-mode-control input[name="dse-mode"]:checked');
+      return checked && checked.value === "explain" ? "explain" : "practice";
+    }
+
+    function applyStoredDseMode() {
+      const value = loadStoredDseMode();
+      document.querySelectorAll('#dse-mode-control input[name="dse-mode"]').forEach((input) => {
+        input.checked = input.value === value;
+      });
+    }
+
+    function selectedDseSelect(id) {
+      const select = document.getElementById(id);
+      return select ? String(select.value || "").trim() : "";
+    }
+
     function filesEndpoint() {
-      return state.functionId === "translation" ? "/api/translation/files" : "/api/rag/files";
+      if (state.functionId === "translation") return "/api/translation/files";
+      if (state.functionId === "dse_math") return "/api/dse/files";
+      return "/api/rag/files";
     }
 
     function groundingLabel(value) {
@@ -546,20 +673,35 @@
       }
       const text = isTextFunction(functionId);
       const isImage = functionId === "image_gen";
-      const showUpload = functionId === "rag_qa" || functionId === "translation";
+      const showUpload = functionId === "rag_qa" || functionId === "translation" || functionId === "dse_math";
+      const showGrounding = functionId === "rag_qa" || functionId === "dse_math";
       document.getElementById("rag-upload").hidden = !showUpload;
-      document.getElementById("grounding-control").hidden = functionId !== "rag_qa";
+      document.getElementById("grounding-control").hidden = !showGrounding;
       document.getElementById("translation-languages").hidden = functionId !== "translation";
+      document.getElementById("dse-controls").hidden = functionId !== "dse_math";
       document.getElementById("chat-panel").hidden = !text;
       document.getElementById("image-panel").hidden = !isImage;
       document.getElementById("media-note").hidden = text || isImage;
       document.getElementById("chat-send").textContent = functionId === "translation" ? "Translate" : "Send";
+      const groundingTitle = document.getElementById("grounding-title");
+      if (functionId === "dse_math") {
+        groundingTitle.textContent = "How answers are grounded";
+      } else {
+        groundingTitle.textContent = "How RAG answers are grounded";
+      }
       const messageBox = document.getElementById("chat-message");
       if (functionId === "translation") {
         messageBox.placeholder = "Text to translate (optional if you uploaded documents)";
         document.getElementById("upload-title").textContent = "Translation documents";
         document.getElementById("upload-hint").textContent = TRANSLATION_HINT;
         document.getElementById("upload-file").accept = TRANSLATION_ACCEPT;
+      } else if (functionId === "dse_math") {
+        messageBox.placeholder = selectedDseMode() === "practice"
+          ? "Paste a question to grade, or ask to generate one"
+          : "Ask about a concept or uploaded syllabus notes";
+        document.getElementById("upload-title").textContent = "Syllabus and notes";
+        document.getElementById("upload-hint").textContent = DSE_HINT;
+        document.getElementById("upload-file").accept = RAG_ACCEPT;
       } else {
         messageBox.placeholder = "Ask a question";
         document.getElementById("upload-title").textContent = "Document upload";
@@ -824,7 +966,7 @@
       who.className = "chat-role";
       who.textContent = role === "user" ? "You" : "Assistant";
       article.appendChild(who);
-      if (role === "assistant" && grounding && state.functionId === "rag_qa") {
+      if (role === "assistant" && grounding && (state.functionId === "rag_qa" || state.functionId === "dse_math")) {
         const mode = document.createElement("div");
         mode.className = "chat-grounding";
         mode.textContent = groundingLabel(grounding);
@@ -850,6 +992,21 @@
       persistTargetLanguage(selectedTargetLanguage());
     });
 
+    document.getElementById("dse-language").addEventListener("change", () => {
+      persistDseLanguage(selectedDseLanguage());
+    });
+
+    document.querySelectorAll('#dse-mode-control input[name="dse-mode"]').forEach((input) => {
+      input.addEventListener("change", () => {
+        persistDseMode(selectedDseMode());
+        if (state.functionId === "dse_math") {
+          document.getElementById("chat-message").placeholder = selectedDseMode() === "practice"
+            ? "Paste a question to grade, or ask to generate one"
+            : "Ask about a concept or uploaded syllabus notes";
+        }
+      });
+    });
+
     document.getElementById("chat-send").addEventListener("click", async () => {
       const button = document.getElementById("chat-send");
       const status = document.getElementById("chat-state");
@@ -857,6 +1014,8 @@
       if (!message) {
         if (state.functionId === "translation" && state.files.length) {
           message = DEFAULT_TRANSLATION_MESSAGE;
+        } else if (state.functionId === "dse_math" && selectedDseMode() === "practice") {
+          message = DEFAULT_DSE_PRACTICE_MESSAGE;
         } else {
           status.className = "error";
           status.textContent = state.functionId === "translation"
@@ -878,6 +1037,22 @@
         function: state.functionId,
       };
       if (state.functionId === "rag_qa") body.grounding = selectedGrounding();
+      if (state.functionId === "dse_math") {
+        body.grounding = selectedGrounding();
+        body.target_language = selectedDseLanguage();
+        body.mode = selectedDseMode();
+        const topic = selectedDseSelect("dse-topic");
+        const difficulty = selectedDseSelect("dse-difficulty");
+        const paper = selectedDseSelect("dse-paper");
+        const module = selectedDseSelect("dse-module");
+        if (topic) body.topic = topic;
+        if (difficulty) body.difficulty = difficulty;
+        if (paper) body.paper = paper;
+        if (module) body.module = module;
+        persistDseLanguage(body.target_language);
+        persistDseMode(body.mode);
+        persistGrounding(selectedGrounding());
+      }
       if (state.functionId === "translation") {
         body.target_language = selectedTargetLanguage();
         body.source_language = selectedSourceLanguage();
@@ -1449,6 +1624,8 @@
     loadModels().then(() => {
       applyStoredGrounding();
       applyStoredTargetLanguage();
+      applyStoredDseLanguage();
+      applyStoredDseMode();
       applyImagePreset();
       updateBeatsVisibility();
       showFunction("rag_qa");

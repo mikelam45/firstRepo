@@ -25,6 +25,7 @@ def test_home_and_setup_are_distinct_html_pages(tmp_path, monkeypatch):
     assert "OpenRouter connection" in setup.text
     assert 'id="openrouter-save"' in setup.text
     assert 'data-options="rag_qa"' in setup.text
+    assert 'data-options="dse_math"' in setup.text
     assert "Save selection" in setup.text
     assert "Hong Kong" in setup.text
     assert 'id="rag-upload"' not in setup.text
@@ -86,6 +87,10 @@ def test_home_and_setup_are_distinct_html_pages(tmp_path, monkeypatch):
     assert "Simplified Chinese (简体)" in home.text
     assert "Traditional Chinese (繁體)" in home.text
     assert "/api/translation/files" in home.text
+    assert "/api/dse/files" in home.text
+    assert "DSE Math assistant" in home.text
+    assert 'data-function="dse_math"' in home.text
+    assert 'id="dse-controls"' in home.text
     assert "Document upload" in home.text
     assert "Chat" in home.text
     assert "OpenRouter connection" not in home.text
