@@ -16,6 +16,7 @@ import httpx
 
 from .catalog import FUNCTION_LABELS, PRICES_RECORDED_ON, TEXT_FUNCTIONS, get_model
 from .openrouter_key import MAC_KEY_PATH, load_openrouter_api_key
+from .rag import ALLOWED_GROUNDING, GROUNDING_MIXED
 
 OPENROUTER_CHAT_URL = "https://openrouter.ai/api/v1/chat/completions"
 OPENROUTER_CHAT_TIMEOUT_SECONDS = 20.0
@@ -54,6 +55,15 @@ def resolve_chat_function(function_id: str | None) -> str:
             f"Unknown function: {chosen}. Allowed chat functions: "
             "rag_qa, translation, cantonese_script.",
         )
+    return chosen
+
+
+def resolve_grounding(value: str | None) -> str:
+    if value is None:
+        return GROUNDING_MIXED
+    chosen = value.strip() if isinstance(value, str) else ""
+    if chosen not in ALLOWED_GROUNDING:
+        raise ChatError(400, "grounding must be 'strict' or 'mixed'.")
     return chosen
 
 

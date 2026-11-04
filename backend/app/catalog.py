@@ -52,18 +52,19 @@ FUNCTION_LABELS: dict[str, str] = dict(FUNCTIONS)
 
 TEXT_FUNCTIONS = ("rag_qa", "translation", "cantonese_script")
 
-# Hong Kong and some other regions often reject Google Gemini text ids.
+# Hong Kong: Google Gemini text/image ids 403 with "not available in your region".
+# They stay in the catalog for probes and leftover-file coercion, but public
+# lists omit them. Do not leave them selectable with a warning.
 RECOMMENDED_HK_TEXT_MODEL = "deepseek/deepseek-chat"
-REGION_NOTE = (
-    "Often blocked in Hong Kong / some regions. If chat returns 403, pick another model."
-)
+RECOMMENDED_HK_IMAGE_MODEL = "black-forest-labs/flux.2-pro"
+RECOMMENDED_HK_VIDEO_MODEL = "minimax/hailuo-2.3"
 
 DEFAULT_SELECTION: dict[str, str] = {
     "rag_qa": RECOMMENDED_HK_TEXT_MODEL,
     "translation": RECOMMENDED_HK_TEXT_MODEL,
     "cantonese_script": RECOMMENDED_HK_TEXT_MODEL,
-    "image_gen": "google/gemini-3.1-flash-image",
-    "video_gen": "minimax/hailuo-2.3",
+    "image_gen": RECOMMENDED_HK_IMAGE_MODEL,
+    "video_gen": RECOMMENDED_HK_VIDEO_MODEL,
 }
 
 
@@ -94,7 +95,7 @@ MODELS: tuple[dict[str, object], ...] = (
         # models API: prompt 0.0000003, completion 0.0000025 USD per token.
         "good_for": "Fast document reading and grounded answers.",
         "quality_cost": "Balanced",
-        "region_note": REGION_NOTE,
+        "available_in_hong_kong": False,
         "functions": TEXT_FUNCTIONS,
         "compare_amount": "2.50",
         "compare_unit": "USD per 1M tokens",
@@ -112,6 +113,7 @@ MODELS: tuple[dict[str, object], ...] = (
         # (the model page rounds the output rate to $1.029 per 1M).
         "good_for": "Chinese and Cantonese drafting at the lowest text rate here.",
         "quality_cost": "Lower cost",
+        "available_in_hong_kong": True,
         "functions": TEXT_FUNCTIONS,
         "compare_amount": "1.029",
         "compare_unit": "USD per 1M tokens",
@@ -128,6 +130,7 @@ MODELS: tuple[dict[str, object], ...] = (
         # models API: prompt 0.0000025, completion 0.00001 USD per token.
         "good_for": "General writing and analysis when you want a familiar OpenAI model.",
         "quality_cost": "Higher quality",
+        "available_in_hong_kong": True,
         "functions": TEXT_FUNCTIONS,
         "compare_amount": "10",
         "compare_unit": "USD per 1M tokens",
@@ -145,6 +148,7 @@ MODELS: tuple[dict[str, object], ...] = (
         # Live Sonnet id on 3 Nov 2026. Not claude-3.5-sonnet.
         "good_for": "Careful long-form writing and document work.",
         "quality_cost": "Higher quality",
+        "available_in_hong_kong": True,
         "functions": TEXT_FUNCTIONS,
         "compare_amount": "10",
         "compare_unit": "USD per 1M tokens",
@@ -163,6 +167,7 @@ MODELS: tuple[dict[str, object], ...] = (
         # unit token, cost_usd 0.00006. One Vertex US endpoint lists 0.000066.
         "good_for": "Fast storyboard frames and image edits.",
         "quality_cost": "Balanced",
+        "available_in_hong_kong": False,
         "functions": ("image_gen",),
         "compare_amount": "60",
         "compare_unit": "USD per 1M image-output tokens",
@@ -185,6 +190,7 @@ MODELS: tuple[dict[str, object], ...] = (
         # Endpoints API confirms output_image at 0.03 USD per megapixel.
         "good_for": "Production stills with tight prompt following.",
         "quality_cost": "Higher quality",
+        "available_in_hong_kong": True,
         "functions": ("image_gen",),
         "compare_amount": "0.03",
         "compare_unit": "USD per megapixel",
@@ -217,6 +223,7 @@ MODELS: tuple[dict[str, object], ...] = (
         # https://openrouter.ai/minimax/hailuo-2.3 — $0.0817/second.
         "good_for": "Short 1080p clips with realistic motion.",
         "quality_cost": "Lower cost",
+        "available_in_hong_kong": True,
         "functions": ("video_gen",),
         "compare_amount": "0.0817",
         "compare_unit": "USD per second of video",
@@ -233,6 +240,7 @@ MODELS: tuple[dict[str, object], ...] = (
         # for reference images after the first five, which are free.
         "good_for": "Longer clips with native audio and tighter edits.",
         "quality_cost": "Higher quality",
+        "available_in_hong_kong": True,
         "functions": ("video_gen",),
         "compare_amount": "0.13",
         "compare_unit": "USD per second of video",
@@ -255,6 +263,7 @@ MODELS: tuple[dict[str, object], ...] = (
         # https://openrouter.ai/kwaivgi/kling-v3.0-std
         "good_for": "Clips of 3 to 15 seconds, with first and last frame control.",
         "quality_cost": "Balanced",
+        "available_in_hong_kong": True,
         "functions": ("video_gen",),
         "compare_amount": "0.084",
         "compare_unit": "USD per second of video",
@@ -282,16 +291,86 @@ def get_model(model_id: str) -> dict[str, object] | None:
     return _BY_ID.get(model_id)
 
 
-def models_for(function_id: str) -> list[dict[str, object]]:
-    return [
-        model
-        for model in MODELS
-        if function_id in model["functions"]  # type: ignore[operator]
-    ]
+def catalog_available_in_hong_kong(model: dict[str, object]) -> bool:
+    return bool(model.get("available_in_hong_kong", True))
 
 
-def relative_note(function_id: str, model_id: str) -> str:
-    options = models_for(function_id)
+def is_available_in_hong_kong(
+    model_id: str,
+    extra_hidden: frozenset[str] | set[str] | None = None,
+) -> bool:
+    model = _BY_ID.get(model_id)
+    if model is None:
+        return False
+    if extra_hidden and model_id in extra_hidden:
+        return False
+    return catalog_available_in_hong_kong(model)
+
+
+def hidden_catalog_ids() -> frozenset[str]:
+    return frozenset(
+        str(model["id"]) for model in MODELS if not catalog_available_in_hong_kong(model)
+    )
+
+
+def models_for(
+    function_id: str,
+    *,
+    extra_hidden: frozenset[str] | set[str] | None = None,
+    include_unavailable: bool = False,
+) -> list[dict[str, object]]:
+    hidden = extra_hidden or frozenset()
+    found: list[dict[str, object]] = []
+    for model in MODELS:
+        if function_id not in model["functions"]:  # type: ignore[operator]
+            continue
+        model_id = str(model["id"])
+        if not include_unavailable and (
+            not catalog_available_in_hong_kong(model) or model_id in hidden
+        ):
+            continue
+        found.append(model)
+    return found
+
+
+def first_available_id(
+    function_id: str,
+    extra_hidden: frozenset[str] | set[str] | None = None,
+) -> str:
+    options = models_for(function_id, extra_hidden=extra_hidden)
+    if not options:
+        raise RuntimeError(f"No Hong Kong-available model for {function_id}")
+    return str(options[0]["id"])
+
+
+def coerce_selection(
+    selection: dict[str, str],
+    extra_hidden: frozenset[str] | set[str] | None = None,
+) -> dict[str, str]:
+    """Replace any hidden model with the first HK-available option for that function."""
+    coerced: dict[str, str] = {}
+    for function_id in FUNCTION_IDS:
+        model_id = selection.get(function_id, DEFAULT_SELECTION[function_id])
+        model = get_model(model_id)
+        allowed = models_for(function_id, extra_hidden=extra_hidden)
+        allowed_ids = {str(item["id"]) for item in allowed}
+        if (
+            model is None
+            or function_id not in model["functions"]  # type: ignore[operator]
+            or model_id not in allowed_ids
+        ):
+            coerced[function_id] = first_available_id(function_id, extra_hidden)
+        else:
+            coerced[function_id] = model_id
+    return coerced
+
+
+def relative_note(
+    function_id: str,
+    model_id: str,
+    extra_hidden: frozenset[str] | set[str] | None = None,
+) -> str:
+    options = models_for(function_id, extra_hidden=extra_hidden)
     units = {str(model["compare_unit"]) for model in options}
     if len(units) != 1:
         return (
@@ -310,25 +389,29 @@ def relative_note(function_id: str, model_id: str) -> str:
     return "Between the other listed output rates for this function."
 
 
-def _public_model(model: dict[str, object], function_id: str) -> dict[str, object]:
-    payload: dict[str, object] = {
+def _public_model(
+    model: dict[str, object],
+    function_id: str,
+    extra_hidden: frozenset[str] | set[str] | None = None,
+) -> dict[str, object]:
+    return {
         "id": model["id"],
         "provider": model["provider"],
         "name": model["name"],
         "good_for": model["good_for"],
         "quality_cost": model["quality_cost"],
         "prices": list(model["prices"]),  # type: ignore[arg-type]
-        "relative_note": relative_note(function_id, str(model["id"])),
+        "relative_note": relative_note(function_id, str(model["id"]), extra_hidden),
     }
-    region_note = model.get("region_note")
-    if isinstance(region_note, str) and region_note:
-        payload["region_note"] = region_note
-    return payload
 
 
-def _summary_row(function_id: str, model_id: str) -> dict[str, object]:
+def _summary_row(
+    function_id: str,
+    model_id: str,
+    extra_hidden: frozenset[str] | set[str] | None = None,
+) -> dict[str, object]:
     model = _BY_ID[model_id]
-    row: dict[str, object] = {
+    return {
         "function_id": function_id,
         "label": FUNCTION_LABELS[function_id],
         "model_id": model_id,
@@ -337,15 +420,15 @@ def _summary_row(function_id: str, model_id: str) -> dict[str, object]:
         "good_for": model["good_for"],
         "quality_cost": model["quality_cost"],
         "prices": list(model["prices"]),  # type: ignore[arg-type]
-        "relative_note": relative_note(function_id, model_id),
+        "relative_note": relative_note(function_id, model_id, extra_hidden),
     }
-    region_note = model.get("region_note")
-    if isinstance(region_note, str) and region_note:
-        row["region_note"] = region_note
-    return row
 
 
-def public_state(selection: dict[str, str]) -> dict[str, object]:
+def public_state(
+    selection: dict[str, str],
+    extra_hidden: frozenset[str] | set[str] | None = None,
+) -> dict[str, object]:
+    selection = coerce_selection(selection, extra_hidden)
     functions = []
     for function_id, label in FUNCTIONS:
         functions.append(
@@ -353,7 +436,10 @@ def public_state(selection: dict[str, str]) -> dict[str, object]:
                 "id": function_id,
                 "label": label,
                 "selected_model_id": selection[function_id],
-                "options": [_public_model(model, function_id) for model in models_for(function_id)],
+                "options": [
+                    _public_model(model, function_id, extra_hidden)
+                    for model in models_for(function_id, extra_hidden=extra_hidden)
+                ],
             }
         )
     return {
@@ -364,6 +450,7 @@ def public_state(selection: dict[str, str]) -> dict[str, object]:
         "functions": functions,
         "selection": {function_id: selection[function_id] for function_id in FUNCTION_IDS},
         "summary": [
-            _summary_row(function_id, selection[function_id]) for function_id in FUNCTION_IDS
+            _summary_row(function_id, selection[function_id], extra_hidden)
+            for function_id in FUNCTION_IDS
         ],
     }

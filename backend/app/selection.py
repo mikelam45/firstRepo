@@ -5,39 +5,46 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from .catalog import DEFAULT_SELECTION, FUNCTION_IDS, get_model
+from .catalog import (
+    DEFAULT_SELECTION,
+    FUNCTION_IDS,
+    coerce_selection,
+    get_model,
+    is_available_in_hong_kong,
+)
 
 
 def selection_path(data_dir: Path) -> Path:
     return data_dir / "model-selection.json"
 
 
-def load_selection(data_dir: Path) -> dict[str, str]:
-    """Return saved choices, or the current defaults when no override file exists.
+def load_selection(
+    data_dir: Path,
+    extra_hidden: frozenset[str] | set[str] | None = None,
+) -> dict[str, str]:
+    """Return saved choices, coerced so hidden models never reach the UI.
 
-    A missing file uses DEFAULT_SELECTION (DeepSeek for text). An existing file
-    is left on disk, including a leftover Gemini choice. This does not rewrite
-    a user's saved non-Gemini selection.
+    A missing file uses DEFAULT_SELECTION (Hong Kong-available ids only).
+    A leftover Gemini (or any other hidden) choice is replaced with the first
+    HK-available option for that function.
     """
     selection = dict(DEFAULT_SELECTION)
     path = selection_path(data_dir)
-    if not path.is_file():
-        return selection
-    try:
-        raw = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return selection
-    stored = raw.get("selection") if isinstance(raw, dict) else None
-    if not isinstance(stored, dict):
-        return selection
-    for function_id in FUNCTION_IDS:
-        model_id = stored.get(function_id)
-        if not isinstance(model_id, str):
-            continue
-        model = get_model(model_id)
-        if model is not None and function_id in model["functions"]:  # type: ignore[operator]
-            selection[function_id] = model_id
-    return selection
+    if path.is_file():
+        try:
+            raw = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            raw = None
+        stored = raw.get("selection") if isinstance(raw, dict) else None
+        if isinstance(stored, dict):
+            for function_id in FUNCTION_IDS:
+                model_id = stored.get(function_id)
+                if not isinstance(model_id, str):
+                    continue
+                model = get_model(model_id)
+                if model is not None and function_id in model["functions"]:  # type: ignore[operator]
+                    selection[function_id] = model_id
+    return coerce_selection(selection, extra_hidden)
 
 
 def save_selection(data_dir: Path, selection: dict[str, str]) -> None:
@@ -51,7 +58,10 @@ def save_selection(data_dir: Path, selection: dict[str, str]) -> None:
     temporary.replace(path)
 
 
-def parse_selection(body: object) -> dict[str, str]:
+def parse_selection(
+    body: object,
+    extra_hidden: frozenset[str] | set[str] | None = None,
+) -> dict[str, str]:
     """Return the five choices or raise ValueError with a client-facing message."""
     if not isinstance(body, dict):
         raise ValueError("Body must be a JSON object with the five function keys.")
@@ -72,5 +82,7 @@ def parse_selection(body: object) -> dict[str, str]:
         allowed = model["functions"]
         if function_id not in allowed:  # type: ignore[operator]
             raise ValueError(f"{model_id} is not allowed for {function_id}.")
+        if not is_available_in_hong_kong(model_id, extra_hidden):
+            raise ValueError(f"{model_id} is not available in Hong Kong.")
         parsed[function_id] = model_id
     return parsed

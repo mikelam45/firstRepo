@@ -47,15 +47,31 @@ DOC_CONVERSION_NOTE = (
 XLS_CONVERSION_NOTE = (
     "This .xls file needs conversion to .xlsx before text can be extracted."
 )
+GROUNDING_STRICT = "strict"
+GROUNDING_MIXED = "mixed"
+ALLOWED_GROUNDING = frozenset({GROUNDING_STRICT, GROUNDING_MIXED})
+CITE_INSTRUCTION = (
+    "After claims that come from an extract, cite the file as [source: <filename>]."
+)
 NO_DOCUMENTS_SYSTEM = (
     "You have no uploaded documents. Tell the user you have no uploaded documents. "
     "Do not invent file contents."
 )
-GROUNDED_SYSTEM = (
-    "Rely on the uploaded document extracts when answering. "
-    "Do not invent file contents. If the extracts do not contain the answer, say so. "
-    "After claims that come from an extract, cite the file as [source: <filename>]."
+NO_DOCUMENTS_STRICT_REPLY = (
+    "There are no uploaded documents to ground on. "
+    "I cannot answer from document extracts."
 )
+STRICT_SYSTEM = (
+    "Rely ONLY on the uploaded document extracts. "
+    "If they are insufficient, say you cannot answer from the documents. "
+    "Do not use outside knowledge. " + CITE_INSTRUCTION
+)
+MIXED_SYSTEM = (
+    "Prefer the uploaded extracts. You may add general knowledge; "
+    "when you do, say it is not from the documents. "
+    "Do not invent file contents. " + CITE_INSTRUCTION
+)
+GROUNDED_SYSTEM = MIXED_SYSTEM
 
 
 class RagError(Exception):
@@ -383,8 +399,16 @@ def _source_record(extract: dict[str, str]) -> dict[str, str]:
     }
 
 
+def grounding_instructions(grounding: str) -> str:
+    if grounding == GROUNDING_STRICT:
+        return STRICT_SYSTEM
+    return MIXED_SYSTEM
+
+
 def build_rag_context(
-    data_dir: Path, message: str
+    data_dir: Path,
+    message: str,
+    grounding: str = GROUNDING_MIXED,
 ) -> tuple[list[dict[str, str]], list[dict[str, str]]]:
     """Return chat messages and the files actually stuffed into the prompt."""
     extracts = load_extracts(data_dir)
@@ -414,7 +438,7 @@ def build_rag_context(
         if remaining <= 0:
             break
 
-    system = GROUNDED_SYSTEM + "\n\nUploaded extracts:" + "".join(parts)
+    system = grounding_instructions(grounding) + "\n\nUploaded extracts:" + "".join(parts)
     return (
         [
             {"role": "system", "content": system},
@@ -424,6 +448,10 @@ def build_rag_context(
     )
 
 
-def build_rag_messages(data_dir: Path, message: str) -> list[dict[str, str]]:
-    messages, _sources = build_rag_context(data_dir, message)
+def build_rag_messages(
+    data_dir: Path,
+    message: str,
+    grounding: str = GROUNDING_MIXED,
+) -> list[dict[str, str]]:
+    messages, _sources = build_rag_context(data_dir, message, grounding)
     return messages

@@ -11,6 +11,7 @@ from app.chat import (
 )
 from app.main import app
 from app.openrouter_key import MAC_KEY_PATH
+from app.rag import NO_DOCUMENTS_STRICT_REPLY
 
 SECRET = "test-openrouter-key-not-a-secret"
 MOCK_REPLY = "mock grounded answer"
@@ -148,6 +149,8 @@ def test_rag_qa_uses_saved_model_and_returns_mock_text(tmp_path, monkeypatch):
     assert messages[0]["role"] == "system"
     assert "no uploaded documents" in messages[0]["content"]
     assert messages[-1] == {"role": "user", "content": "What is in the notes?"}
+    assert payload["grounding"] == "mixed"
+    assert payload["sources"] == []
 
 
 def test_translation_uses_that_function_model(tmp_path, monkeypatch):
@@ -351,3 +354,35 @@ def test_production_chat_requires_token(tmp_path, monkeypatch):
     assert accepted.json()["reply"] == MOCK_REPLY
     assert seen["calls"] == 1
     _assert_secret_absent(accepted.text)
+
+
+def test_strict_grounding_without_files_skips_openrouter(tmp_path, monkeypatch):
+    _install_key(tmp_path, monkeypatch)
+    seen = _mock_chat(monkeypatch)
+    client = _client(monkeypatch, tmp_path)
+    response = client.post(
+        "/api/chat",
+        json={"message": "What is in the notes?", "function": "rag_qa", "grounding": "strict"},
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["reply"] == NO_DOCUMENTS_STRICT_REPLY
+    assert payload["grounding"] == "strict"
+    assert payload["sources"] == []
+    assert payload["function"] == "rag_qa"
+    assert seen["calls"] == 0
+    _assert_secret_absent(response.text)
+
+
+def test_invalid_grounding_is_400(tmp_path, monkeypatch):
+    _install_key(tmp_path, monkeypatch)
+    seen = _mock_chat(monkeypatch)
+    client = _client(monkeypatch, tmp_path)
+    response = client.post(
+        "/api/chat",
+        json={"message": "hello", "function": "rag_qa", "grounding": "loose"},
+    )
+    assert response.status_code == 400
+    assert "grounding" in response.json()["detail"]
+    assert seen["calls"] == 0
+    _assert_secret_absent(response.text)

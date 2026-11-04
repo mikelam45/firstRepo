@@ -3,8 +3,16 @@ import json
 import pytest
 from fastapi.testclient import TestClient
 
-from app.catalog import DEFAULT_SELECTION, FUNCTION_IDS, REGION_NOTE, RECOMMENDED_HK_TEXT_MODEL
+from app.catalog import (
+    DEFAULT_SELECTION,
+    FUNCTION_IDS,
+    RECOMMENDED_HK_IMAGE_MODEL,
+    RECOMMENDED_HK_TEXT_MODEL,
+    hidden_catalog_ids,
+    models_for,
+)
 from app.main import PAGE, SETUP_PAGE, app
+from app.region import reset_probe_cache
 
 LABELS = (
     "RAG and document analysis",
@@ -31,6 +39,26 @@ def _prices(payload):
     return found
 
 
+def _public_option_ids(payload):
+    return {
+        option["id"]
+        for item in payload["functions"]
+        for option in item["options"]
+    }
+
+
+def _assert_gemini_absent(payload):
+    option_ids = _public_option_ids(payload)
+    assert "google/gemini-2.5-flash" not in option_ids
+    assert "google/gemini-3.1-flash-image" not in option_ids
+    assert "google/gemini-2.5-flash" not in payload["selection"].values()
+    assert "google/gemini-3.1-flash-image" not in payload["selection"].values()
+    assert "gemini" not in json.dumps(payload["functions"]).lower()
+    for item in payload["functions"]:
+        assert item["selected_model_id"] != "google/gemini-2.5-flash"
+        assert all("region_note" not in option for option in item["options"])
+
+
 def test_packaged_index_html_exists():
     assert PAGE.is_file()
     assert PAGE.name == "index.html"
@@ -40,9 +68,9 @@ def test_packaged_index_html_exists():
     assert "Document upload" in home
     assert "OpenRouter connection" in setup
     assert "LLM setup" in setup
-    assert "recommended Hong Kong default" in setup
-    assert "deepseek/deepseek-chat" in setup
-    assert "region_note" in setup
+    assert "Only models available in Hong Kong are listed" in setup
+    assert "google/gemini-2.5-flash" not in setup
+    assert "region_note" not in setup
 
 
 def test_page_lists_every_function(client):
@@ -88,7 +116,9 @@ def test_get_returns_defaults_and_a_priced_unit(client):
     assert payload["selection"]["rag_qa"] == "deepseek/deepseek-chat"
     assert payload["selection"]["translation"] == "deepseek/deepseek-chat"
     assert payload["selection"]["cantonese_script"] == "deepseek/deepseek-chat"
+    assert payload["selection"]["image_gen"] == RECOMMENDED_HK_IMAGE_MODEL
     assert payload["prices_recorded_on"] == "2026-11-03"
+    _assert_gemini_absent(payload)
 
     prices = _prices(payload)
     assert prices
@@ -163,25 +193,89 @@ def test_production_put_requires_token_and_get_stays_open(tmp_path, monkeypatch)
     assert client.get("/api/models").json()["selection"]["translation"] == "openai/gpt-4o"
 
 
-def test_gemini_option_includes_region_note(client):
+def test_gemini_text_is_omitted_from_public_rag_options(client):
     payload = client.get("/api/models").json()
     rag = next(item for item in payload["functions"] if item["id"] == "rag_qa")
-    gemini = next(option for option in rag["options"] if option["id"] == "google/gemini-2.5-flash")
-    deepseek = next(option for option in rag["options"] if option["id"] == "deepseek/deepseek-chat")
-    assert gemini["region_note"] == REGION_NOTE
-    assert "Hong Kong" in gemini["region_note"]
-    assert "region_note" not in deepseek
+    ids = {option["id"] for option in rag["options"]}
+    assert "google/gemini-2.5-flash" not in ids
+    assert "deepseek/deepseek-chat" in ids
+    assert all("region_note" not in option for option in rag["options"])
 
 
-def test_saved_gemini_selection_is_left_on_disk(client, tmp_path):
+def test_put_rejects_hidden_hong_kong_model(client, tmp_path):
     leftover = dict(DEFAULT_SELECTION)
     leftover["rag_qa"] = "google/gemini-2.5-flash"
     leftover["translation"] = "openai/gpt-4o"
-    saved = client.put("/api/models", json=leftover)
-    assert saved.status_code == 200
-    again = client.get("/api/models")
-    assert again.json()["selection"]["rag_qa"] == "google/gemini-2.5-flash"
-    assert again.json()["selection"]["translation"] == "openai/gpt-4o"
-    on_disk = json.loads((tmp_path / "model-selection.json").read_text(encoding="utf-8"))
-    assert on_disk["selection"]["rag_qa"] == "google/gemini-2.5-flash"
-    assert on_disk["selection"]["translation"] == "openai/gpt-4o"
+    rejected = client.put("/api/models", json=leftover)
+    assert rejected.status_code == 400
+    assert "not available in Hong Kong" in rejected.json()["detail"]
+    assert not (tmp_path / "model-selection.json").exists()
+    assert client.get("/api/models").json()["selection"] == DEFAULT_SELECTION
+
+
+def test_gemini_is_not_in_public_options(client):
+    payload = client.get("/api/models").json()
+    _assert_gemini_absent(payload)
+    rag = next(item for item in payload["functions"] if item["id"] == "rag_qa")
+    assert [option["id"] for option in rag["options"]] == [
+        str(model["id"]) for model in models_for("rag_qa")
+    ]
+    assert "google/gemini-2.5-flash" in hidden_catalog_ids()
+    assert DEFAULT_SELECTION["rag_qa"] == "deepseek/deepseek-chat"
+    assert DEFAULT_SELECTION["image_gen"] == "black-forest-labs/flux.2-pro"
+
+
+def test_defaults_are_hong_kong_safe(client):
+    for model_id in DEFAULT_SELECTION.values():
+        assert "gemini" not in model_id
+    payload = client.get("/api/models").json()
+    assert payload["selection"] == DEFAULT_SELECTION
+    _assert_gemini_absent(payload)
+
+
+def test_saved_hidden_model_is_coerced(client, tmp_path):
+    leftover = {
+        "rag_qa": "google/gemini-2.5-flash",
+        "translation": "openai/gpt-4o",
+        "cantonese_script": "google/gemini-2.5-flash",
+        "image_gen": "google/gemini-3.1-flash-image",
+        "video_gen": "minimax/hailuo-2.3",
+    }
+    (tmp_path / "model-selection.json").write_text(
+        json.dumps({"selection": leftover}, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    payload = client.get("/api/models").json()
+    assert payload["selection"]["rag_qa"] == "deepseek/deepseek-chat"
+    assert payload["selection"]["translation"] == "openai/gpt-4o"
+    assert payload["selection"]["cantonese_script"] == "deepseek/deepseek-chat"
+    assert payload["selection"]["image_gen"] == "black-forest-labs/flux.2-pro"
+    _assert_gemini_absent(payload)
+
+
+def test_probe_hides_region_403_without_printing_key(tmp_path, monkeypatch):
+    secret = "test-openrouter-key-not-a-secret"
+    env_file = tmp_path / "openrouter.env"
+    env_file.write_text(f"OPENROUTER_API_KEY={secret}\n", encoding="utf-8")
+    monkeypatch.setenv("OPENROUTER_ENV_FILE", str(env_file))
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    reset_probe_cache()
+
+    def fake_hidden(*, force: bool = False):
+        return frozenset({"openai/gpt-4o", "google/gemini-2.5-flash"})
+
+    monkeypatch.setattr("app.region.extra_hidden_ids", fake_hidden)
+    monkeypatch.setattr("app.main.extra_hidden_ids", fake_hidden)
+    monkeypatch.setenv("APP_ENV", "development")
+    monkeypatch.setenv("DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.delenv("PORTAL_API_TOKEN", raising=False)
+    client = TestClient(app)
+
+    payload = client.get("/api/models").json()
+    option_ids = _public_option_ids(payload)
+    assert "openai/gpt-4o" not in option_ids
+    assert "google/gemini-2.5-flash" not in option_ids
+    assert "deepseek/deepseek-chat" in option_ids
+    assert secret not in client.get("/api/models").text
+    assert secret[:18] not in json.dumps(payload)
+    _assert_gemini_absent(payload)

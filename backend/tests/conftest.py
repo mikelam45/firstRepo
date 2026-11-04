@@ -1,5 +1,7 @@
 import pytest
 
+from app.region import reset_probe_cache
+
 
 @pytest.fixture(autouse=True)
 def isolate_openrouter_key(tmp_path, monkeypatch):
@@ -14,3 +16,10 @@ def isolate_openrouter_key(tmp_path, monkeypatch):
         "app.openrouter_key.MAC_REPO_ROOT",
         tmp_path / "missing-mac-repo",
     )
+    reset_probe_cache()
+    monkeypatch.setattr(
+        "app.region.probe_catalog_ids",
+        lambda api_key: (frozenset(), frozenset()),
+    )
+    yield
+    reset_probe_cache()

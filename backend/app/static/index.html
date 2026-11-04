@@ -52,6 +52,19 @@
       <p class="meta">
         Uses the saved text model. Image and video functions are not sent as chat completions.
       </p>
+      <fieldset class="grounding" id="grounding-control" aria-labelledby="grounding-title">
+        <legend id="grounding-title">How RAG answers are grounded</legend>
+        <label class="option">
+          <input type="radio" name="grounding" id="grounding-mixed" value="mixed" checked>
+          <span class="option-title">Mix model + RAG</span>
+          <span class="detail">Use extracts when relevant. The model may add general knowledge.</span>
+        </label>
+        <label class="option">
+          <input type="radio" name="grounding" id="grounding-strict" value="strict">
+          <span class="option-title">Strict RAG</span>
+          <span class="detail">Answer only from uploaded document extracts.</span>
+        </label>
+      </fieldset>
       <label class="field">Message
         <textarea id="chat-message" rows="4" placeholder="Ask a question"></textarea>
       </label>
@@ -75,7 +88,38 @@
   </main>
   <script>
     const TEXT_FUNCTIONS = ["rag_qa", "translation", "cantonese_script"];
+    const GROUNDING_KEY = "rag-grounding";
     const state = { catalog: null, saved: null, functionId: "rag_qa", files: [] };
+
+    function loadStoredGrounding() {
+      try {
+        const value = localStorage.getItem(GROUNDING_KEY);
+        if (value === "strict" || value === "mixed") return value;
+      } catch (error) {}
+      return "mixed";
+    }
+
+    function persistGrounding(value) {
+      try {
+        localStorage.setItem(GROUNDING_KEY, value);
+      } catch (error) {}
+    }
+
+    function selectedGrounding() {
+      const checked = document.querySelector('#grounding-control input[name="grounding"]:checked');
+      return checked && checked.value === "strict" ? "strict" : "mixed";
+    }
+
+    function applyStoredGrounding() {
+      const value = loadStoredGrounding();
+      document.querySelectorAll('#grounding-control input[name="grounding"]').forEach((input) => {
+        input.checked = input.value === value;
+      });
+    }
+
+    function groundingLabel(value) {
+      return value === "strict" ? "Strict RAG" : "Mix model + RAG";
+    }
 
     function priceSummary(prices) {
       return (prices || []).map(function (price) {
@@ -135,6 +179,7 @@
       }
       const text = isTextFunction(functionId);
       document.getElementById("rag-upload").hidden = functionId !== "rag_qa";
+      document.getElementById("grounding-control").hidden = functionId !== "rag_qa";
       document.getElementById("chat-panel").hidden = !text;
       document.getElementById("media-note").hidden = text;
       renderChatModel();
@@ -226,6 +271,10 @@
       button.addEventListener("click", () => showFunction(button.getAttribute("data-function")));
     });
 
+    document.querySelectorAll('#grounding-control input[name="grounding"]').forEach((input) => {
+      input.addEventListener("change", () => persistGrounding(selectedGrounding()));
+    });
+
     document.getElementById("upload-form").addEventListener("submit", async (event) => {
       event.preventDefault();
       const status = document.getElementById("upload-state");
@@ -295,18 +344,27 @@
       article.appendChild(block);
     }
 
-    function appendChatMessage(role, text, sources) {
+    function appendChatMessage(role, text, sources, grounding) {
       const log = document.getElementById("chat-log");
       log.hidden = false;
       const article = document.createElement("article");
       article.className = "chat-message " + role;
+      if (role === "assistant" && grounding) {
+        article.dataset.grounding = grounding;
+      }
       const who = document.createElement("div");
       who.className = "chat-role";
       who.textContent = role === "user" ? "You" : "Assistant";
+      article.appendChild(who);
+      if (role === "assistant" && grounding) {
+        const mode = document.createElement("div");
+        mode.className = "chat-grounding";
+        mode.textContent = groundingLabel(grounding);
+        article.appendChild(mode);
+      }
       const body = document.createElement("pre");
       body.className = "chat-reply";
       body.textContent = text;
-      article.appendChild(who);
       article.appendChild(body);
       if (role === "assistant") appendSources(article, sources);
       log.appendChild(article);
@@ -336,6 +394,7 @@
           body: JSON.stringify({
             message,
             function: state.functionId,
+            grounding: state.functionId === "rag_qa" ? selectedGrounding() : undefined,
           }),
         });
         const payload = await response.json().catch(() => ({}));
@@ -355,8 +414,9 @@
         link.href = "/setup";
         link.textContent = "Change on LLM setup";
         line.appendChild(link);
+        persistGrounding(selectedGrounding());
         appendChatMessage("user", message);
-        appendChatMessage("assistant", payload.reply, payload.sources);
+        appendChatMessage("assistant", payload.reply, payload.sources, payload.grounding);
         status.className = "";
         status.textContent = "Reply from " + payload.model_id + ".";
       } catch (error) {
@@ -368,6 +428,7 @@
     });
 
     Promise.all([loadModels(), loadFiles()]).then(() => {
+      applyStoredGrounding();
       showFunction("rag_qa");
     }).catch(() => {
       document.getElementById("chat-state").className = "error";

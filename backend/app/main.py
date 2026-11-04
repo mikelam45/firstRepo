@@ -16,13 +16,16 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 from .catalog import public_state
-from .chat import ChatError, complete_chat, resolve_chat_function
+from .chat import ChatError, complete_chat, recorded_model, resolve_chat_function, resolve_grounding
 from .openrouter_key import (
     normalize_submitted_key,
     openrouter_status_fields,
     save_openrouter_api_key,
 )
+from .region import extra_hidden_ids, reset_probe_cache
 from .rag import (
+    GROUNDING_STRICT,
+    NO_DOCUMENTS_STRICT_REPLY,
     RagError,
     build_rag_context,
     delete_file,
@@ -66,6 +69,7 @@ class NoteIn(BaseModel):
 class ChatIn(BaseModel):
     message: str = Field(min_length=1, max_length=8000)
     function: str = "rag_qa"
+    grounding: str = "mixed"
 
 
 class OpenRouterKeyIn(BaseModel):
@@ -120,8 +124,9 @@ def portal_css() -> FileResponse:
 @app.get("/api/models")
 def get_models() -> dict[str, object]:
     settings = get_settings()
-    selection = load_selection(settings.data_dir)
-    payload = public_state(selection)
+    hidden = extra_hidden_ids()
+    selection = load_selection(settings.data_dir, extra_hidden=hidden)
+    payload = public_state(selection, extra_hidden=hidden)
     payload.update(openrouter_status_fields())
     return payload
 
@@ -133,12 +138,13 @@ def put_models(
 ) -> dict[str, object]:
     settings = get_settings()
     require_write_access(settings, authorization)
+    hidden = extra_hidden_ids()
     try:
-        selection = parse_selection(body)
+        selection = parse_selection(body, extra_hidden=hidden)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     save_selection(settings.data_dir, selection)
-    return public_state(selection)
+    return public_state(selection, extra_hidden=hidden)
 
 
 @app.post("/api/openrouter/key")
@@ -151,6 +157,7 @@ def post_openrouter_key(
     api_key = normalize_submitted_key(body.api_key)
     if not api_key:
         raise HTTPException(status_code=400, detail="api_key must not be empty.")
+    reset_probe_cache()
     return save_openrouter_api_key(api_key, settings.data_dir)
 
 
@@ -175,18 +182,29 @@ def post_chat(
         raise HTTPException(status_code=400, detail="message must not be empty.")
     try:
         function_id = resolve_chat_function(body.function)
-        selection = load_selection(settings.data_dir)
+        grounding = resolve_grounding(body.grounding)
+        hidden = extra_hidden_ids()
+        selection = load_selection(settings.data_dir, extra_hidden=hidden)
         model_id = selection[function_id]
         messages = None
         sources: list[dict[str, str]] | None = None
         if function_id == "rag_qa":
-            messages, sources = build_rag_context(settings.data_dir, message)
+            messages, sources = build_rag_context(
+                settings.data_dir, message, grounding
+            )
+            if grounding == GROUNDING_STRICT and not sources:
+                result = recorded_model(function_id, model_id)
+                result["reply"] = NO_DOCUMENTS_STRICT_REPLY
+                result["grounding"] = grounding
+                result["sources"] = []
+                return result
         result = complete_chat(
             message=message,
             function_id=function_id,
             model_id=model_id,
             messages=messages,
         )
+        result["grounding"] = grounding
         if sources is not None:
             result["sources"] = order_sources(sources, str(result.get("reply") or ""))
         return result

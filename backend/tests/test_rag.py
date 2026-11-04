@@ -89,6 +89,8 @@ def test_upload_list_and_rag_chat_includes_extracts(tmp_path, monkeypatch):
     assert "notes.csv" in outbound
     assert "Do not invent file contents" in outbound
     assert "[source: <filename>]" in outbound
+    assert "general knowledge" in outbound
+    assert chat.json()["grounding"] == "mixed"
 
     sources = chat.json()["sources"]
     assert {row["name"] for row in sources} == {"notes.csv", "memo.txt", "meta.json"}
@@ -272,4 +274,66 @@ def test_functions_page_renders_source_links(tmp_path, monkeypatch):
     assert "chat-sources" in home.text
     assert "source.href" in home.text
     assert "Sources" in home.text
+    assert 'id="grounding-control"' in home.text
+    assert 'id="grounding-strict"' in home.text
+    assert 'id="grounding-mixed"' in home.text
+    assert "rag-grounding" in home.text
+    assert "chat-grounding" in home.text
     assert PAGE.is_file()
+
+
+def test_strict_grounding_with_file_uses_only_extract_language(tmp_path, monkeypatch):
+    _install_key(tmp_path, monkeypatch)
+    seen = _mock_chat(monkeypatch)
+    client = _client(monkeypatch, tmp_path)
+    uploaded = client.post(
+        "/api/rag/files",
+        files={"file": ("memo.txt", b"ONLY_FROM_THIS_EXTRACT\n", "text/plain")},
+    )
+    assert uploaded.status_code == 201
+    file_id = uploaded.json()["id"]
+
+    chat = client.post(
+        "/api/chat",
+        json={"message": "What is in memo.txt?", "function": "rag_qa", "grounding": "strict"},
+    )
+    assert chat.status_code == 200
+    assert seen["calls"] == 1
+    system = seen["json"]["messages"][0]["content"]
+    assert "ONLY" in system
+    assert "uploaded document extracts" in system
+    assert "Do not use outside knowledge" in system
+    assert "ONLY_FROM_THIS_EXTRACT" in system
+    assert "[source: <filename>]" in system
+    payload = chat.json()
+    assert payload["grounding"] == "strict"
+    assert payload["sources"][0]["id"] == file_id
+    assert payload["sources"][0]["name"] == "memo.txt"
+    downloaded = client.get(payload["sources"][0]["href"])
+    assert downloaded.status_code == 200
+    assert downloaded.content == b"ONLY_FROM_THIS_EXTRACT\n"
+
+
+def test_mixed_grounding_with_file_allows_general_knowledge(tmp_path, monkeypatch):
+    _install_key(tmp_path, monkeypatch)
+    seen = _mock_chat(monkeypatch)
+    client = _client(monkeypatch, tmp_path)
+    uploaded = client.post(
+        "/api/rag/files",
+        files={"file": ("memo.txt", b"MIXED_EXTRACT_NOTE\n", "text/plain")},
+    )
+    assert uploaded.status_code == 201
+
+    chat = client.post(
+        "/api/chat",
+        json={"message": "What is in memo.txt?", "function": "rag_qa", "grounding": "mixed"},
+    )
+    assert chat.status_code == 200
+    assert seen["calls"] == 1
+    system = seen["json"]["messages"][0]["content"]
+    assert "general knowledge" in system
+    assert "Prefer the uploaded extracts" in system
+    assert "MIXED_EXTRACT_NOTE" in system
+    assert "ONLY" not in system.split("Uploaded extracts:")[0]
+    assert chat.json()["grounding"] == "mixed"
+    assert chat.json()["sources"][0]["name"] == "memo.txt"
