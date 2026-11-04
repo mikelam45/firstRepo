@@ -348,6 +348,21 @@ pre.chat-reply,
   border-radius: 8px;
   background: white;
 }
+.dse-create {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
+.dse-fail-choices {
+  margin: 10px 0 0;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--amber-bg);
+}
+.dse-fail-choices p {
+  margin: 0 0 8px;
+}
 .chat-download {
   display: inline-block;
   margin-top: 8px;

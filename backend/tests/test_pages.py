@@ -92,6 +92,11 @@ def test_home_and_setup_are_distinct_html_pages(tmp_path, monkeypatch):
     assert "DSE Math assistant" in home.text
     assert 'data-function="dse_math"' in home.text
     assert 'id="dse-controls"' in home.text
+    assert 'id="dse-mode-guided_no_answer"' in home.text
+    assert 'id="dse-mode-guided_with_answer"' in home.text
+    assert 'id="dse-mode-create_and_mark"' in home.text
+    assert 'value="S1"' in home.text
+    assert 'value="S6"' in home.text
     assert "Read question from photo" in home.text
     assert 'id="dse-ocr-file"' in home.text
     assert 'id="dse-ocr-read"' in home.text

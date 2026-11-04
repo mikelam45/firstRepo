@@ -11,7 +11,7 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
-from fastapi import Body, FastAPI, File, Header, HTTPException, UploadFile
+from fastapi import Body, FastAPI, File, Header, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
@@ -27,15 +27,34 @@ from .chat import (
     resolve_target_language,
 )
 from .dse import (
+    CREATE_QUESTION_USER_MESSAGE,
     DEFAULT_DSE_PRACTICE_MESSAGE,
+    GUIDED_MODES,
+    MODE_CREATE_AND_MARK,
+    MODE_GUIDED_NO_ANSWER,
+    MODE_GUIDED_WITH_ANSWER,
     MODE_PRACTICE,
+    NEXT_HINT_USER_MESSAGE,
     NO_DSE_DOCUMENTS_STRICT_REPLY,
+    SHOW_ANSWER_USER_MESSAGE,
     build_dse_context,
+    build_mark_context,
+    is_next_hint_message,
+    parse_generated_question,
+    parse_mark_verdict,
+    public_mark_payload,
+    public_question_payload,
+    record_guided_turn,
+    require_session,
     resolve_dse_difficulty,
-    resolve_dse_mode,
+    resolve_dse_level,
     resolve_dse_module,
     resolve_dse_paper,
     resolve_dse_topic,
+    resolve_request_mode,
+    scrub_hidden_fields,
+    store_created_question,
+    validate_level_topic,
 )
 from .ocr import OcrError, transcribe_question_photo
 from .image_refs import (
@@ -116,10 +135,14 @@ class ChatIn(BaseModel):
     target_language: str | None = None
     source_language: str | None = None
     mode: str | None = None
+    dse_mode: str | None = None
     topic: str | None = None
     difficulty: str | None = None
     paper: str | None = None
     module: str | None = None
+    level: str | None = None
+    session_id: str | None = None
+    attempt_text: str | None = None
 
 
 class DseAskIn(BaseModel):
@@ -127,10 +150,24 @@ class DseAskIn(BaseModel):
     grounding: str = "mixed"
     target_language: str | None = None
     mode: str | None = None
+    dse_mode: str | None = None
     topic: str | None = None
     difficulty: str | None = None
     paper: str | None = None
     module: str | None = None
+    level: str | None = None
+    session_id: str | None = None
+    attempt_text: str | None = None
+
+
+class DseQuestionIn(BaseModel):
+    level: str
+    topic: str | None = None
+    grounding: str = "mixed"
+    target_language: str | None = None
+    module: str | None = None
+    paper: str | None = None
+    difficulty: str | None = None
 
 
 class OpenRouterKeyIn(BaseModel):
@@ -314,13 +351,23 @@ def post_chat(
         grounding = resolve_grounding(body.grounding)
         target_language = resolve_target_language(function_id, body.target_language)
         source_language = resolve_source_language(function_id, body.source_language)
-        dse_mode = resolve_dse_mode(body.mode) if function_id == "dse_math" else None
+        dse_mode = (
+            resolve_request_mode(body.mode, body.dse_mode)
+            if function_id == "dse_math"
+            else None
+        )
         dse_topic = resolve_dse_topic(body.topic) if function_id == "dse_math" else None
         dse_difficulty = (
             resolve_dse_difficulty(body.difficulty) if function_id == "dse_math" else None
         )
         dse_paper = resolve_dse_paper(body.paper) if function_id == "dse_math" else None
         dse_module = resolve_dse_module(body.module) if function_id == "dse_math" else None
+        dse_level = resolve_dse_level(body.level) if function_id == "dse_math" else None
+        dse_session = None
+        if function_id == "dse_math":
+            validate_level_topic(dse_level, dse_topic)
+            if body.session_id:
+                dse_session = require_session(settings.data_dir, body.session_id)
         hidden = extra_hidden_ids()
         selection = load_selection(settings.data_dir, extra_hidden=hidden)
         model_id = selection[function_id]
@@ -339,23 +386,47 @@ def post_chat(
                 result["sources"] = []
                 return result
         elif function_id == "dse_math":
+            stored_question = str((dse_session or {}).get("question") or "")
             if not message:
                 if dse_mode == MODE_PRACTICE:
                     message = DEFAULT_DSE_PRACTICE_MESSAGE
+                elif dse_mode == MODE_CREATE_AND_MARK:
+                    message = CREATE_QUESTION_USER_MESSAGE
+                elif dse_mode == MODE_GUIDED_NO_ANSWER and dse_session is not None:
+                    message = NEXT_HINT_USER_MESSAGE
+                elif dse_mode == MODE_GUIDED_WITH_ANSWER and stored_question:
+                    message = SHOW_ANSWER_USER_MESSAGE
                 else:
                     raise HTTPException(
                         status_code=400, detail="message must not be empty."
                     )
+            elif (
+                dse_mode == MODE_GUIDED_NO_ANSWER
+                and dse_session is not None
+                and is_next_hint_message(message)
+            ):
+                message = NEXT_HINT_USER_MESSAGE
+            history = None
+            reveal_scheme = None
+            prompt_question = stored_question or None
+            if dse_session is not None:
+                history = list(dse_session.get("messages") or [])
+                if dse_mode == MODE_GUIDED_WITH_ANSWER:
+                    reveal_scheme = str(dse_session.get("mark_scheme") or "") or None
             messages, sources = build_dse_context(
                 settings.data_dir,
                 message,
                 grounding=grounding,
                 target_language=target_language or "en",
                 mode=dse_mode or MODE_PRACTICE,
-                topic=dse_topic,
+                topic=dse_topic or (dse_session or {}).get("topic"),
                 difficulty=dse_difficulty,
                 paper=dse_paper,
-                module=dse_module,
+                module=dse_module or (dse_session or {}).get("module"),
+                level=dse_level or (dse_session or {}).get("level"),
+                history=history,
+                question=prompt_question,
+                reveal_mark_scheme=reveal_scheme,
             )
             if grounding == GROUNDING_STRICT and not sources:
                 result = recorded_model(function_id, model_id)
@@ -397,6 +468,43 @@ def post_chat(
         result["grounding"] = grounding
         if function_id == "dse_math":
             result["mode"] = dse_mode
+            reply_text = str(result.get("reply") or "")
+            if dse_mode == MODE_CREATE_AND_MARK:
+                parsed = parse_generated_question(reply_text)
+                created = store_created_question(
+                    settings.data_dir,
+                    parsed=parsed,
+                    level=dse_level,
+                    topic=dse_topic,
+                    language=target_language or "en",
+                    module=dse_module,
+                )
+                result["reply"] = parsed["question"]
+                result.update(public_question_payload(created))
+                result = scrub_hidden_fields(result, include_answer=False)
+            elif dse_mode in GUIDED_MODES:
+                question_text = str((dse_session or {}).get("question") or "")
+                if not question_text and not is_next_hint_message(message):
+                    question_text = message
+                guided = record_guided_turn(
+                    settings.data_dir,
+                    session=dse_session,
+                    mode=dse_mode,
+                    user_message=message,
+                    assistant_reply=reply_text,
+                    question=question_text or None,
+                    level=dse_level,
+                    topic=dse_topic,
+                    language=target_language or "en",
+                )
+                result["session_id"] = guided["id"]
+                result["question_id"] = guided.get("question_id") or guided["id"]
+                result["step_count"] = guided.get("step_count") or 0
+                result = scrub_hidden_fields(result, include_answer=False)
+            if dse_level:
+                result["level"] = dse_level
+            if dse_topic:
+                result["topic"] = dse_topic
         if sources is not None:
             result["sources"] = order_sources(sources, str(result.get("reply") or ""))
         if function_id == "translation":
@@ -446,13 +554,154 @@ def post_dse_ask(
             grounding=body.grounding,
             target_language=body.target_language,
             mode=body.mode,
+            dse_mode=body.dse_mode,
             topic=body.topic,
             difficulty=body.difficulty,
             paper=body.paper,
             module=body.module,
+            level=body.level,
+            session_id=body.session_id,
+            attempt_text=body.attempt_text,
         ),
         authorization,
     )
+
+
+@app.post("/api/dse/question")
+def post_dse_question(
+    body: DseQuestionIn,
+    authorization: str | None = Header(default=None),
+) -> dict[str, object]:
+    return post_chat(
+        ChatIn(
+            message=CREATE_QUESTION_USER_MESSAGE,
+            function="dse_math",
+            grounding=body.grounding,
+            target_language=body.target_language,
+            mode=MODE_CREATE_AND_MARK,
+            dse_mode=MODE_CREATE_AND_MARK,
+            topic=body.topic,
+            difficulty=body.difficulty,
+            paper=body.paper,
+            module=body.module,
+            level=body.level,
+        ),
+        authorization,
+    )
+
+
+def _mark_dse_attempt(
+    settings: Settings,
+    *,
+    session_id: str,
+    attempt_text: str,
+    grounding_value: str,
+    target_language: str | None,
+    filename: str = "",
+    file_data: bytes = b"",
+) -> dict[str, object]:
+    session = require_session(settings.data_dir, session_id)
+    attempt = (attempt_text or "").strip()
+    if file_data:
+        ocr = transcribe_question_photo(
+            settings.data_dir, filename=filename or "attempt.png", data=file_data
+        )
+        transcribed = str(ocr.get("text") or "").strip()
+        if transcribed:
+            attempt = (attempt + "\n" + transcribed).strip() if attempt else transcribed
+    if not attempt:
+        raise ChatError(400, "attempt_text or an answer photo is required.")
+    grounding = resolve_grounding(grounding_value)
+    language = resolve_target_language("dse_math", target_language) or "en"
+    messages, sources = build_mark_context(
+        settings.data_dir,
+        session,
+        attempt,
+        grounding=grounding,
+        target_language=language,
+    )
+    if grounding == GROUNDING_STRICT and not sources:
+        hidden = extra_hidden_ids()
+        selection = load_selection(settings.data_dir, extra_hidden=hidden)
+        result = recorded_model("dse_math", selection["dse_math"])
+        result["reply"] = NO_DSE_DOCUMENTS_STRICT_REPLY
+        result["grounding"] = grounding
+        result["sources"] = []
+        result["mode"] = MODE_CREATE_AND_MARK
+        result["correct"] = False
+        result["next_options"] = ["hints", "retry"]
+        return scrub_hidden_fields(result, include_answer=False)
+    hidden = extra_hidden_ids()
+    selection = load_selection(settings.data_dir, extra_hidden=hidden)
+    model_id = selection["dse_math"]
+    result = complete_chat(
+        message=attempt,
+        function_id="dse_math",
+        model_id=model_id,
+        messages=messages,
+    )
+    verdict, reason = parse_mark_verdict(str(result.get("reply") or ""))
+    marked = public_mark_payload(session, verdict=verdict, reason=reason)
+    result.update(marked)
+    result["grounding"] = grounding
+    result["mode"] = MODE_CREATE_AND_MARK
+    if sources:
+        result["sources"] = order_sources(sources, reason)
+    return scrub_hidden_fields(result, include_answer=bool(marked.get("correct")))
+
+
+@app.post("/api/dse/mark")
+async def post_dse_mark(
+    request: Request,
+    authorization: str | None = Header(default=None),
+) -> dict[str, object]:
+    settings = get_settings()
+    require_write_access(settings, authorization)
+    content_type = (request.headers.get("content-type") or "").lower()
+    filename = ""
+    file_data = b""
+    try:
+        if content_type.startswith("multipart/form-data"):
+            form = await request.form()
+            session_id = str(form.get("session_id") or "")
+            attempt_text = str(form.get("attempt_text") or "")
+            grounding_value = str(form.get("grounding") or "mixed")
+            target_language = form.get("target_language")
+            if isinstance(target_language, bytes):
+                target_language = target_language.decode("utf-8")
+            if target_language is not None:
+                target_language = str(target_language)
+            uploaded = form.get("file") or form.get("answer")
+            if uploaded is not None and hasattr(uploaded, "read"):
+                file_data = await uploaded.read()
+                filename = getattr(uploaded, "filename", "") or "attempt.png"
+        else:
+            try:
+                body = await request.json()
+            except Exception as exc:
+                raise HTTPException(status_code=400, detail="JSON body must be an object.") from exc
+            if not isinstance(body, dict):
+                raise HTTPException(status_code=400, detail="JSON body must be an object.")
+            session_id = str(body.get("session_id") or "")
+            attempt_text = str(body.get("attempt_text") or body.get("message") or "")
+            grounding_value = str(body.get("grounding") or "mixed")
+            raw_language = body.get("target_language")
+            target_language = str(raw_language) if raw_language is not None else None
+        if not session_id.strip():
+            raise HTTPException(status_code=400, detail="session_id is required.")
+        return _mark_dse_attempt(
+            settings,
+            session_id=session_id,
+            attempt_text=attempt_text,
+            grounding_value=grounding_value,
+            target_language=target_language,
+            filename=filename,
+            file_data=file_data,
+        )
+    except ChatError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+    except (OcrError,) as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
 
 @app.post("/api/images/generate")

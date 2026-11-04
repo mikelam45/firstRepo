@@ -30,19 +30,23 @@ def _install_key(tmp_path, monkeypatch):
     monkeypatch.setenv("OPENROUTER_ENV_FILE", str(env_file))
 
 
-def _mock_chat(monkeypatch, reply="mock dse reply"):
-    seen = {"calls": 0}
+def _mock_chat(monkeypatch, reply="mock dse reply", replies=None):
+    seen = {"calls": 0, "jsons": []}
 
     def fake_post(url, json=None, headers=None, timeout=None, follow_redirects=None):
         seen["calls"] += 1
         seen["json"] = json
+        seen["jsons"].append(json)
+        text = reply
+        if replies is not None:
+            text = replies[min(seen["calls"] - 1, len(replies) - 1)]
 
         class Response:
             status_code = 200
 
             def json(self_inner):
                 return {
-                    "choices": [{"message": {"role": "assistant", "content": reply}}]
+                    "choices": [{"message": {"role": "assistant", "content": text}}]
                 }
 
         return Response()
@@ -63,6 +67,17 @@ def test_functions_page_contains_dse_math(tmp_path, monkeypatch):
     assert 'id="dse-controls"' in home.text
     assert 'id="dse-mode-practice"' in home.text
     assert 'id="dse-mode-explain"' in home.text
+    assert 'id="dse-mode-guided_no_answer"' in home.text
+    assert 'id="dse-mode-guided_with_answer"' in home.text
+    assert 'id="dse-mode-create_and_mark"' in home.text
+    assert 'id="dse-level"' in home.text
+    assert 'value="S1"' in home.text
+    assert 'value="S6"' in home.text
+    assert 'value="S7"' not in home.text
+    assert 'id="dse-create-question"' in home.text
+    assert 'id="dse-next-hint"' in home.text
+    assert 'id="dse-show-answer"' in home.text
+    assert 'id="dse-check"' in home.text
     assert 'id="dse-language"' in home.text
     assert "/api/dse/files" in home.text
     assert "/api/dse/ocr" in home.text
@@ -286,3 +301,155 @@ def test_dse_does_not_mix_rag_extracts(tmp_path, monkeypatch):
     assert "RAG_MUST_NOT_APPEAR" not in outbound
     assert "TRANSLATION_MUST_NOT_APPEAR" not in outbound
     assert {row["name"] for row in chat.json()["sources"]} == {"syllabus.txt"}
+
+
+CREATED_QUESTION = (
+    '{"question":"Solve 2x + 1 = 5.","expected_answer":"x = 2",'
+    '"mark_scheme":"M1 isolate x; A1 x = 2","outline":"subtract 1, divide by 2"}'
+)
+MARK_FAIL_REPLY = (
+    '{"verdict":"wrong","reason":"The constant term was not moved correctly."}'
+)
+
+
+def test_guided_no_answer_system_prompt_forbids_final_answer(tmp_path, monkeypatch):
+    _install_key(tmp_path, monkeypatch)
+    seen = _mock_chat(monkeypatch, reply="What have you tried with the quadratic?")
+    client = _client(monkeypatch, tmp_path)
+    response = client.post(
+        "/api/dse/ask",
+        json={
+            "message": "Solve x^2 - 5x + 6 = 0",
+            "dse_mode": "guided_no_answer",
+            "grounding": "mixed",
+        },
+    )
+    assert response.status_code == 200
+    system = seen["json"]["messages"][0]["content"]
+    assert "Never state the boxed final answer" in system
+    assert "Do not write 'Final answer:'." in system
+    assert "Socratic" in system
+    assert "Ask what the student has already tried" in system
+    payload = response.json()
+    assert payload["mode"] == "guided_no_answer"
+    assert payload["session_id"]
+    assert "expected_answer" not in payload
+
+
+def test_guided_with_answer_includes_final_answer_instruction(tmp_path, monkeypatch):
+    _install_key(tmp_path, monkeypatch)
+    seen = _mock_chat(monkeypatch, reply="Final answer: x = 2 or x = 3")
+    client = _client(monkeypatch, tmp_path)
+    response = client.post(
+        "/api/chat",
+        json={
+            "message": "Solve x^2 - 5x + 6 = 0",
+            "function": "dse_math",
+            "mode": "guided_with_answer",
+            "grounding": "mixed",
+        },
+    )
+    assert response.status_code == 200
+    system = seen["json"]["messages"][0]["content"]
+    assert "include the final answer immediately" in system
+    assert "Final answer:" in system
+    assert response.json()["mode"] == "guided_with_answer"
+    assert response.json()["session_id"]
+
+
+def test_create_question_returns_session_id_and_mark_fail_hides_official_answer(
+    tmp_path, monkeypatch
+):
+    _install_key(tmp_path, monkeypatch)
+    seen = _mock_chat(monkeypatch, replies=[CREATED_QUESTION, MARK_FAIL_REPLY])
+    client = _client(monkeypatch, tmp_path)
+
+    created = client.post(
+        "/api/dse/question",
+        json={
+            "level": "S3",
+            "topic": "algebra",
+            "target_language": "zh_hk",
+            "grounding": "mixed",
+        },
+    )
+    assert created.status_code == 200
+    payload = created.json()
+    assert payload["session_id"]
+    assert payload["question_id"]
+    assert payload["question"] == "Solve 2x + 1 = 5."
+    assert payload["reply"] == "Solve 2x + 1 = 5."
+    assert payload["mode"] == "create_and_mark"
+    assert payload["level"] == "S3"
+    assert "expected_answer" not in payload
+    assert "official_answer" not in payload
+    assert "mark_scheme" not in payload
+    assert "x = 2" not in payload.get("question", "")
+    session_id = payload["session_id"]
+    create_system = seen["jsons"][0]["messages"][0]["content"]
+    assert "Generate exactly ONE original mathematics question" in create_system
+    assert "繁體" in create_system
+
+    marked = client.post(
+        "/api/dse/mark",
+        json={"session_id": session_id, "attempt_text": "x = 9"},
+    )
+    assert marked.status_code == 200
+    fail = marked.json()
+    assert fail["correct"] is False
+    assert fail["next_options"] == ["hints", "retry"]
+    assert "official_answer" not in fail
+    assert "expected_answer" not in fail
+    assert "answer" not in fail
+    assert "mark_scheme" not in fail
+    assert fail["session_id"] == session_id
+    assert fail["verdict"] == "wrong"
+    mark_system = seen["jsons"][1]["messages"][0]["content"]
+    assert "Do not restate the official answer" in mark_system
+
+
+def test_s7_or_bad_mode_returns_400(tmp_path, monkeypatch):
+    client = _client(monkeypatch, tmp_path)
+    s7 = client.post(
+        "/api/dse/question",
+        json={"level": "S7", "topic": "algebra"},
+    )
+    assert s7.status_code == 400
+    assert "S1" in s7.json()["detail"]
+
+    bad_mode = client.post(
+        "/api/chat",
+        json={
+            "message": "Solve 1 + 1",
+            "function": "dse_math",
+            "mode": "telepathy",
+        },
+    )
+    assert bad_mode.status_code == 400
+    assert "mode must be one of" in bad_mode.json()["detail"]
+
+    via_dse_mode = client.post(
+        "/api/dse/ask",
+        json={"message": "Solve 1 + 1", "dse_mode": "not_a_mode"},
+    )
+    assert via_dse_mode.status_code == 400
+
+    calculus_s1 = client.post(
+        "/api/dse/question",
+        json={"level": "S1", "topic": "calculus"},
+    )
+    assert calculus_s1.status_code == 400
+
+
+def test_page_has_three_mode_controls_and_s1_s6(tmp_path, monkeypatch):
+    client = _client(monkeypatch, tmp_path)
+    home = client.get("/")
+    assert home.status_code == 200
+    assert 'id="dse-mode-guided_no_answer"' in home.text
+    assert 'id="dse-mode-guided_with_answer"' in home.text
+    assert 'id="dse-mode-create_and_mark"' in home.text
+    for level in ("S1", "S2", "S3", "S4", "S5", "S6"):
+        assert f'value="{level}"' in home.text
+    assert 'value="S7"' not in home.text
+    assert "/api/dse/question" in home.text
+    assert "/api/dse/mark" in home.text
