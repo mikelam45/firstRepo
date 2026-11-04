@@ -566,13 +566,11 @@ def _post_openrouter_image(
     #   output_format (portal format), input_references (portal reference_ids).
     # FLUX.2 Pro does not list ``size``; unlisted fields are rejected.
     # https://openrouter.ai/black-forest-labs/flux.2-pro/llms.txt
-    # Portal width/height stay on the job record; they are mapped to aspect_ratio here.
-    del width, height  # not a provider field; aspect_ratio is.
     payload: dict[str, Any] = {
         "model": model_id,
         "prompt": prompt,
         "n": 1,
-        "aspect_ratio": aspect_ratio or "1:1",
+        "aspect_ratio": aspect_ratio or _aspect_from_wh(width, height),
         "output_format": output_format,
     }
     if input_references:

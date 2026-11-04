@@ -231,7 +231,8 @@ def test_generate_sends_input_references_not_chat_completions(tmp_path, monkeypa
     outbound = seen["json"]
     assert outbound["model"] == "black-forest-labs/flux.2-pro"
     assert outbound.get("output_format") == "png"
-    assert outbound.get("aspect_ratio") == "1:1" or outbound.get("size") == "1024x1024"
+    assert outbound.get("aspect_ratio") == "1:1"
+    assert "size" not in outbound
     assert "reference_ids" not in outbound
     assert "messages" not in outbound
     assert OPENROUTER_CHAT_URL not in str(seen["url"])
@@ -445,7 +446,8 @@ def test_generate_saves_png_and_list_file_work(tmp_path, monkeypatch):
     assert seen["url"] != OPENROUTER_CHAT_URL
     assert seen["timeout"] == OPENROUTER_IMAGES_TIMEOUT_SECONDS
     assert seen["json"]["model"] == "black-forest-labs/flux.2-pro"
-    assert seen["json"]["size"] == "1024x1024"
+    assert seen["json"]["aspect_ratio"] == "1:1"
+    assert "size" not in seen["json"]
     assert seen["json"]["output_format"] == "png"
     assert "messages" not in seen["json"]
     stored = list((data_dir / "images").glob("*.png"))
@@ -507,7 +509,8 @@ def test_storyboard_frames_save_one_file_each(tmp_path, monkeypatch):
     payload = response.json()
     assert len(payload["images"]) == 4
     assert seen["calls"] == 4
-    assert seen["json"]["size"] == "1344x768"
+    assert seen["json"]["aspect_ratio"] == "16:9"
+    assert "size" not in seen["json"]
     files = list((tmp_path / "data" / "images").glob("*.png"))
     assert len(files) == 4
     second = client.get(payload["images"][1]["href"])
