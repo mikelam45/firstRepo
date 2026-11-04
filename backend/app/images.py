@@ -70,7 +70,7 @@ ENHANCE_SYSTEM = (
     "Return only the enhanced prompt, with no preamble or quotes."
 )
 MISSING_PROMPT_DETAIL = (
-    "prompt or guided fields (subject, setting, background, objects, style, "
+    "prompt or guided fields (subject, setting, background, objects, person, style, "
     "camera, lighting, notes) are required."
 )
 PROMPT_FIELDS: tuple[tuple[str, str], ...] = (
@@ -84,6 +84,23 @@ PROMPT_FIELDS: tuple[tuple[str, str], ...] = (
     ("camera", "Camera"),
     ("lighting", "Lighting"),
     ("notes", "Notes"),
+)
+PERSON_SLOT_BEFORE = "style"
+PERSON_PARTS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("nationality", ("nationality", "ethnicity", "ethnicity_presentation")),
+    ("height", ("person_height", "stature")),
+    ("body", ("body", "body_type")),
+    ("hair", ("hair",)),
+    ("eyes", ("eyes",)),
+    ("nose", ("nose",)),
+    ("mouth", ("mouth",)),
+    ("expression", ("expression", "facial_expression")),
+)
+CLOTHING_PARTS: tuple[tuple[str, str], ...] = (
+    ("dress", "dress"),
+    ("top", "top"),
+    ("bottom", "bottom"),
+    ("shoes", "shoes"),
 )
 ALLOWED_RESOLUTIONS: tuple[str, ...] = (
     "1:1",
@@ -159,14 +176,127 @@ def _strip(value: object, limit: int = MAX_FIELD_CHARS) -> str:
     return value.strip()[:limit]
 
 
+def _comma(*parts: str) -> str:
+    return ", ".join(part for part in parts if part)
+
+
+def _first_text(mapping: dict[str, Any], keys: tuple[str, ...]) -> str:
+    for key in keys:
+        value = mapping.get(key)
+        if isinstance(value, str) and value.strip():
+            return _strip(value)
+    return ""
+
+
+def _person_height(mapping: dict[str, Any]) -> str:
+    """Person stature. Pixel ``height`` stays an integer on the generate payload."""
+    selected = _first_text(mapping, ("person_height", "stature"))
+    if not selected and isinstance(mapping.get("height"), str):
+        selected = _strip(mapping.get("height"))
+    extra = _strip(mapping.get("height_cm"))
+    if extra and extra.replace(".", "", 1).isdigit():
+        extra = f"{extra} cm"
+    if selected in {"short", "average", "tall"} and extra:
+        return f"{selected}, {extra}"
+    if selected:
+        return selected
+    return extra
+
+
+def _person_hair(mapping: dict[str, Any]) -> str:
+    combined = _strip(mapping.get("hair"))
+    if combined:
+        return combined
+    return _comma(
+        _strip(mapping.get("hair_color")),
+        _strip(mapping.get("hair_length")),
+        _strip(mapping.get("hair_style")),
+    )
+
+
+def _person_eyes(mapping: dict[str, Any]) -> str:
+    combined = _strip(mapping.get("eyes"))
+    if combined:
+        return combined
+    return _comma(_strip(mapping.get("eyes_size")), _strip(mapping.get("eyes_color")))
+
+
+def _person_nose(mapping: dict[str, Any]) -> str:
+    combined = _strip(mapping.get("nose"))
+    if combined:
+        return combined
+    return _comma(
+        _strip(mapping.get("nose_size")),
+        _strip(mapping.get("nose_shape") or mapping.get("nose_note")),
+    )
+
+
+def _person_mouth(mapping: dict[str, Any]) -> str:
+    combined = _strip(mapping.get("mouth"))
+    if combined:
+        return combined
+    return _comma(
+        _strip(mapping.get("mouth_size")),
+        _strip(mapping.get("mouth_shape")),
+    )
+
+
+def _person_expression(mapping: dict[str, Any]) -> str:
+    chosen = _first_text(mapping, ("expression", "facial_expression"))
+    note = _strip(mapping.get("expression_note"))
+    if chosen and note and note not in chosen:
+        return f"{chosen}, {note}"
+    return chosen or note
+
+
+def _labeled_parts(pairs: list[tuple[str, str]]) -> str:
+    return "; ".join(f"{label} {value}" for label, value in pairs if value)
+
+
+def person_prompt_lines(mapping: dict[str, Any] | None) -> list[str]:
+    """Stable Person / Clothing / Props / Action block. Empty fields omitted."""
+    data = mapping or {}
+    values = {
+        "nationality": _first_text(data, ("nationality", "ethnicity", "ethnicity_presentation")),
+        "height": _person_height(data),
+        "body": _first_text(data, ("body", "body_type")),
+        "hair": _person_hair(data),
+        "eyes": _person_eyes(data),
+        "nose": _person_nose(data),
+        "mouth": _person_mouth(data),
+        "expression": _person_expression(data),
+    }
+    person = _labeled_parts([(label, values[label]) for label, _keys in PERSON_PARTS])
+    clothing = _labeled_parts(
+        [(label, _strip(data.get(field))) for label, field in CLOTHING_PARTS]
+    )
+    props = _strip(data.get("props"))
+    action = _strip(data.get("object_action") or data.get("action_on_objects"))
+    lines: list[str] = []
+    if person:
+        lines.append(f"Person: {person}")
+    if clothing:
+        lines.append(f"Clothing: {clothing}")
+    if props:
+        lines.append(f"Props: {props}")
+    if action:
+        lines.append(f"Action on objects: {action}")
+    return lines
+
+
 def assemble_prompt(body: dict[str, Any] | None) -> str:
     """Build the image prompt in a fixed field order.
 
     Each non-empty guided factor becomes ``{Label}: {value}`` on its own line.
+    The Person block sits after Objects attributes and before Style.
     """
     mapping = body or {}
     lines: list[str] = []
+    inserted_person = False
     for field_id, label in PROMPT_FIELDS:
+        if field_id == PERSON_SLOT_BEFORE and not inserted_person:
+            lines.extend(person_prompt_lines(mapping))
+            inserted_person = True
         if field_id == "camera":
             value = _strip(
                 mapping.get("camera")
@@ -180,6 +310,8 @@ def assemble_prompt(body: dict[str, Any] | None) -> str:
             value = _strip(mapping.get(field_id))
         if value:
             lines.append(f"{label}: {value}")
+    if not inserted_person:
+        lines.extend(person_prompt_lines(mapping))
     return "\n".join(lines)
 
 

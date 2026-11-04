@@ -134,6 +134,141 @@
             <input id="image-object-attributes" type="text" autocomplete="off" placeholder="Materials, condition, color, scale">
           </label>
         </div>
+        <fieldset class="person" id="image-person" aria-labelledby="person-title">
+          <legend id="person-title">Person</legend>
+          <p class="meta">Fill this when the subject is a person. Empty fields are left out of the assembled prompt.</p>
+          <div class="image-row">
+            <label class="field">Nationality / ethnicity presentation
+              <select id="image-nationality">
+                <option value="" selected>Not specified</option>
+                <option value="East Asian">East Asian</option>
+                <option value="South Asian">South Asian</option>
+                <option value="Southeast Asian">Southeast Asian</option>
+                <option value="Black / African">Black / African</option>
+                <option value="White / European">White / European</option>
+                <option value="Hispanic / Latino">Hispanic / Latino</option>
+                <option value="Middle Eastern">Middle Eastern</option>
+                <option value="Mixed">Mixed</option>
+                <option value="other">Other</option>
+              </select>
+            </label>
+            <label class="field">Nationality (other or specify)
+              <input id="image-nationality-other" type="text" autocomplete="off" placeholder="e.g. Korean, Yoruba, mixed Han and Dutch">
+            </label>
+          </div>
+          <div class="image-row">
+            <label class="field">Height
+              <select id="image-person-height">
+                <option value="" selected>Not specified</option>
+                <option value="short">short</option>
+                <option value="average">average</option>
+                <option value="tall">tall</option>
+              </select>
+            </label>
+            <label class="field">Height (cm)
+              <input id="image-height-cm" type="text" inputmode="numeric" autocomplete="off" placeholder="e.g. 175">
+            </label>
+            <label class="field">Body
+              <select id="image-body">
+                <option value="" selected>Not specified</option>
+                <option value="fat">fat</option>
+                <option value="thin">thin</option>
+                <option value="athletic">athletic</option>
+                <option value="average">average</option>
+              </select>
+            </label>
+          </div>
+          <div class="image-row">
+            <label class="field">Hair color
+              <input id="image-hair-color" type="text" autocomplete="off" placeholder="black, auburn, silver">
+            </label>
+            <label class="field">Hair length
+              <select id="image-hair-length">
+                <option value="" selected>Not specified</option>
+                <option value="short">short</option>
+                <option value="medium">medium</option>
+                <option value="long">long</option>
+                <option value="bald">bald</option>
+              </select>
+            </label>
+            <label class="field">Hair style
+              <input id="image-hair-style" type="text" autocomplete="off" placeholder="straight, ponytail, bun">
+            </label>
+          </div>
+          <div class="image-row">
+            <label class="field">Eyes size
+              <select id="image-eyes-size">
+                <option value="" selected>Not specified</option>
+                <option value="small">small</option>
+                <option value="medium">medium</option>
+                <option value="large">large</option>
+              </select>
+            </label>
+            <label class="field">Eyes color
+              <input id="image-eyes-color" type="text" autocomplete="off" placeholder="brown, hazel, optional">
+            </label>
+            <label class="field">Nose size
+              <select id="image-nose-size">
+                <option value="" selected>Not specified</option>
+                <option value="small">small</option>
+                <option value="medium">medium</option>
+                <option value="large">large</option>
+              </select>
+            </label>
+            <label class="field">Nose shape
+              <input id="image-nose-shape" type="text" autocomplete="off" placeholder="optional shape note">
+            </label>
+          </div>
+          <div class="image-row">
+            <label class="field">Mouth size
+              <select id="image-mouth-size">
+                <option value="" selected>Not specified</option>
+                <option value="small">small</option>
+                <option value="medium">medium</option>
+                <option value="large">large</option>
+              </select>
+            </label>
+            <label class="field">Mouth shape
+              <input id="image-mouth-shape" type="text" autocomplete="off" placeholder="thin lips, wide">
+            </label>
+            <label class="field">Facial expression
+              <select id="image-expression">
+                <option value="" selected>Not specified</option>
+                <option value="neutral">neutral</option>
+                <option value="smile">smile</option>
+                <option value="laugh">laugh</option>
+                <option value="angry">angry</option>
+                <option value="sad">sad</option>
+                <option value="surprised">surprised</option>
+                <option value="focused">focused</option>
+                <option value="speaking">speaking</option>
+              </select>
+            </label>
+            <label class="field">Expression (optional note)
+              <input id="image-expression-note" type="text" autocomplete="off" placeholder="slightly teasing, mid-sentence">
+            </label>
+          </div>
+          <div class="image-row">
+            <label class="field">Dress
+              <input id="image-dress" type="text" autocomplete="off" placeholder="if any">
+            </label>
+            <label class="field">Top
+              <input id="image-top" type="text" autocomplete="off" placeholder="shirt, jacket">
+            </label>
+            <label class="field">Bottom
+              <input id="image-bottom" type="text" autocomplete="off" placeholder="trousers, skirt">
+            </label>
+            <label class="field">Shoes
+              <input id="image-shoes" type="text" autocomplete="off" placeholder="boots, loafers">
+            </label>
+          </div>
+          <label class="field">Props / pops the person holds or wears
+            <input id="image-props" type="text" autocomplete="off" placeholder="a teacup, a scarf, glasses">
+          </label>
+          <label class="field">Action on objects
+            <textarea id="image-object-action" rows="2" placeholder="holding a cup, knocking over a chair"></textarea>
+          </label>
+        </fieldset>
         <label class="field">Style
           <select id="image-style">
             <option value="cinematic still" selected>cinematic still</option>
@@ -786,18 +921,132 @@
       "1920x1080": "16:9",
     };
 
+    function fieldValue(id) {
+      const node = document.getElementById(id);
+      return node ? String(node.value || "").trim() : "";
+    }
+
+    function joinComma(parts) {
+      return parts.filter(Boolean).join(", ");
+    }
+
+    function joinLabeled(pairs) {
+      return pairs.filter((pair) => pair[1]).map((pair) => pair[0] + " " + pair[1]).join("; ");
+    }
+
+    function personNationality() {
+      const selected = fieldValue("image-nationality");
+      const other = fieldValue("image-nationality-other");
+      if (selected && selected !== "other") {
+        return other && other !== selected ? selected + ", " + other : selected;
+      }
+      return other;
+    }
+
+    function personHeight() {
+      const selected = fieldValue("image-person-height");
+      let cm = fieldValue("image-height-cm");
+      if (cm && !/cm/i.test(cm) && /^\d+(\.\d+)?$/.test(cm)) cm = cm + " cm";
+      if (selected && cm) return selected + ", " + cm;
+      return selected || cm;
+    }
+
+    function personHair() {
+      return joinComma([
+        fieldValue("image-hair-color"),
+        fieldValue("image-hair-length"),
+        fieldValue("image-hair-style"),
+      ]);
+    }
+
+    function personEyes() {
+      return joinComma([fieldValue("image-eyes-size"), fieldValue("image-eyes-color")]);
+    }
+
+    function personNose() {
+      return joinComma([fieldValue("image-nose-size"), fieldValue("image-nose-shape")]);
+    }
+
+    function personMouth() {
+      return joinComma([fieldValue("image-mouth-size"), fieldValue("image-mouth-shape")]);
+    }
+
+    function personExpression() {
+      const chosen = fieldValue("image-expression");
+      const note = fieldValue("image-expression-note");
+      if (chosen && note && note.indexOf(chosen) === -1) return chosen + ", " + note;
+      return chosen || note;
+    }
+
+    function personPromptLines() {
+      const person = joinLabeled([
+        ["nationality", personNationality()],
+        ["height", personHeight()],
+        ["body", fieldValue("image-body")],
+        ["hair", personHair()],
+        ["eyes", personEyes()],
+        ["nose", personNose()],
+        ["mouth", personMouth()],
+        ["expression", personExpression()],
+      ]);
+      const clothing = joinLabeled([
+        ["dress", fieldValue("image-dress")],
+        ["top", fieldValue("image-top")],
+        ["bottom", fieldValue("image-bottom")],
+        ["shoes", fieldValue("image-shoes")],
+      ]);
+      const props = fieldValue("image-props");
+      const action = fieldValue("image-object-action");
+      const lines = [];
+      if (person) lines.push("Person: " + person);
+      if (clothing) lines.push("Clothing: " + clothing);
+      if (props) lines.push("Props: " + props);
+      if (action) lines.push("Action on objects: " + action);
+      return lines;
+    }
+
+    function personPayload() {
+      return {
+        nationality: personNationality(),
+        person_height: personHeight(),
+        height_cm: fieldValue("image-height-cm"),
+        body: fieldValue("image-body"),
+        hair: personHair(),
+        hair_color: fieldValue("image-hair-color"),
+        hair_length: fieldValue("image-hair-length"),
+        hair_style: fieldValue("image-hair-style"),
+        eyes: personEyes(),
+        eyes_size: fieldValue("image-eyes-size"),
+        eyes_color: fieldValue("image-eyes-color"),
+        nose: personNose(),
+        nose_size: fieldValue("image-nose-size"),
+        nose_shape: fieldValue("image-nose-shape"),
+        mouth: personMouth(),
+        mouth_size: fieldValue("image-mouth-size"),
+        mouth_shape: fieldValue("image-mouth-shape"),
+        expression: personExpression(),
+        facial_expression: fieldValue("image-expression"),
+        expression_note: fieldValue("image-expression-note"),
+        dress: fieldValue("image-dress"),
+        top: fieldValue("image-top"),
+        bottom: fieldValue("image-bottom"),
+        shoes: fieldValue("image-shoes"),
+        props: fieldValue("image-props"),
+        object_action: fieldValue("image-object-action"),
+      };
+    }
+
     function assembleImagePrompt() {
-      const subject = document.getElementById("image-subject").value.trim();
-      const setting = document.getElementById("image-setting").value.trim();
-      const background = document.getElementById("image-background").value.trim();
-      const backgroundAttributes = document.getElementById("image-background-attributes").value.trim();
-      const objects = document.getElementById("image-objects").value.trim();
-      const objectAttributes = document.getElementById("image-object-attributes").value.trim();
-      const style = document.getElementById("image-style").value;
-      const camera = document.getElementById("image-camera").value.trim()
-        || document.getElementById("image-shot").value.trim();
-      const lighting = document.getElementById("image-lighting").value.trim();
-      const notes = document.getElementById("image-notes").value.trim();
+      const subject = fieldValue("image-subject");
+      const setting = fieldValue("image-setting");
+      const background = fieldValue("image-background");
+      const backgroundAttributes = fieldValue("image-background-attributes");
+      const objects = fieldValue("image-objects");
+      const objectAttributes = fieldValue("image-object-attributes");
+      const style = fieldValue("image-style");
+      const camera = fieldValue("image-camera") || fieldValue("image-shot");
+      const lighting = fieldValue("image-lighting");
+      const notes = fieldValue("image-notes");
       const lines = [];
       if (subject) lines.push("Subject: " + subject);
       if (setting) lines.push("Setting: " + setting);
@@ -805,6 +1054,7 @@
       if (backgroundAttributes) lines.push("Attributes of background: " + backgroundAttributes);
       if (objects) lines.push("Objects: " + objects);
       if (objectAttributes) lines.push("Attributes of objects: " + objectAttributes);
+      personPromptLines().forEach((line) => lines.push(line));
       if (style) lines.push("Style: " + style);
       if (camera) lines.push("Camera: " + camera);
       if (lighting) lines.push("Lighting: " + lighting);
@@ -892,8 +1142,23 @@
       renderImageJobs(jobs);
     }
 
-    ["image-subject", "image-setting", "image-background", "image-background-attributes", "image-objects", "image-object-attributes", "image-style", "image-camera", "image-shot", "image-lighting", "image-notes"].forEach((id) => {
-      document.getElementById(id).addEventListener("input", () => {
+    [
+      "image-subject", "image-setting", "image-background", "image-background-attributes",
+      "image-objects", "image-object-attributes", "image-nationality", "image-nationality-other",
+      "image-person-height", "image-height-cm", "image-body",
+      "image-hair-color", "image-hair-length", "image-hair-style",
+      "image-eyes-size", "image-eyes-color", "image-nose-size", "image-nose-shape",
+      "image-mouth-size", "image-mouth-shape", "image-expression", "image-expression-note",
+      "image-dress", "image-top", "image-bottom", "image-shoes", "image-props", "image-object-action",
+      "image-style", "image-camera", "image-shot", "image-lighting", "image-notes",
+    ].forEach((id) => {
+      const node = document.getElementById(id);
+      if (!node) return;
+      node.addEventListener("input", () => {
+        document.getElementById("image-prompt").dataset.dirty = "";
+        syncAssembledPrompt();
+      });
+      node.addEventListener("change", () => {
         document.getElementById("image-prompt").dataset.dirty = "";
         syncAssembledPrompt();
       });
@@ -1066,25 +1331,25 @@
       button.disabled = true;
       status.className = "";
       status.textContent = "Generating…";
-      const body = {
+      const body = Object.assign({
         prompt,
-        subject: document.getElementById("image-subject").value.trim(),
-        setting: document.getElementById("image-setting").value.trim(),
-        background: document.getElementById("image-background").value.trim(),
-        background_attributes: document.getElementById("image-background-attributes").value.trim(),
-        objects: document.getElementById("image-objects").value.trim(),
-        object_attributes: document.getElementById("image-object-attributes").value.trim(),
-        style: document.getElementById("image-style").value,
-        camera: document.getElementById("image-camera").value.trim(),
-        shot: document.getElementById("image-shot").value,
-        lighting: document.getElementById("image-lighting").value.trim(),
-        notes: document.getElementById("image-notes").value.trim(),
-        resolution: document.getElementById("image-resolution").value,
+        subject: fieldValue("image-subject"),
+        setting: fieldValue("image-setting"),
+        background: fieldValue("image-background"),
+        background_attributes: fieldValue("image-background-attributes"),
+        objects: fieldValue("image-objects"),
+        object_attributes: fieldValue("image-object-attributes"),
+        style: fieldValue("image-style"),
+        camera: fieldValue("image-camera"),
+        shot: fieldValue("image-shot"),
+        lighting: fieldValue("image-lighting"),
+        notes: fieldValue("image-notes"),
+        resolution: fieldValue("image-resolution"),
         width,
         height,
-        format: document.getElementById("image-format").value,
+        format: fieldValue("image-format"),
         reference_ids: (state.refs || []).map((file) => file.id).slice(0, MAX_REFS),
-      };
+      }, personPayload());
       const frames = storyboardBeats();
       if (frames) body.frames = frames;
       try {

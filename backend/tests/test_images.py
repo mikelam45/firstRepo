@@ -9,6 +9,7 @@ from app.images import (
     OPENROUTER_IMAGE_TIMEOUT_SECONDS,
     OPENROUTER_IMAGES_TIMEOUT_SECONDS,
     OPENROUTER_IMAGES_URL,
+    assemble_prompt,
 )
 from app.main import PAGE, app
 from app.openrouter_key import MAC_KEY_PATH
@@ -112,6 +113,18 @@ def test_page_has_five_reference_slots(tmp_path, monkeypatch):
     assert "Attributes of background" in html
     assert "Attributes of objects" in html
     assert "Assembled prompt" in html
+    assert "Nationality" in html
+    assert "Height" in html
+    assert "Hair" in html
+    assert "Eyes" in html
+    assert "Nose" in html
+    assert "Mouth" in html
+    assert "Dress" in html
+    assert "Top" in html
+    assert "Bottom" in html
+    assert "Shoes" in html
+    assert "expression" in html
+    assert "Action on objects" in html
     assert "/api/images/references" in html
     assert "reference_ids" in html
     assert PAGE.is_file()
@@ -374,6 +387,73 @@ def test_generate_accepts_background_and_object_guides(tmp_path, monkeypatch):
     assert positions == sorted(positions)
     assert prompt == "\n".join(order)
     assert response.json()["prompt"] == prompt
+    assert "Person:" not in prompt
+    _assert_secret_absent(response.text)
+
+
+def test_assemble_prompt_person_block_after_objects_before_style():
+    prompt = assemble_prompt(
+        {
+            "objects": "a gaiwan",
+            "object_attributes": "celadon glaze",
+            "nationality": "Korean",
+            "hair": "black, long, straight",
+            "dress": "",
+            "props": "",
+            "style": "cinematic still",
+        }
+    )
+    assert prompt == (
+        "Objects: a gaiwan\n"
+        "Attributes of objects: celadon glaze\n"
+        "Person: nationality Korean; hair black, long, straight\n"
+        "Style: cinematic still"
+    )
+
+
+def test_generate_person_nationality_and_hair_reach_images_api(tmp_path, monkeypatch):
+    _install_key(tmp_path, monkeypatch)
+    seen = _mock_images(monkeypatch)
+    client = _client(monkeypatch, tmp_path)
+    response = client.post(
+        "/api/images/generate",
+        json={
+            "subject": "a portrait",
+            "objects": "a teacup",
+            "object_attributes": "cracked celadon",
+            "nationality": "Korean",
+            "person_height": "tall",
+            "height_cm": "175",
+            "body": "athletic",
+            "hair_color": "black",
+            "hair_length": "long",
+            "hair_style": "straight",
+            "eyes_size": "large",
+            "eyes_color": "brown",
+            "dress": "hanbok",
+            "props": "a folding fan",
+            "object_action": "holding a cup",
+            "style": "cinematic still",
+            "width": 1024,
+            "height": 1024,
+            "format": "png",
+        },
+    )
+    assert response.status_code == 200, response.text
+    prompt = seen["json"]["prompt"]
+    assert seen["url"] == OPENROUTER_IMAGES_URL
+    assert "nationality Korean" in prompt
+    assert "hair black, long, straight" in prompt
+    assert "Person: nationality Korean;" in prompt
+    assert "height tall, 175 cm" in prompt
+    assert "Clothing: dress hanbok" in prompt
+    assert "Props: a folding fan" in prompt
+    assert "Action on objects: holding a cup" in prompt
+    person_at = prompt.index("Person:")
+    objects_at = prompt.index("Attributes of objects:")
+    style_at = prompt.index("Style:")
+    assert objects_at < person_at < style_at
+    assert response.json()["prompt"] == prompt
     _assert_secret_absent(response.text)
 
 
@@ -394,6 +474,20 @@ def test_page_has_guided_fields_and_output_controls(tmp_path, monkeypatch):
     assert 'id="image-camera"' in html
     assert 'id="image-lighting"' in html
     assert 'id="image-notes"' in html
+    assert 'id="image-person"' in html
+    assert "Nationality" in html
+    assert "Height" in html
+    assert "Hair" in html
+    assert "Eyes" in html
+    assert "Nose" in html
+    assert "Mouth" in html
+    assert "Dress" in html
+    assert "Top" in html
+    assert "Bottom" in html
+    assert "Shoes" in html
+    assert "expression" in html
+    assert "Action on objects" in html
+    assert 'id="image-object-action"' in html
     assert 'id="image-prompt"' in html
     assert 'id="image-enhance"' in html
     assert "1024x1024" in html

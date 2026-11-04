@@ -443,6 +443,19 @@ pre.chat-reply,
   padding: 0;
   margin-bottom: 8px;
 }
+.image-studio fieldset.person {
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 12px 14px;
+  margin: 4px 0 14px;
+}
+.image-studio fieldset.person legend {
+  padding: 0 6px;
+}
+.image-studio fieldset.person .meta {
+  margin: 0 0 10px;
+}
 .image-row {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

@@ -37,6 +37,18 @@ def test_home_and_setup_are_distinct_html_pages(tmp_path, monkeypatch):
     assert "Attributes of background" in home.text
     assert "Attributes of objects" in home.text
     assert "Assembled prompt" in home.text
+    assert "Nationality" in home.text
+    assert "Height" in home.text
+    assert "Hair" in home.text
+    assert "Eyes" in home.text
+    assert "Nose" in home.text
+    assert "Mouth" in home.text
+    assert "Dress" in home.text
+    assert "Top" in home.text
+    assert "Bottom" in home.text
+    assert "Shoes" in home.text
+    assert "expression" in home.text
+    assert "Action on objects" in home.text
     assert 'id="image-panel"' in home.text
     assert 'id="ref-slots"' in home.text
     assert "Reference photos" in home.text
