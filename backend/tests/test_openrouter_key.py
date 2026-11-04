@@ -185,7 +185,7 @@ def test_missing_file_skips_openrouter_and_reports_unconfigured(tmp_path, monkey
     assert models.json()["openrouter_status"] == "not_configured"
     health = client.get("/health")
     assert health.json()["openrouter_configured"] is False
-    page = client.get("/")
+    page = client.get("/setup")
     assert page.status_code == 200
     assert "loads without an API key" in page.text
     _assert_secret_absent(page.text)
@@ -523,7 +523,7 @@ def test_post_key_creates_mac_parent_when_repo_exists(tmp_path, monkeypatch):
 
 def test_page_has_openrouter_connection_controls(tmp_path, monkeypatch):
     client = _client(monkeypatch, tmp_path)
-    page = client.get("/")
+    page = client.get("/setup")
     assert page.status_code == 200
     assert "OpenRouter connection" in page.text
     assert 'id="openrouter-key"' in page.text

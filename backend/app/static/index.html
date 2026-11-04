@@ -3,425 +3,97 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Fieldnote model selection</title>
-  <style>
-    :root {
-      color-scheme: light;
-      --ink: #1f1a17;
-      --muted: #5c534c;
-      --line: #e4ddd4;
-      --paper: #f4f1ea;
-      --card: #fffcf8;
-      --green: #0f6b4c;
-      --green-bg: #e5f4ec;
-      --amber: #8a5a00;
-      --amber-bg: #f8efd8;
-      --rust: #8c3a2f;
-      --rust-bg: #f6e7e3;
-    }
-    * { box-sizing: border-box; }
-    body {
-      margin: 0;
-      font-family: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
-      color: var(--ink);
-      background: var(--paper);
-      line-height: 1.45;
-    }
-    main {
-      max-width: 1080px;
-      margin: 0 auto;
-      padding: 28px 20px 64px;
-    }
-    h1 {
-      font-size: 2rem;
-      font-weight: 600;
-      letter-spacing: -0.02em;
-      margin: 0 0 8px;
-    }
-    h2 {
-      font-size: 1.25rem;
-      margin: 0 0 8px;
-    }
-    .lede, .note, .source {
-      color: var(--muted);
-      max-width: 68ch;
-    }
-    .source { font-size: 0.92rem; }
-    .layout {
-      display: grid;
-      grid-template-columns: minmax(0, 1.4fr) minmax(280px, 0.8fr);
-      gap: 20px;
-      align-items: start;
-      margin-top: 24px;
-    }
-    @media (max-width: 860px) {
-      .layout { grid-template-columns: 1fr; }
-    }
-    section, fieldset {
-      background: var(--card);
-      border: 1px solid var(--line);
-      border-radius: 12px;
-      padding: 16px 18px;
-    }
-    fieldset { margin: 0 0 14px; }
-    legend {
-      font-weight: 650;
-      padding: 0 6px;
-    }
-    .summary { position: sticky; top: 12px; }
-    .summary ol { margin: 8px 0 0; padding-left: 1.2rem; }
-    .summary li { margin: 0 0 12px; }
-    .meta { color: var(--muted); font-size: 0.92rem; }
-    .prices { margin: 6px 0 0; padding: 0; list-style: none; }
-    .prices li { margin: 0 0 2px; }
-    .detail { display: block; color: var(--muted); font-size: 0.88rem; }
-    .tag {
-      display: inline-block;
-      font-family: "Avenir Next", "Segoe UI", sans-serif;
-      font-size: 0.75rem;
-      letter-spacing: 0.02em;
-      font-weight: 650;
-      border-radius: 999px;
-      padding: 2px 8px;
-      margin-left: 6px;
-      vertical-align: 1px;
-    }
-    .tag.lower-cost { background: var(--green-bg); color: var(--green); }
-    .tag.balanced { background: var(--amber-bg); color: var(--amber); }
-    .tag.higher-quality { background: var(--rust-bg); color: var(--rust); }
-    .estimate {
-      font-family: "Avenir Next", "Segoe UI", sans-serif;
-      font-size: 0.75rem;
-      font-weight: 700;
-      color: var(--rust);
-      margin-left: 4px;
-    }
-    label.option {
-      display: block;
-      border: 1px solid var(--line);
-      border-radius: 10px;
-      padding: 10px 12px;
-      margin: 8px 0;
-      cursor: pointer;
-    }
-    label.option:has(input:checked) {
-      border-color: var(--green);
-      box-shadow: inset 0 0 0 1px var(--green);
-    }
-    label.option input { margin-right: 8px; }
-    .option-title { font-weight: 650; }
-    .savebar {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 10px 14px;
-      align-items: end;
-      margin-top: 8px;
-    }
-    label.token { font-size: 0.92rem; color: var(--muted); }
-    input[type="password"] {
-      display: block;
-      margin-top: 4px;
-      font: inherit;
-      padding: 6px 8px;
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      background: white;
-      min-width: 220px;
-    }
-    button {
-      font: inherit;
-      background: var(--green);
-      color: white;
-      border: 0;
-      border-radius: 8px;
-      padding: 8px 14px;
-      cursor: pointer;
-    }
-    button:disabled { opacity: 0.6; cursor: wait; }
-    #save-state, #chat-state, #openrouter-state { font-size: 0.95rem; }
-    #save-state.error, #chat-state.error, #openrouter-state.error { color: var(--rust); }
-    button.secondary {
-      background: transparent;
-      color: var(--green);
-      box-shadow: inset 0 0 0 1px var(--green);
-    }
-    .connection { margin-top: 24px; }
-    .connection label.field { display: block; font-size: 0.92rem; color: var(--muted); }
-    .connection input[type="password"] { min-width: min(100%, 28rem); }
-    .good-for { margin: 2px 0 0; }
-    .chat { margin-top: 20px; }
-    .chat label.field { display: block; font-size: 0.92rem; color: var(--muted); }
-    .chat select, .chat textarea {
-      display: block;
-      width: 100%;
-      margin: 4px 0 12px;
-      font: inherit;
-      padding: 8px 10px;
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      background: white;
-    }
-    .chat-reply {
-      white-space: pre-wrap;
-      background: var(--paper);
-      border-radius: 8px;
-      padding: 10px 12px;
-      margin: 12px 0 0;
-    }
-  </style>
+  <title>Functions</title>
+  <link rel="stylesheet" href="/static/portal.css">
 </head>
 <body>
   <main>
-    <h1>Model selection</h1>
+    <nav class="portal" aria-label="Portal">
+      <a href="/" aria-current="page">Functions</a>
+      <a href="/setup">LLM setup</a>
+    </nav>
+    <h1>Functions</h1>
     <p class="lede">
-      Each function keeps its own model. Prices sit next to the choices, recorded on
-      <time id="price-date" datetime="2026-11-03">3 Nov 2026</time>.
-      The page loads without an API key.
-    </p>
-    <p class="note" id="cost-note">
-      A single total is not shown. Text, images, and video use different units, so adding them would not mean anything. Text is USD per 1M tokens, images are USD per 1M image-output tokens or USD per megapixel, and video is USD per second. Each function below shows its own unit price.
+      Ask a question, translate, or draft Cantonese script with the saved text model.
+      Image and video stay off this chat form; they are not chat completions.
     </p>
 
-    <section class="connection" aria-labelledby="openrouter-title">
-      <h2 id="openrouter-title">OpenRouter connection</h2>
-      <p class="note" id="openrouter-status" role="status">Status: not configured.</p>
-      <p class="meta" id="openrouter-configured">openrouter_configured: false</p>
-      <p class="meta" id="openrouter-key-mask" hidden></p>
-      <p class="meta">
-        Paste a new key to save it for this server process. The full key is never shown.
-        An empty save is rejected so a working key is not wiped. In production, use the
-        token field next to Save selection.
-      </p>
-      <form id="openrouter-form">
-        <label class="field">API key
-          <input id="openrouter-key" type="password" autocomplete="off" spellcheck="false" placeholder="Paste a new key">
-        </label>
-        <div class="savebar">
-          <button type="submit" id="openrouter-save">Save</button>
-          <button type="button" class="secondary" id="openrouter-test">Retest</button>
-          <span id="openrouter-state" role="status"></span>
-        </div>
-      </form>
-    </section>
-
-    <div class="layout">
-      <form id="picker">
-        <fieldset>
-          <legend>RAG and document analysis</legend>
-          <div data-options="rag_qa"></div>
-        </fieldset>
-        <fieldset>
-          <legend>Standard translation</legend>
-          <div data-options="translation"></div>
-        </fieldset>
-        <fieldset>
-          <legend>Cantonese script writing</legend>
-          <div data-options="cantonese_script"></div>
-        </fieldset>
-        <fieldset>
-          <legend>Image and storyboard</legend>
-          <div data-options="image_gen"></div>
-        </fieldset>
-        <fieldset>
-          <legend>Video generation</legend>
-          <div data-options="video_gen"></div>
-        </fieldset>
-        <div class="savebar">
-          <button type="submit" id="save">Save selection</button>
-          <label class="token">Production token
-            <input id="token" type="password" autocomplete="off" placeholder="Leave blank on the Mac">
-          </label>
-          <span id="save-state" role="status"></span>
-        </div>
-      </form>
-
-      <section class="summary" aria-labelledby="summary-title">
-        <h2 id="summary-title">Current choices</h2>
-        <p class="meta">Unit price for each function. These figures are not added together.</p>
-        <ol id="summary-list"></ol>
-      </section>
+    <div class="tabs" role="tablist" aria-label="Functions">
+      <button type="button" role="tab" id="tab-rag_qa" aria-selected="true" data-function="rag_qa">RAG and document analysis</button>
+      <button type="button" role="tab" id="tab-translation" aria-selected="false" data-function="translation">Standard translation</button>
+      <button type="button" role="tab" id="tab-cantonese_script" aria-selected="false" data-function="cantonese_script">Cantonese script writing</button>
+      <button type="button" role="tab" id="tab-image_gen" class="media" aria-selected="false" data-function="image_gen">Image and storyboard</button>
+      <button type="button" role="tab" id="tab-video_gen" class="media" aria-selected="false" data-function="video_gen">Video generation</button>
     </div>
 
-    <section class="chat" aria-labelledby="chat-title">
+    <p class="meta model-line" id="chat-model"></p>
+
+    <section class="uploads" id="rag-upload" aria-labelledby="upload-title">
+      <h2 id="upload-title">Document upload</h2>
+      <p class="meta">
+        Accepted: .pdf, .docx, .doc, .txt, .md, .xlsx, .xls, .csv, .json. Maximum 10 MB.
+        .doc and .xls are stored, but text extraction needs a converted copy.
+        Chat for RAG uses the extracted text as context.
+      </p>
+      <form id="upload-form">
+        <label class="field">File
+          <input id="upload-file" type="file" accept=".pdf,.docx,.doc,.txt,.md,.xlsx,.xls,.csv,.json">
+        </label>
+        <div class="savebar">
+          <button type="submit" id="upload-send">Upload</button>
+          <span id="upload-state" role="status"></span>
+        </div>
+      </form>
+      <ul class="file-list" id="file-list"></ul>
+    </section>
+
+    <section class="chat" id="chat-panel" aria-labelledby="chat-title">
       <h2 id="chat-title">Chat</h2>
       <p class="meta">
         Uses the saved text model. Image and video functions are not sent as chat completions.
       </p>
-      <label class="field">Function
-        <select id="chat-function">
-          <option value="rag_qa">RAG and document analysis</option>
-          <option value="translation">Standard translation</option>
-          <option value="cantonese_script">Cantonese script writing</option>
-        </select>
-      </label>
-      <p class="meta" id="chat-model"></p>
       <label class="field">Message
         <textarea id="chat-message" rows="4" placeholder="Ask a question"></textarea>
       </label>
       <div class="savebar">
         <button type="button" id="chat-send">Send</button>
+        <label class="token">Production token
+          <input id="token" type="password" autocomplete="off" placeholder="Leave blank on the Mac">
+        </label>
         <span id="chat-state" role="status"></span>
       </div>
       <pre id="chat-reply" class="chat-reply" hidden></pre>
     </section>
-    <p class="source" id="price-source"></p>
+
+    <section class="unavailable" id="media-note" hidden aria-labelledby="media-title">
+      <h2 id="media-title">Not a chat completion</h2>
+      <p class="note">
+        Image and video generation are not sent through OpenRouter chat completions.
+        Choose a model for them on <a href="/setup">LLM setup</a>. This page does not run those jobs yet.
+      </p>
+    </section>
   </main>
   <script>
-    const state = { catalog: null, saved: null, keyLast4: null };
-
-    function tagClass(quality) {
-      return String(quality || "").toLowerCase().replace(/\s+/g, "-");
-    }
-
-    function priceText(price) {
-      const line = document.createElement("li");
-      const main = document.createElement("span");
-      main.textContent = price.label + ": " + price.amount_usd + " " + price.unit;
-      line.appendChild(main);
-      if (price.price_status === "estimate") {
-        const mark = document.createElement("span");
-        mark.className = "estimate";
-        mark.textContent = "estimate";
-        line.appendChild(mark);
-      }
-      if (price.detail) {
-        const detail = document.createElement("span");
-        detail.className = "detail";
-        detail.textContent = price.detail;
-        line.appendChild(detail);
-      }
-      return line;
-    }
-
-    function currentSelection() {
-      const selection = {};
-      for (const fn of state.catalog.functions) {
-        const chosen = document.querySelector('input[name="' + fn.id + '"]:checked');
-        selection[fn.id] = chosen ? chosen.value : fn.selected_model_id;
-      }
-      return selection;
-    }
-
-    function modelById(functionId, modelId) {
-      const fn = state.catalog.functions.find((item) => item.id === functionId);
-      return fn.options.find((option) => option.id === modelId);
-    }
-
-    function renderOptions() {
-      for (const fn of state.catalog.functions) {
-        const host = document.querySelector('[data-options="' + fn.id + '"]');
-        host.replaceChildren();
-        for (const option of fn.options) {
-          const label = document.createElement("label");
-          label.className = "option";
-          const input = document.createElement("input");
-          input.type = "radio";
-          input.name = fn.id;
-          input.value = option.id;
-          input.checked = option.id === fn.selected_model_id;
-          label.appendChild(input);
-          const title = document.createElement("span");
-          title.className = "option-title";
-          title.textContent = option.name;
-          label.appendChild(title);
-          const tag = document.createElement("span");
-          tag.className = "tag " + tagClass(option.quality_cost);
-          tag.textContent = option.quality_cost;
-          label.appendChild(tag);
-          const meta = document.createElement("div");
-          meta.className = "meta";
-          meta.textContent = option.provider + " · " + option.id;
-          label.appendChild(meta);
-          const goodFor = document.createElement("p");
-          goodFor.className = "good-for";
-          goodFor.textContent = option.good_for;
-          label.appendChild(goodFor);
-          const prices = document.createElement("ul");
-          prices.className = "prices";
-          for (const price of option.prices) prices.appendChild(priceText(price));
-          label.appendChild(prices);
-          host.appendChild(label);
-        }
-      }
-    }
-
-    function renderSummary() {
-      const selection = currentSelection();
-      const list = document.getElementById("summary-list");
-      list.replaceChildren();
-      for (const fn of state.catalog.functions) {
-        const option = modelById(fn.id, selection[fn.id]);
-        const item = document.createElement("li");
-        const title = document.createElement("div");
-        title.textContent = fn.label;
-        item.appendChild(title);
-        if (!option) {
-          list.appendChild(item);
-          continue;
-        }
-        const meta = document.createElement("div");
-        meta.className = "meta";
-        meta.textContent = option.provider + " · " + option.id;
-        item.appendChild(meta);
-        const tag = document.createElement("span");
-        tag.className = "tag " + tagClass(option.quality_cost);
-        tag.textContent = option.quality_cost;
-        item.appendChild(tag);
-        const prices = document.createElement("ul");
-        prices.className = "prices";
-        for (const price of option.prices) prices.appendChild(priceText(price));
-        item.appendChild(prices);
-        if (option.relative_note) {
-          const note = document.createElement("div");
-          note.className = "meta";
-          note.textContent = option.relative_note;
-          item.appendChild(note);
-        }
-        list.appendChild(item);
-      }
-    }
-
-    function statusLabel(status) {
-      if (status === "key_accepted") return "key accepted";
-      if (status === "key_rejected") return "key rejected";
-      return "not configured";
-    }
-
-    function authHeaders() {
-      const headers = { "content-type": "application/json" };
-      const token = document.getElementById("token").value.trim();
-      if (token) headers.Authorization = "Bearer " + token;
-      return headers;
-    }
-
-    function renderOpenRouter(payload) {
-      const statusLine = document.getElementById("openrouter-status");
-      const configuredLine = document.getElementById("openrouter-configured");
-      const maskLine = document.getElementById("openrouter-key-mask");
-      if (!statusLine) return;
-      const status = statusLabel(payload.openrouter_status);
-      statusLine.textContent = "Status: " + status + ".";
-      const configured = payload.openrouter_configured === true;
-      configuredLine.textContent = "openrouter_configured: " + (configured ? "true" : "false");
-      if (state.keyLast4) {
-        maskLine.hidden = false;
-        maskLine.textContent = "Saved key: ••••" + state.keyLast4;
-      } else {
-        maskLine.hidden = true;
-        maskLine.textContent = "";
-      }
-    }
-
-    function unsaved() {
-      if (!state.saved) return false;
-      const selection = currentSelection();
-      return state.catalog.functions.some((fn) => selection[fn.id] !== state.saved.selection[fn.id]);
-    }
+    const TEXT_FUNCTIONS = ["rag_qa", "translation", "cantonese_script"];
+    const state = { catalog: null, saved: null, functionId: "rag_qa", files: [] };
 
     function priceSummary(prices) {
       return (prices || []).map(function (price) {
         return price.label + " " + price.amount_usd + " " + price.unit;
       }).join("; ");
+    }
+
+    function modelById(functionId, modelId) {
+      const fn = state.catalog.functions.find((item) => item.id === functionId);
+      return fn ? fn.options.find((option) => option.id === modelId) : null;
+    }
+
+    function authHeaders(json) {
+      const headers = {};
+      if (json) headers["content-type"] = "application/json";
+      const token = document.getElementById("token").value.trim();
+      if (token) headers.Authorization = "Bearer " + token;
+      return headers;
     }
 
     function renderChatModel() {
@@ -430,141 +102,166 @@
         line.textContent = "";
         return;
       }
-      const functionId = document.getElementById("chat-function").value;
+      const functionId = state.functionId;
+      const fn = state.catalog.functions.find((item) => item.id === functionId);
       const savedId = state.saved.selection[functionId];
       const option = savedId ? modelById(functionId, savedId) : null;
+      line.replaceChildren();
       if (!option) {
-        line.textContent = "";
-        return;
+        const missing = document.createElement("span");
+        missing.textContent = (fn ? fn.label : functionId) + ": no saved model. ";
+        line.appendChild(missing);
+      } else {
+        const text = document.createElement("span");
+        text.textContent = (fn ? fn.label : functionId) + " model: " + option.id
+          + " · " + priceSummary(option.prices)
+          + " (recorded " + state.catalog.prices_recorded_on + ", not a live quote). ";
+        line.appendChild(text);
       }
-      line.textContent = "Saved model: " + option.id + " · " + priceSummary(option.prices)
-        + " (recorded " + state.catalog.prices_recorded_on + ", not a live quote).";
+      const link = document.createElement("a");
+      link.href = "/setup";
+      link.textContent = "Change on LLM setup";
+      line.appendChild(link);
     }
 
-    async function load() {
+    function isTextFunction(functionId) {
+      return TEXT_FUNCTIONS.indexOf(functionId) !== -1;
+    }
+
+    function showFunction(functionId) {
+      state.functionId = functionId;
+      for (const button of document.querySelectorAll(".tabs [data-function]")) {
+        button.setAttribute("aria-selected", button.getAttribute("data-function") === functionId ? "true" : "false");
+      }
+      const text = isTextFunction(functionId);
+      document.getElementById("rag-upload").hidden = functionId !== "rag_qa";
+      document.getElementById("chat-panel").hidden = !text;
+      document.getElementById("media-note").hidden = text;
+      renderChatModel();
+    }
+
+    function renderFiles() {
+      const list = document.getElementById("file-list");
+      list.replaceChildren();
+      if (!state.files.length) {
+        const empty = document.createElement("li");
+        empty.textContent = "No uploaded documents.";
+        list.appendChild(empty);
+        return;
+      }
+      for (const file of state.files) {
+        const item = document.createElement("li");
+        const body = document.createElement("div");
+        const name = document.createElement("div");
+        name.className = "name";
+        name.textContent = file.name;
+        body.appendChild(name);
+        const meta = document.createElement("div");
+        meta.className = "meta";
+        meta.textContent = file.type + " · " + file.size + " bytes · "
+          + file.extracted_chars + " characters · " + file.created_at;
+        body.appendChild(meta);
+        if (file.extract_error) {
+          const error = document.createElement("div");
+          error.className = "meta";
+          error.textContent = file.extract_error;
+          body.appendChild(error);
+        }
+        item.appendChild(body);
+        const remove = document.createElement("button");
+        remove.type = "button";
+        remove.className = "secondary";
+        remove.textContent = "Delete";
+        remove.addEventListener("click", () => deleteFile(file.id));
+        item.appendChild(remove);
+        list.appendChild(item);
+      }
+    }
+
+    async function loadFiles() {
+      const response = await fetch("/api/rag/files");
+      if (!response.ok) throw new Error("Could not list files");
+      const payload = await response.json();
+      state.files = Array.isArray(payload) ? payload : (payload.files || []);
+      renderFiles();
+    }
+
+    async function deleteFile(id) {
+      const status = document.getElementById("upload-state");
+      status.className = "";
+      status.textContent = "Deleting…";
+      try {
+        const response = await fetch("/api/rag/files/" + encodeURIComponent(id), {
+          method: "DELETE",
+          headers: authHeaders(false),
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          status.className = "error";
+          const detail = payload.detail;
+          status.textContent = typeof detail === "string" ? detail : "Delete failed (" + response.status + ").";
+          return;
+        }
+        await loadFiles();
+        status.textContent = "Deleted.";
+      } catch (error) {
+        status.className = "error";
+        status.textContent = "Delete failed.";
+      }
+    }
+
+    async function loadModels() {
       const response = await fetch("/api/models");
       if (!response.ok) throw new Error("Could not load models");
       const payload = await response.json();
       state.catalog = payload;
       state.saved = payload;
-      document.getElementById("price-date").textContent = "3 Nov 2026";
-      document.getElementById("price-date").dateTime = payload.prices_recorded_on;
-      document.getElementById("cost-note").textContent = payload.cost_note;
-      document.getElementById("price-source").textContent = "Price source: " + payload.price_source + ".";
-      renderOpenRouter(payload);
-      renderOptions();
-      renderSummary();
       renderChatModel();
     }
 
-    document.getElementById("picker").addEventListener("change", () => {
-      renderSummary();
-      const status = document.getElementById("save-state");
-      status.className = "";
-      status.textContent = unsaved() ? "Unsaved change." : "";
+    document.querySelectorAll(".tabs [data-function]").forEach((button) => {
+      button.addEventListener("click", () => showFunction(button.getAttribute("data-function")));
     });
 
-    document.getElementById("picker").addEventListener("submit", async (event) => {
+    document.getElementById("upload-form").addEventListener("submit", async (event) => {
       event.preventDefault();
-      const button = document.getElementById("save");
-      const status = document.getElementById("save-state");
+      const status = document.getElementById("upload-state");
+      const input = document.getElementById("upload-file");
+      const file = input.files && input.files[0];
+      if (!file) {
+        status.className = "error";
+        status.textContent = "Choose a file to upload.";
+        return;
+      }
+      const button = document.getElementById("upload-send");
       button.disabled = true;
       status.className = "";
-      status.textContent = "Saving…";
-      const headers = authHeaders();
+      status.textContent = "Uploading…";
+      const body = new FormData();
+      body.append("file", file, file.name);
       try {
-        const response = await fetch("/api/models", {
-          method: "PUT",
-          headers,
-          body: JSON.stringify(currentSelection()),
+        const response = await fetch("/api/rag/files", {
+          method: "POST",
+          headers: authHeaders(false),
+          body,
         });
         const payload = await response.json().catch(() => ({}));
         if (!response.ok) {
           status.className = "error";
           const detail = payload.detail;
-          status.textContent = typeof detail === "string" ? detail : "Save failed (" + response.status + ").";
+          status.textContent = typeof detail === "string" ? detail : "Upload failed (" + response.status + ").";
           return;
         }
-        state.catalog = payload;
-        state.saved = payload;
-        renderOptions();
-        renderSummary();
-        renderChatModel();
-        status.className = "";
-        status.textContent = "Saved.";
+        input.value = "";
+        await loadFiles();
+        status.textContent = "Uploaded " + payload.name + ".";
       } catch (error) {
         status.className = "error";
-        status.textContent = "Save failed.";
+        status.textContent = "Upload failed.";
       } finally {
         button.disabled = false;
       }
     });
-
-    async function postOpenRouter(url, body) {
-      const buttonSave = document.getElementById("openrouter-save");
-      const buttonTest = document.getElementById("openrouter-test");
-      const status = document.getElementById("openrouter-state");
-      buttonSave.disabled = true;
-      buttonTest.disabled = true;
-      try {
-        const response = await fetch(url, {
-          method: "POST",
-          headers: authHeaders(),
-          body: JSON.stringify(body),
-        });
-        const payload = await response.json().catch(() => ({}));
-        if (!response.ok) {
-          status.className = "error";
-          const detail = payload.detail;
-          status.textContent = typeof detail === "string" ? detail : "Request failed (" + response.status + ").";
-          return null;
-        }
-        renderOpenRouter(payload);
-        status.className = "";
-        return payload;
-      } catch (error) {
-        status.className = "error";
-        status.textContent = "Request failed.";
-        return null;
-      } finally {
-        buttonSave.disabled = false;
-        buttonTest.disabled = false;
-      }
-    }
-
-    document.getElementById("openrouter-form").addEventListener("submit", async (event) => {
-      event.preventDefault();
-      const status = document.getElementById("openrouter-state");
-      const input = document.getElementById("openrouter-key");
-      let apiKey = input.value.trim();
-      if (apiKey.length >= 2 && apiKey[0] === apiKey[apiKey.length - 1] && (apiKey[0] === '"' || apiKey[0] === "'")) {
-        apiKey = apiKey.slice(1, -1).trim();
-      }
-      if (!apiKey) {
-        status.className = "error";
-        status.textContent = "Enter a key to save. An empty save is rejected.";
-        return;
-      }
-      status.className = "";
-      status.textContent = "Saving…";
-      const payload = await postOpenRouter("/api/openrouter/key", { api_key: apiKey });
-      if (!payload) return;
-      state.keyLast4 = apiKey.slice(-4);
-      input.value = "";
-      renderOpenRouter(payload);
-      status.textContent = "Saved. Status: " + statusLabel(payload.openrouter_status) + ".";
-    });
-
-    document.getElementById("openrouter-test").addEventListener("click", async () => {
-      const status = document.getElementById("openrouter-state");
-      status.className = "";
-      status.textContent = "Testing…";
-      const payload = await postOpenRouter("/api/openrouter/test", {});
-      if (!payload) return;
-      status.textContent = "Retest: " + statusLabel(payload.openrouter_status) + ".";
-    });
-
-    document.getElementById("chat-function").addEventListener("change", renderChatModel);
 
     document.getElementById("chat-send").addEventListener("click", async () => {
       const button = document.getElementById("chat-send");
@@ -576,17 +273,21 @@
         status.textContent = "Enter a message.";
         return;
       }
+      if (!isTextFunction(state.functionId)) {
+        status.className = "error";
+        status.textContent = "This function is not a chat completion.";
+        return;
+      }
       button.disabled = true;
       status.className = "";
       status.textContent = "Sending…";
-      const headers = authHeaders();
       try {
         const response = await fetch("/api/chat", {
           method: "POST",
-          headers,
+          headers: authHeaders(true),
           body: JSON.stringify({
             message,
-            function: document.getElementById("chat-function").value,
+            function: state.functionId,
           }),
         });
         const payload = await response.json().catch(() => ({}));
@@ -596,8 +297,16 @@
           status.textContent = typeof detail === "string" ? detail : "Chat failed (" + response.status + ").";
           return;
         }
-        document.getElementById("chat-model").textContent = "Used " + payload.model_id + " · "
-          + priceSummary(payload.prices) + " (recorded " + payload.prices_recorded_on + ", not a live quote).";
+        const line = document.getElementById("chat-model");
+        line.replaceChildren();
+        const used = document.createElement("span");
+        used.textContent = "Used " + payload.model_id + " · "
+          + priceSummary(payload.prices) + " (recorded " + payload.prices_recorded_on + ", not a live quote). ";
+        line.appendChild(used);
+        const link = document.createElement("a");
+        link.href = "/setup";
+        link.textContent = "Change on LLM setup";
+        line.appendChild(link);
         replyBox.hidden = false;
         replyBox.textContent = payload.reply;
         status.className = "";
@@ -610,9 +319,11 @@
       }
     });
 
-    load().catch(() => {
-      document.getElementById("save-state").className = "error";
-      document.getElementById("save-state").textContent = "Could not load the model list.";
+    Promise.all([loadModels(), loadFiles()]).then(() => {
+      showFunction("rag_qa");
+    }).catch(() => {
+      document.getElementById("chat-state").className = "error";
+      document.getElementById("chat-state").textContent = "Could not load the functions page.";
     });
   </script>
 </body>

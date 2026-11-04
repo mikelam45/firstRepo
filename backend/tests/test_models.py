@@ -4,7 +4,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.catalog import DEFAULT_SELECTION, FUNCTION_IDS
-from app.main import PAGE, app
+from app.main import PAGE, SETUP_PAGE, app
 
 LABELS = (
     "RAG and document analysis",
@@ -34,24 +34,43 @@ def _prices(payload):
 def test_packaged_index_html_exists():
     assert PAGE.is_file()
     assert PAGE.name == "index.html"
-    assert "Fieldnote model selection" in PAGE.read_text(encoding="utf-8")
+    assert SETUP_PAGE.is_file()
+    home = PAGE.read_text(encoding="utf-8")
+    setup = SETUP_PAGE.read_text(encoding="utf-8")
+    assert "Document upload" in home
+    assert "OpenRouter connection" in setup
+    assert "LLM setup" in setup
 
 
 def test_page_lists_every_function(client):
-    page = client.get("/")
-    assert page.status_code == 200
-    assert page.status_code != 404
-    assert "text/html" in page.headers["content-type"]
+    home = client.get("/")
+    assert home.status_code == 200
+    assert home.status_code != 404
+    assert "text/html" in home.headers["content-type"]
     for label in LABELS:
-        assert label in page.text
-    assert "A single total is not shown" in page.text
-    assert "Chat" in page.text
-    assert "not sent as chat completions" in page.text
-    assert 'id="chat-send"' in page.text
-    assert "OpenRouter connection" in page.text
-    assert 'id="openrouter-save"' in page.text
-    assert 'id="openrouter-test"' in page.text
-    assert "openrouter_configured" in page.text
+        assert label in home.text
+    assert "Chat" in home.text
+    assert "not sent as chat completions" in home.text
+    assert 'id="chat-send"' in home.text
+    assert 'id="rag-upload"' in home.text
+    assert "OpenRouter connection" not in home.text
+
+    setup = client.get("/setup")
+    assert setup.status_code == 200
+    assert "text/html" in setup.headers["content-type"]
+    for label in LABELS:
+        assert label in setup.text
+    assert "A single total is not shown" in setup.text
+    assert "OpenRouter connection" in setup.text
+    assert 'id="openrouter-save"' in setup.text
+    assert 'id="openrouter-test"' in setup.text
+    assert "openrouter_configured" in setup.text
+    assert 'id="rag-upload"' not in setup.text
+    assert 'id="chat-send"' not in setup.text
+
+    settings = client.get("/settings")
+    assert settings.status_code == 200
+    assert "OpenRouter connection" in settings.text
 
 
 def test_get_returns_defaults_and_a_priced_unit(client):

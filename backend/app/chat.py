@@ -80,7 +80,13 @@ def _assistant_text(payload: Any) -> str | None:
     return None
 
 
-def complete_chat(*, message: str, function_id: str, model_id: str) -> dict[str, object]:
+def complete_chat(
+    *,
+    message: str,
+    function_id: str,
+    model_id: str,
+    messages: list[dict[str, str]] | None = None,
+) -> dict[str, object]:
     api_key = load_openrouter_api_key()
     if not api_key:
         raise ChatError(503, MISSING_KEY_DETAIL)
@@ -91,7 +97,7 @@ def complete_chat(*, message: str, function_id: str, model_id: str) -> dict[str,
     }
     payload = {
         "model": model_id,
-        "messages": [{"role": "user", "content": message}],
+        "messages": messages if messages is not None else [{"role": "user", "content": message}],
         "stream": False,
     }
     try:

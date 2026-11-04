@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>LLM setup</title>
+  <link rel="stylesheet" href="/static/portal.css">
+</head>
+<body>
+  <main>
+    <nav class="portal" aria-label="Portal">
+      <a href="/">Functions</a>
+      <a href="/setup" aria-current="page">LLM setup</a>
+    </nav>
+    <h1>LLM setup</h1>
+    <p class="lede">
+      Connect OpenRouter and pick a model for each function. Prices sit next to the
+      choices, recorded on
+      <time id="price-date" datetime="2026-11-03">3 Nov 2026</time>.
+      The page loads without an API key.
+    </p>
+    <p class="note" id="cost-note">
+      A single total is not shown. Text, images, and video use different units, so adding them would not mean anything. Text is USD per 1M tokens, images are USD per 1M image-output tokens or USD per megapixel, and video is USD per second. Each function below shows its own unit price.
+    </p>
+
+    <section class="connection" aria-labelledby="openrouter-title">
+      <h2 id="openrouter-title">OpenRouter connection</h2>
+      <p class="note" id="openrouter-status" role="status">Status: not configured.</p>
+      <p class="meta" id="openrouter-configured">openrouter_configured: false</p>
+      <p class="meta" id="openrouter-key-mask" hidden></p>
+      <p class="meta">
+        Paste a new key to save it for this server process. The full key is never shown.
+        An empty save is rejected so a working key is not wiped. In production, use the
+        token field next to Save selection.
+      </p>
+      <form id="openrouter-form">
+        <label class="field">API key
+          <input id="openrouter-key" type="password" autocomplete="off" spellcheck="false" placeholder="Paste a new key">
+        </label>
+        <div class="savebar">
+          <button type="submit" id="openrouter-save">Save</button>
+          <button type="button" class="secondary" id="openrouter-test">Retest</button>
+          <span id="openrouter-state" role="status"></span>
+        </div>
+      </form>
+    </section>
+
+    <div class="layout">
+      <form id="picker">
+        <fieldset>
+          <legend>RAG and document analysis</legend>
+          <div data-options="rag_qa"></div>
+        </fieldset>
+        <fieldset>
+          <legend>Standard translation</legend>
+          <div data-options="translation"></div>
+        </fieldset>
+        <fieldset>
+          <legend>Cantonese script writing</legend>
+          <div data-options="cantonese_script"></div>
+        </fieldset>
+        <fieldset>
+          <legend>Image and storyboard</legend>
+          <div data-options="image_gen"></div>
+        </fieldset>
+        <fieldset>
+          <legend>Video generation</legend>
+          <div data-options="video_gen"></div>
+        </fieldset>
+        <div class="savebar">
+          <button type="submit" id="save">Save selection</button>
+          <label class="token">Production token
+            <input id="token" type="password" autocomplete="off" placeholder="Leave blank on the Mac">
+          </label>
+          <span id="save-state" role="status"></span>
+        </div>
+      </form>
+
+      <section class="summary" aria-labelledby="summary-title">
+        <h2 id="summary-title">Current choices</h2>
+        <p class="meta">Unit price for each function. These figures are not added together.</p>
+        <ol id="summary-list"></ol>
+      </section>
+    </div>
+    <p class="source" id="price-source"></p>
+  </main>
+  <script>
+    const state = { catalog: null, saved: null, keyLast4: null };
+
+    function tagClass(quality) {
+      return String(quality || "").toLowerCase().replace(/\s+/g, "-");
+    }
+
+    function priceText(price) {
+      const line = document.createElement("li");
+      const main = document.createElement("span");
+      main.textContent = price.label + ": " + price.amount_usd + " " + price.unit;
+      line.appendChild(main);
+      if (price.price_status === "estimate") {
+        const mark = document.createElement("span");
+        mark.className = "estimate";
+        mark.textContent = "estimate";
+        line.appendChild(mark);
+      }
+      if (price.detail) {
+        const detail = document.createElement("span");
+        detail.className = "detail";
+        detail.textContent = price.detail;
+        line.appendChild(detail);
+      }
+      return line;
+    }
+
+    function currentSelection() {
+      const selection = {};
+      for (const fn of state.catalog.functions) {
+        const chosen = document.querySelector('input[name="' + fn.id + '"]:checked');
+        selection[fn.id] = chosen ? chosen.value : fn.selected_model_id;
+      }
+      return selection;
+    }
+
+    function modelById(functionId, modelId) {
+      const fn = state.catalog.functions.find((item) => item.id === functionId);
+      return fn.options.find((option) => option.id === modelId);
+    }
+
+    function renderOptions() {
+      for (const fn of state.catalog.functions) {
+        const host = document.querySelector('[data-options="' + fn.id + '"]');
+        host.replaceChildren();
+        for (const option of fn.options) {
+          const label = document.createElement("label");
+          label.className = "option";
+          const input = document.createElement("input");
+          input.type = "radio";
+          input.name = fn.id;
+          input.value = option.id;
+          input.checked = option.id === fn.selected_model_id;
+          label.appendChild(input);
+          const title = document.createElement("span");
+          title.className = "option-title";
+          title.textContent = option.name;
+          label.appendChild(title);
+          const tag = document.createElement("span");
+          tag.className = "tag " + tagClass(option.quality_cost);
+          tag.textContent = option.quality_cost;
+          label.appendChild(tag);
+          const meta = document.createElement("div");
+          meta.className = "meta";
+          meta.textContent = option.provider + " · " + option.id;
+          label.appendChild(meta);
+          const goodFor = document.createElement("p");
+          goodFor.className = "good-for";
+          goodFor.textContent = option.good_for;
+          label.appendChild(goodFor);
+          const prices = document.createElement("ul");
+          prices.className = "prices";
+          for (const price of option.prices) prices.appendChild(priceText(price));
+          label.appendChild(prices);
+          host.appendChild(label);
+        }
+      }
+    }
+
+    function renderSummary() {
+      const selection = currentSelection();
+      const list = document.getElementById("summary-list");
+      list.replaceChildren();
+      for (const fn of state.catalog.functions) {
+        const option = modelById(fn.id, selection[fn.id]);
+        const item = document.createElement("li");
+        const title = document.createElement("div");
+        title.textContent = fn.label;
+        item.appendChild(title);
+        if (!option) {
+          list.appendChild(item);
+          continue;
+        }
+        const meta = document.createElement("div");
+        meta.className = "meta";
+        meta.textContent = option.provider + " · " + option.id;
+        item.appendChild(meta);
+        const tag = document.createElement("span");
+        tag.className = "tag " + tagClass(option.quality_cost);
+        tag.textContent = option.quality_cost;
+        item.appendChild(tag);
+        const prices = document.createElement("ul");
+        prices.className = "prices";
+        for (const price of option.prices) prices.appendChild(priceText(price));
+        item.appendChild(prices);
+        if (option.relative_note) {
+          const note = document.createElement("div");
+          note.className = "meta";
+          note.textContent = option.relative_note;
+          item.appendChild(note);
+        }
+        list.appendChild(item);
+      }
+    }
+
+    function statusLabel(status) {
+      if (status === "key_accepted") return "key accepted";
+      if (status === "key_rejected") return "key rejected";
+      return "not configured";
+    }
+
+    function authHeaders() {
+      const headers = { "content-type": "application/json" };
+      const token = document.getElementById("token").value.trim();
+      if (token) headers.Authorization = "Bearer " + token;
+      return headers;
+    }
+
+    function renderOpenRouter(payload) {
+      const statusLine = document.getElementById("openrouter-status");
+      const configuredLine = document.getElementById("openrouter-configured");
+      const maskLine = document.getElementById("openrouter-key-mask");
+      if (!statusLine) return;
+      const status = statusLabel(payload.openrouter_status);
+      statusLine.textContent = "Status: " + status + ".";
+      const configured = payload.openrouter_configured === true;
+      configuredLine.textContent = "openrouter_configured: " + (configured ? "true" : "false");
+      if (state.keyLast4) {
+        maskLine.hidden = false;
+        maskLine.textContent = "Saved key: ••••" + state.keyLast4;
+      } else {
+        maskLine.hidden = true;
+        maskLine.textContent = "";
+      }
+    }
+
+    function unsaved() {
+      if (!state.saved) return false;
+      const selection = currentSelection();
+      return state.catalog.functions.some((fn) => selection[fn.id] !== state.saved.selection[fn.id]);
+    }
+
+    async function load() {
+      const response = await fetch("/api/models");
+      if (!response.ok) throw new Error("Could not load models");
+      const payload = await response.json();
+      state.catalog = payload;
+      state.saved = payload;
+      document.getElementById("price-date").textContent = "3 Nov 2026";
+      document.getElementById("price-date").dateTime = payload.prices_recorded_on;
+      document.getElementById("cost-note").textContent = payload.cost_note;
+      document.getElementById("price-source").textContent = "Price source: " + payload.price_source + ".";
+      renderOpenRouter(payload);
+      renderOptions();
+      renderSummary();
+    }
+
+    document.getElementById("picker").addEventListener("change", () => {
+      renderSummary();
+      const status = document.getElementById("save-state");
+      status.className = "";
+      status.textContent = unsaved() ? "Unsaved change." : "";
+    });
+
+    document.getElementById("picker").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const button = document.getElementById("save");
+      const status = document.getElementById("save-state");
+      button.disabled = true;
+      status.className = "";
+      status.textContent = "Saving…";
+      const headers = authHeaders();
+      try {
+        const response = await fetch("/api/models", {
+          method: "PUT",
+          headers,
+          body: JSON.stringify(currentSelection()),
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          status.className = "error";
+          const detail = payload.detail;
+          status.textContent = typeof detail === "string" ? detail : "Save failed (" + response.status + ").";
+          return;
+        }
+        state.catalog = payload;
+        state.saved = payload;
+        renderOptions();
+        renderSummary();
+        status.className = "";
+        status.textContent = "Saved.";
+      } catch (error) {
+        status.className = "error";
+        status.textContent = "Save failed.";
+      } finally {
+        button.disabled = false;
+      }
+    });
+
+    async function postOpenRouter(url, body) {
+      const buttonSave = document.getElementById("openrouter-save");
+      const buttonTest = document.getElementById("openrouter-test");
+      const status = document.getElementById("openrouter-state");
+      buttonSave.disabled = true;
+      buttonTest.disabled = true;
+      try {
+        const response = await fetch(url, {
+          method: "POST",
+          headers: authHeaders(),
+          body: JSON.stringify(body),
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          status.className = "error";
+          const detail = payload.detail;
+          status.textContent = typeof detail === "string" ? detail : "Request failed (" + response.status + ").";
+          return null;
+        }
+        renderOpenRouter(payload);
+        status.className = "";
+        return payload;
+      } catch (error) {
+        status.className = "error";
+        status.textContent = "Request failed.";
+        return null;
+      } finally {
+        buttonSave.disabled = false;
+        buttonTest.disabled = false;
+      }
+    }
+
+    document.getElementById("openrouter-form").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const status = document.getElementById("openrouter-state");
+      const input = document.getElementById("openrouter-key");
+      let apiKey = input.value.trim();
+      if (apiKey.length >= 2 && apiKey[0] === apiKey[apiKey.length - 1] && (apiKey[0] === '"' || apiKey[0] === "'")) {
+        apiKey = apiKey.slice(1, -1).trim();
+      }
+      if (!apiKey) {
+        status.className = "error";
+        status.textContent = "Enter a key to save. An empty save is rejected.";
+        return;
+      }
+      status.className = "";
+      status.textContent = "Saving…";
+      const payload = await postOpenRouter("/api/openrouter/key", { api_key: apiKey });
+      if (!payload) return;
+      state.keyLast4 = apiKey.slice(-4);
+      input.value = "";
+      renderOpenRouter(payload);
+      status.textContent = "Saved. Status: " + statusLabel(payload.openrouter_status) + ".";
+    });
+
+    document.getElementById("openrouter-test").addEventListener("click", async () => {
+      const status = document.getElementById("openrouter-state");
+      status.className = "";
+      status.textContent = "Testing…";
+      const payload = await postOpenRouter("/api/openrouter/test", {});
+      if (!payload) return;
+      status.textContent = "Retest: " + statusLabel(payload.openrouter_status) + ".";
+    });
+
+    load().catch(() => {
+      document.getElementById("save-state").className = "error";
+      document.getElementById("save-state").textContent = "Could not load the model list.";
+    });
+  </script>
+</body>
+</html>

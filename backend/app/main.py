@@ -11,7 +11,7 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
-from fastapi import Body, FastAPI, Header, HTTPException
+from fastapi import Body, FastAPI, File, Header, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
@@ -22,6 +22,7 @@ from .openrouter_key import (
     openrouter_status_fields,
     save_openrouter_api_key,
 )
+from .rag import RagError, build_rag_messages, delete_file, list_files, save_upload
 from .selection import load_selection, parse_selection, save_selection
 
 ALLOWED_ENVS = ("development", "production")
@@ -80,14 +81,32 @@ def require_write_access(settings: Settings, authorization: str | None) -> None:
         raise HTTPException(status_code=401, detail="Unauthorized")
 
 
-PAGE = Path(__file__).resolve().parent / "static" / "index.html"
+STATIC_DIR = Path(__file__).resolve().parent / "static"
+PAGE = STATIC_DIR / "index.html"
+SETUP_PAGE = STATIC_DIR / "setup.html"
+PORTAL_CSS = STATIC_DIR / "portal.css"
 if not PAGE.is_file():
     raise FileNotFoundError(f"Packaged portal page is missing: {PAGE}")
+if not SETUP_PAGE.is_file():
+    raise FileNotFoundError(f"Packaged setup page is missing: {SETUP_PAGE}")
+if not PORTAL_CSS.is_file():
+    raise FileNotFoundError(f"Packaged portal stylesheet is missing: {PORTAL_CSS}")
 
 
 @app.get("/")
-def model_selection_page() -> FileResponse:
+def functions_page() -> FileResponse:
     return FileResponse(PAGE)
+
+
+@app.get("/setup")
+@app.get("/settings")
+def setup_page() -> FileResponse:
+    return FileResponse(SETUP_PAGE)
+
+
+@app.get("/static/portal.css")
+def portal_css() -> FileResponse:
+    return FileResponse(PORTAL_CSS, media_type="text/css")
 
 
 @app.get("/api/models")
@@ -150,12 +169,50 @@ def post_chat(
         function_id = resolve_chat_function(body.function)
         selection = load_selection(settings.data_dir)
         model_id = selection[function_id]
+        messages = None
+        if function_id == "rag_qa":
+            messages = build_rag_messages(settings.data_dir, message)
         return complete_chat(
             message=message,
             function_id=function_id,
             model_id=model_id,
+            messages=messages,
         )
     except ChatError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+
+
+@app.get("/api/rag/files")
+def get_rag_files() -> list[dict[str, object]]:
+    settings = get_settings()
+    return list_files(settings.data_dir)
+
+
+@app.post("/api/rag/files", status_code=201)
+def post_rag_file(
+    file: UploadFile = File(...),
+    authorization: str | None = Header(default=None),
+) -> dict[str, object]:
+    settings = get_settings()
+    require_write_access(settings, authorization)
+    filename = file.filename or ""
+    data = file.file.read()
+    try:
+        return save_upload(settings.data_dir, filename=filename, data=data)
+    except RagError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+
+
+@app.delete("/api/rag/files/{file_id}")
+def delete_rag_file(
+    file_id: str,
+    authorization: str | None = Header(default=None),
+) -> dict[str, object]:
+    settings = get_settings()
+    require_write_access(settings, authorization)
+    try:
+        return delete_file(settings.data_dir, file_id)
+    except RagError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
 

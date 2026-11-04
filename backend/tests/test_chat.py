@@ -76,8 +76,10 @@ def test_missing_key_returns_503_without_calling_openrouter(tmp_path, monkeypatc
     _assert_secret_absent(response.text)
     page = client.get("/")
     assert page.status_code == 200
-    assert "loads without an API key" in page.text
     assert "Chat" in page.text
+    setup = client.get("/setup")
+    assert setup.status_code == 200
+    assert "loads without an API key" in setup.text
 
 
 def test_image_and_video_are_not_chat_completions(tmp_path, monkeypatch):
@@ -136,7 +138,10 @@ def test_rag_qa_uses_saved_model_and_returns_mock_text(tmp_path, monkeypatch):
     assert seen["headers"]["Authorization"] == f"Bearer {SECRET}"
     assert seen["json"]["model"] == "anthropic/claude-sonnet-5.5"
     assert seen["json"]["stream"] is False
-    assert seen["json"]["messages"] == [{"role": "user", "content": "What is in the notes?"}]
+    messages = seen["json"]["messages"]
+    assert messages[0]["role"] == "system"
+    assert "no uploaded documents" in messages[0]["content"]
+    assert messages[-1] == {"role": "user", "content": "What is in the notes?"}
 
 
 def test_translation_uses_that_function_model(tmp_path, monkeypatch):
