@@ -11,6 +11,7 @@ from __future__ import annotations
 import csv
 import io
 import json
+import re
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -21,6 +22,8 @@ MAX_CONTEXT_CHARS = 80_000
 MAX_CSV_ROWS = 200
 MAX_JSON_CHARS = 200_000
 MAX_XLSX_ROWS_PER_SHEET = 200
+SOURCE_EXCERPT_CHARS = 160
+SOURCE_MARKER = re.compile(r"\[source:\s*([^\]]+?)\s*\]", re.IGNORECASE)
 
 INDEX_NAME = "rag-files.json"
 UPLOADS_DIRNAME = "uploads"
@@ -50,7 +53,8 @@ NO_DOCUMENTS_SYSTEM = (
 )
 GROUNDED_SYSTEM = (
     "Rely on the uploaded document extracts when answering. "
-    "Do not invent file contents. If the extracts do not contain the answer, say so."
+    "Do not invent file contents. If the extracts do not contain the answer, say so. "
+    "After claims that come from an extract, cite the file as [source: <filename>]."
 )
 
 
@@ -83,6 +87,58 @@ def index_path(data_dir: Path) -> Path:
 
 def extract_path(data_dir: Path, file_id: str) -> Path:
     return extracts_dir(data_dir) / f"{file_id}.txt"
+
+
+def content_href(file_id: str) -> str:
+    return f"/api/rag/files/{file_id}/content"
+
+
+def excerpt_of(text: str, limit: int = SOURCE_EXCERPT_CHARS) -> str:
+    cleaned = " ".join((text or "").split())
+    if len(cleaned) <= limit:
+        return cleaned
+    return cleaned[:limit].rstrip()
+
+
+def parse_source_markers(reply: str) -> list[str]:
+    return [match.group(1).strip() for match in SOURCE_MARKER.finditer(reply or "")]
+
+
+def order_sources(sources: list[dict[str, str]], reply: str) -> list[dict[str, str]]:
+    """Keep every context file; put model-cited names first when markers are present."""
+    cited = parse_source_markers(reply)
+    if not cited:
+        return list(sources)
+    by_name = {row["name"]: row for row in sources}
+    seen: set[str] = set()
+    ordered: list[dict[str, str]] = []
+    for name in cited:
+        row = by_name.get(name)
+        if row and row["id"] not in seen:
+            ordered.append(row)
+            seen.add(row["id"])
+    for row in sources:
+        if row["id"] not in seen:
+            ordered.append(row)
+            seen.add(row["id"])
+    return ordered
+
+
+def get_stored_file(data_dir: Path, file_id: str) -> tuple[Path, str]:
+    chosen = file_id.strip()
+    if not chosen or "/" in chosen or "\\" in chosen:
+        raise RagError(404, "File not found.")
+    match = next((row for row in load_index(data_dir) if row.get("id") == chosen), None)
+    if match is None:
+        raise RagError(404, "File not found.")
+    root = Path(data_dir).resolve()
+    stored = (root / str(match.get("stored_path") or "")).resolve()
+    if root not in stored.parents:
+        raise RagError(404, "File not found.")
+    if not stored.is_file():
+        raise RagError(404, "File not found.")
+    name = Path(str(match.get("name") or stored.name)).name or stored.name
+    return stored, name
 
 
 def extension_of(filename: str) -> str:
@@ -299,11 +355,12 @@ def delete_file(data_dir: Path, file_id: str) -> dict[str, Any]:
     return {"ok": True, "id": chosen}
 
 
-def load_extracts(data_dir: Path) -> list[tuple[str, str]]:
-    extracts: list[tuple[str, str]] = []
+def load_extracts(data_dir: Path) -> list[dict[str, str]]:
+    extracts: list[dict[str, str]] = []
     for row in load_index(data_dir):
-        name = str(row.get("name") or row.get("id") or "document")
-        path = extract_path(data_dir, str(row["id"]))
+        file_id = str(row["id"])
+        name = str(row.get("name") or file_id)
+        path = extract_path(data_dir, file_id)
         text = ""
         if path.is_file():
             try:
@@ -313,21 +370,39 @@ def load_extracts(data_dir: Path) -> list[tuple[str, str]]:
         error = row.get("extract_error")
         if not text and error:
             text = f"[extract unavailable: {error}]"
-        extracts.append((name, text))
+        extracts.append({"id": file_id, "name": name, "text": text})
     return extracts
 
 
-def build_rag_messages(data_dir: Path, message: str) -> list[dict[str, str]]:
+def _source_record(extract: dict[str, str]) -> dict[str, str]:
+    return {
+        "id": extract["id"],
+        "name": extract["name"],
+        "href": content_href(extract["id"]),
+        "excerpt": excerpt_of(extract["text"]),
+    }
+
+
+def build_rag_context(
+    data_dir: Path, message: str
+) -> tuple[list[dict[str, str]], list[dict[str, str]]]:
+    """Return chat messages and the files actually stuffed into the prompt."""
     extracts = load_extracts(data_dir)
     if not extracts:
-        return [
-            {"role": "system", "content": NO_DOCUMENTS_SYSTEM},
-            {"role": "user", "content": message},
-        ]
+        return (
+            [
+                {"role": "system", "content": NO_DOCUMENTS_SYSTEM},
+                {"role": "user", "content": message},
+            ],
+            [],
+        )
 
     remaining = MAX_CONTEXT_CHARS
     parts: list[str] = []
-    for name, text in extracts:
+    sources: list[dict[str, str]] = []
+    for extract in extracts:
+        name = extract["name"]
+        text = extract["text"]
         header = f"\n\n----- {name} -----\n"
         if remaining <= len(header):
             break
@@ -335,11 +410,20 @@ def build_rag_messages(data_dir: Path, message: str) -> list[dict[str, str]]:
         chunk = text[:budget]
         parts.append(header + chunk)
         remaining -= len(header) + len(chunk)
+        sources.append(_source_record(extract))
         if remaining <= 0:
             break
 
     system = GROUNDED_SYSTEM + "\n\nUploaded extracts:" + "".join(parts)
-    return [
-        {"role": "system", "content": system},
-        {"role": "user", "content": message},
-    ]
+    return (
+        [
+            {"role": "system", "content": system},
+            {"role": "user", "content": message},
+        ],
+        sources,
+    )
+
+
+def build_rag_messages(data_dir: Path, message: str) -> list[dict[str, str]]:
+    messages, _sources = build_rag_context(data_dir, message)
+    return messages

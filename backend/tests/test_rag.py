@@ -2,8 +2,8 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
-from app.main import app
-from app.rag import MAX_UPLOAD_BYTES
+from app.main import PAGE, app
+from app.rag import MAX_UPLOAD_BYTES, SOURCE_EXCERPT_CHARS
 
 CSV_SNIPPET = "ALPHA_SNIPPET_42"
 TXT_SNIPPET = "TXT_GROUNDING_NOTE"
@@ -88,6 +88,23 @@ def test_upload_list_and_rag_chat_includes_extracts(tmp_path, monkeypatch):
     assert JSON_SNIPPET in outbound
     assert "notes.csv" in outbound
     assert "Do not invent file contents" in outbound
+    assert "[source: <filename>]" in outbound
+
+    sources = chat.json()["sources"]
+    assert {row["name"] for row in sources} == {"notes.csv", "memo.txt", "meta.json"}
+    by_name = {row["name"]: row for row in sources}
+    assert by_name["memo.txt"]["id"] == txt_resp.json()["id"]
+    assert by_name["memo.txt"]["href"] == f"/api/rag/files/{txt_resp.json()['id']}/content"
+    assert txt_resp.json()["id"] in by_name["memo.txt"]["href"]
+    assert TXT_SNIPPET in by_name["memo.txt"]["excerpt"]
+    assert len(by_name["memo.txt"]["excerpt"]) <= SOURCE_EXCERPT_CHARS
+
+    downloaded = client.get(by_name["memo.txt"]["href"])
+    assert downloaded.status_code == 200
+    assert downloaded.content == txt_body
+    disposition = downloaded.headers["content-disposition"]
+    assert "attachment" in disposition
+    assert "memo.txt" in disposition
 
     file_id = csv_resp.json()["id"]
     deleted = client.delete(f"/api/rag/files/{file_id}")
@@ -167,3 +184,92 @@ def test_corrupt_pdf_stores_extract_error(tmp_path, monkeypatch):
     assert response.json().get("extract_error")
     extract = Path(tmp_path / "data" / "extracts" / f"{response.json()['id']}.txt")
     assert extract.is_file()
+
+
+def test_rag_chat_sources_include_uploaded_txt(tmp_path, monkeypatch):
+    _install_key(tmp_path, monkeypatch)
+    _mock_chat(monkeypatch)
+    client = _client(monkeypatch, tmp_path)
+    body = b"Alpha grounding sentence about widgets.\n"
+    uploaded = client.post("/api/rag/files", files={"file": ("notes.txt", body, "text/plain")})
+    assert uploaded.status_code == 201
+    file_id = uploaded.json()["id"]
+
+    chat = client.post("/api/chat", json={"message": "What is in notes.txt?", "function": "rag_qa"})
+    assert chat.status_code == 200
+    sources = chat.json()["sources"]
+    assert len(sources) == 1
+    source = sources[0]
+    assert source["id"] == file_id
+    assert source["name"] == "notes.txt"
+    assert file_id in source["href"]
+    assert source["href"] == f"/api/rag/files/{file_id}/content"
+    assert source["excerpt"].startswith("Alpha grounding sentence")
+
+    downloaded = client.get(source["href"])
+    assert downloaded.status_code == 200
+    assert downloaded.content == body
+    assert "notes.txt" in downloaded.headers["content-disposition"]
+
+
+def test_rag_chat_without_files_has_empty_sources(tmp_path, monkeypatch):
+    _install_key(tmp_path, monkeypatch)
+    _mock_chat(monkeypatch)
+    client = _client(monkeypatch, tmp_path)
+    chat = client.post("/api/chat", json={"message": "Any documents?", "function": "rag_qa"})
+    assert chat.status_code == 200
+    payload = chat.json()
+    assert payload.get("sources", []) == []
+
+
+def test_translation_does_not_invent_sources(tmp_path, monkeypatch):
+    _install_key(tmp_path, monkeypatch)
+    _mock_chat(monkeypatch)
+    client = _client(monkeypatch, tmp_path)
+    uploaded = client.post(
+        "/api/rag/files",
+        files={"file": ("notes.txt", b"should not become a translation citation\n", "text/plain")},
+    )
+    assert uploaded.status_code == 201
+    chat = client.post("/api/chat", json={"message": "hello", "function": "translation"})
+    assert chat.status_code == 200
+    assert "sources" not in chat.json()
+
+
+def test_missing_file_content_is_404(tmp_path, monkeypatch):
+    client = _client(monkeypatch, tmp_path)
+    missing = client.get("/api/rag/files/does-not-exist/content")
+    assert missing.status_code == 404
+    assert missing.json()["detail"] == "File not found."
+
+
+def test_production_content_download_requires_token(tmp_path, monkeypatch):
+    client = _client(monkeypatch, tmp_path, env="production", token="test-token")
+    body = b"secret memo\n"
+    uploaded = client.post(
+        "/api/rag/files",
+        files={"file": ("note.txt", body, "text/plain")},
+        headers={"Authorization": "Bearer test-token"},
+    )
+    assert uploaded.status_code == 201
+    href = f"/api/rag/files/{uploaded.json()['id']}/content"
+
+    rejected = client.get(href)
+    assert rejected.status_code == 401
+
+    accepted = client.get(href, headers={"Authorization": "Bearer test-token"})
+    assert accepted.status_code == 200
+    assert accepted.content == body
+    assert "note.txt" in accepted.headers["content-disposition"]
+
+
+def test_functions_page_renders_source_links(tmp_path, monkeypatch):
+    client = _client(monkeypatch, tmp_path)
+    home = client.get("/")
+    assert home.status_code == 200
+    assert 'id="chat-log"' in home.text
+    assert "appendSources" in home.text
+    assert "chat-sources" in home.text
+    assert "source.href" in home.text
+    assert "Sources" in home.text
+    assert PAGE.is_file()

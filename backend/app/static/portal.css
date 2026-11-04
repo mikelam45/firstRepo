@@ -216,5 +216,31 @@ button.secondary {
   padding: 10px 0;
   border-top: 1px solid var(--line);
 }
-.file-list .name { font-weight: 650; }
+.file-list .name { font-weight: 650; color: var(--green); text-decoration: none; }
+.file-list .name:hover { text-decoration: underline; }
 .model-line a { color: var(--green); }
+.chat-log { margin-top: 14px; }
+.chat-message { margin: 0 0 14px; }
+.chat-role {
+  font-family: "Avenir Next", "Segoe UI", sans-serif;
+  font-size: 0.78rem;
+  font-weight: 650;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+.chat-sources {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+.chat-sources-label { font-weight: 650; color: var(--ink); }
+.chat-sources ul {
+  margin: 4px 0 0;
+  padding-left: 1.1rem;
+}
+.chat-sources a { color: var(--green); }
+.chat-source-excerpt { color: var(--muted); }

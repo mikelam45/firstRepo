@@ -62,7 +62,7 @@
         </label>
         <span id="chat-state" role="status"></span>
       </div>
-      <pre id="chat-reply" class="chat-reply" hidden></pre>
+      <div id="chat-log" class="chat-log" hidden></div>
     </section>
 
     <section class="unavailable" id="media-note" hidden aria-labelledby="media-title">
@@ -152,8 +152,11 @@
       for (const file of state.files) {
         const item = document.createElement("li");
         const body = document.createElement("div");
-        const name = document.createElement("div");
+        const name = document.createElement("a");
         name.className = "name";
+        name.href = "/api/rag/files/" + encodeURIComponent(file.id) + "/content";
+        name.target = "_blank";
+        name.rel = "noopener noreferrer";
         name.textContent = file.name;
         body.appendChild(name);
         const meta = document.createElement("div");
@@ -263,10 +266,55 @@
       }
     });
 
+    function appendSources(article, sources) {
+      if (!Array.isArray(sources) || !sources.length) return;
+      const block = document.createElement("div");
+      block.className = "chat-sources";
+      const label = document.createElement("div");
+      label.className = "chat-sources-label";
+      label.textContent = "Sources";
+      block.appendChild(label);
+      const list = document.createElement("ul");
+      for (const source of sources) {
+        const item = document.createElement("li");
+        const link = document.createElement("a");
+        link.href = source.href;
+        link.target = "_blank";
+        link.rel = "noopener noreferrer";
+        link.textContent = source.name;
+        item.appendChild(link);
+        if (source.excerpt) {
+          const excerpt = document.createElement("span");
+          excerpt.className = "chat-source-excerpt";
+          excerpt.textContent = " — " + source.excerpt;
+          item.appendChild(excerpt);
+        }
+        list.appendChild(item);
+      }
+      block.appendChild(list);
+      article.appendChild(block);
+    }
+
+    function appendChatMessage(role, text, sources) {
+      const log = document.getElementById("chat-log");
+      log.hidden = false;
+      const article = document.createElement("article");
+      article.className = "chat-message " + role;
+      const who = document.createElement("div");
+      who.className = "chat-role";
+      who.textContent = role === "user" ? "You" : "Assistant";
+      const body = document.createElement("pre");
+      body.className = "chat-reply";
+      body.textContent = text;
+      article.appendChild(who);
+      article.appendChild(body);
+      if (role === "assistant") appendSources(article, sources);
+      log.appendChild(article);
+    }
+
     document.getElementById("chat-send").addEventListener("click", async () => {
       const button = document.getElementById("chat-send");
       const status = document.getElementById("chat-state");
-      const replyBox = document.getElementById("chat-reply");
       const message = document.getElementById("chat-message").value.trim();
       if (!message) {
         status.className = "error";
@@ -307,8 +355,8 @@
         link.href = "/setup";
         link.textContent = "Change on LLM setup";
         line.appendChild(link);
-        replyBox.hidden = false;
-        replyBox.textContent = payload.reply;
+        appendChatMessage("user", message);
+        appendChatMessage("assistant", payload.reply, payload.sources);
         status.className = "";
         status.textContent = "Reply from " + payload.model_id + ".";
       } catch (error) {

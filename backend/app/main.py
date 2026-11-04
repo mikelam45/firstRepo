@@ -22,7 +22,15 @@ from .openrouter_key import (
     openrouter_status_fields,
     save_openrouter_api_key,
 )
-from .rag import RagError, build_rag_messages, delete_file, list_files, save_upload
+from .rag import (
+    RagError,
+    build_rag_context,
+    delete_file,
+    get_stored_file,
+    list_files,
+    order_sources,
+    save_upload,
+)
 from .selection import load_selection, parse_selection, save_selection
 
 ALLOWED_ENVS = ("development", "production")
@@ -170,14 +178,18 @@ def post_chat(
         selection = load_selection(settings.data_dir)
         model_id = selection[function_id]
         messages = None
+        sources: list[dict[str, str]] | None = None
         if function_id == "rag_qa":
-            messages = build_rag_messages(settings.data_dir, message)
-        return complete_chat(
+            messages, sources = build_rag_context(settings.data_dir, message)
+        result = complete_chat(
             message=message,
             function_id=function_id,
             model_id=model_id,
             messages=messages,
         )
+        if sources is not None:
+            result["sources"] = order_sources(sources, str(result.get("reply") or ""))
+        return result
     except ChatError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
@@ -186,6 +198,24 @@ def post_chat(
 def get_rag_files() -> list[dict[str, object]]:
     settings = get_settings()
     return list_files(settings.data_dir)
+
+
+@app.get("/api/rag/files/{file_id}/content")
+def get_rag_file_content(
+    file_id: str,
+    authorization: str | None = Header(default=None),
+) -> FileResponse:
+    settings = get_settings()
+    require_write_access(settings, authorization)
+    try:
+        stored, filename = get_stored_file(settings.data_dir, file_id)
+    except RagError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+    return FileResponse(
+        stored,
+        filename=filename,
+        content_disposition_type="attachment",
+    )
 
 
 @app.post("/api/rag/files", status_code=201)
