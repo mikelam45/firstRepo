@@ -16,7 +16,14 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 from .catalog import public_state
-from .chat import ChatError, complete_chat, recorded_model, resolve_chat_function, resolve_grounding
+from .chat import (
+    ChatError,
+    complete_chat,
+    format_reply_messages,
+    recorded_model,
+    resolve_chat_function,
+    resolve_grounding,
+)
 from .openrouter_key import (
     normalize_submitted_key,
     openrouter_status_fields,
@@ -97,12 +104,15 @@ STATIC_DIR = Path(__file__).resolve().parent / "static"
 PAGE = STATIC_DIR / "index.html"
 SETUP_PAGE = STATIC_DIR / "setup.html"
 PORTAL_CSS = STATIC_DIR / "portal.css"
+CHAT_FORMAT_JS = STATIC_DIR / "chat_format.js"
 if not PAGE.is_file():
     raise FileNotFoundError(f"Packaged portal page is missing: {PAGE}")
 if not SETUP_PAGE.is_file():
     raise FileNotFoundError(f"Packaged setup page is missing: {SETUP_PAGE}")
 if not PORTAL_CSS.is_file():
     raise FileNotFoundError(f"Packaged portal stylesheet is missing: {PORTAL_CSS}")
+if not CHAT_FORMAT_JS.is_file():
+    raise FileNotFoundError(f"Packaged chat formatter is missing: {CHAT_FORMAT_JS}")
 
 
 @app.get("/")
@@ -119,6 +129,11 @@ def setup_page() -> FileResponse:
 @app.get("/static/portal.css")
 def portal_css() -> FileResponse:
     return FileResponse(PORTAL_CSS, media_type="text/css")
+
+
+@app.get("/static/chat_format.js")
+def chat_format_js() -> FileResponse:
+    return FileResponse(CHAT_FORMAT_JS, media_type="application/javascript")
 
 
 @app.get("/api/models")
@@ -198,6 +213,8 @@ def post_chat(
                 result["grounding"] = grounding
                 result["sources"] = []
                 return result
+        else:
+            messages = format_reply_messages(message)
         result = complete_chat(
             message=message,
             function_id=function_id,

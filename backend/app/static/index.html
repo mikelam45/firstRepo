@@ -86,6 +86,7 @@
       </p>
     </section>
   </main>
+  <script src="/static/chat_format.js"></script>
   <script>
     const TEXT_FUNCTIONS = ["rag_qa", "translation", "cantonese_script"];
     const GROUNDING_KEY = "rag-grounding";
@@ -362,11 +363,15 @@
         mode.textContent = groundingLabel(grounding);
         article.appendChild(mode);
       }
-      const body = document.createElement("pre");
-      body.className = "chat-reply";
-      body.textContent = text;
-      article.appendChild(body);
-      if (role === "assistant") appendSources(article, sources);
+      if (role === "user") {
+        const body = document.createElement("pre");
+        body.className = "chat-reply chat-reply-plain";
+        body.textContent = text;
+        article.appendChild(body);
+      } else {
+        article.appendChild(renderAssistantReply(text)); // parseChartFence, markdownTableToHtml, escapeHtml
+        appendSources(article, sources);
+      }
       log.appendChild(article);
     }
 

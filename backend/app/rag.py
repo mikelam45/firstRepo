@@ -53,9 +53,19 @@ ALLOWED_GROUNDING = frozenset({GROUNDING_STRICT, GROUNDING_MIXED})
 CITE_INSTRUCTION = (
     "After claims that come from an extract, cite the file as [source: <filename>]."
 )
+FORMAT_REPLY_INSTRUCTION = (
+    "When comparing rows or columns from documents, prefer a Markdown table.\n"
+    "When a chart helps, add one fenced block:\n"
+    "```chart\n"
+    '{"type":"bar|line|pie","title":"...","labels":["A","B"],'
+    '"series":[{"name":"Series","values":[1,2]}]}\n'
+    "```\n"
+    "Still write a short prose answer. Still use [source: filename] when grounded."
+)
 NO_DOCUMENTS_SYSTEM = (
     "You have no uploaded documents. Tell the user you have no uploaded documents. "
-    "Do not invent file contents."
+    "Do not invent file contents.\n"
+    + FORMAT_REPLY_INSTRUCTION
 )
 NO_DOCUMENTS_STRICT_REPLY = (
     "There are no uploaded documents to ground on. "
@@ -65,11 +75,13 @@ STRICT_SYSTEM = (
     "Rely ONLY on the uploaded document extracts. "
     "If they are insufficient, say you cannot answer from the documents. "
     "Do not use outside knowledge. " + CITE_INSTRUCTION
+    + "\n" + FORMAT_REPLY_INSTRUCTION
 )
 MIXED_SYSTEM = (
     "Prefer the uploaded extracts. You may add general knowledge; "
     "when you do, say it is not from the documents. "
     "Do not invent file contents. " + CITE_INSTRUCTION
+    + "\n" + FORMAT_REPLY_INSTRUCTION
 )
 GROUNDED_SYSTEM = MIXED_SYSTEM
 

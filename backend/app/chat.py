@@ -16,7 +16,7 @@ import httpx
 
 from .catalog import FUNCTION_LABELS, PRICES_RECORDED_ON, TEXT_FUNCTIONS, get_model
 from .openrouter_key import MAC_KEY_PATH, load_openrouter_api_key
-from .rag import ALLOWED_GROUNDING, GROUNDING_MIXED
+from .rag import ALLOWED_GROUNDING, FORMAT_REPLY_INSTRUCTION, GROUNDING_MIXED
 
 OPENROUTER_CHAT_URL = "https://openrouter.ai/api/v1/chat/completions"
 OPENROUTER_CHAT_TIMEOUT_SECONDS = 20.0
@@ -56,6 +56,13 @@ def resolve_chat_function(function_id: str | None) -> str:
             "rag_qa, translation, cantonese_script.",
         )
     return chosen
+
+
+def format_reply_messages(message: str) -> list[dict[str, str]]:
+    return [
+        {"role": "system", "content": FORMAT_REPLY_INSTRUCTION},
+        {"role": "user", "content": message},
+    ]
 
 
 def resolve_grounding(value: str | None) -> str:
