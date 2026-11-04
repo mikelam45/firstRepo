@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+# MacBook (and Linux) development server with reload.
+# Refuses to start a production configuration.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+bash scripts/cloud-install.sh
+if [ ! -f .env.development ]; then
+  cp .env.development.example .env.development
+fi
+set -a
+# shellcheck disable=SC1091
+source .env.development
+set +a
+if [ "${APP_ENV}" != "development" ]; then
+  echo "scripts/dev.sh is the Mac development environment." >&2
+  echo "On the VPS, copy .env.production.example to .env.production and run scripts/vps-up.sh." >&2
+  exit 1
+fi
+# Read the Mac OpenRouter file when it exists. Never print the key.
+# A missing file still starts development with the key unset.
+# shellcheck disable=SC1091
+source scripts/load-openrouter-key.sh
+load_openrouter_key
+mkdir -p "${DATA_DIR:-data}"
+# Replace a previous copy of this app on 127.0.0.1:${PORT:-8099}.
+# A foreign process listening on that port is left alone (exit 1).
+PYTHONPATH=backend .venv/bin/python -m app.dev_port
+echo
+echo "Open this URL in Safari or Chrome on this Mac: http://127.0.0.1:${PORT:-8099}"
+echo "This address is not reachable from Cursor Cloud or another machine."
+echo
+exec .venv/bin/uvicorn app.main:app --app-dir backend --reload --host 127.0.0.1 --port "${PORT:-8099}"
