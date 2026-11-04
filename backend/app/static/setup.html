@@ -18,6 +18,8 @@
       choices, recorded on
       <time id="price-date" datetime="2026-11-03">3 Nov 2026</time>.
       The page loads without an API key.
+      The recommended Hong Kong default for text functions is DeepSeek
+      (<code>deepseek/deepseek-chat</code>).
     </p>
     <p class="note" id="cost-note">
       A single total is not shown. Text, images, and video use different units, so adding them would not mean anything. Text is USD per 1M tokens, images are USD per 1M image-output tokens or USD per megapixel, and video is USD per second. Each function below shows its own unit price.
@@ -154,6 +156,12 @@
           goodFor.className = "good-for";
           goodFor.textContent = option.good_for;
           label.appendChild(goodFor);
+          if (option.region_note) {
+            const region = document.createElement("p");
+            region.className = "region-note";
+            region.textContent = option.region_note;
+            label.appendChild(region);
+          }
           const prices = document.createElement("ul");
           prices.className = "prices";
           for (const price of option.prices) prices.appendChild(priceText(price));
@@ -194,6 +202,12 @@
           note.className = "meta";
           note.textContent = option.relative_note;
           item.appendChild(note);
+        }
+        if (option.region_note) {
+          const region = document.createElement("p");
+          region.className = "region-note";
+          region.textContent = option.region_note;
+          item.appendChild(region);
         }
         list.appendChild(item);
       }

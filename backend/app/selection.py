@@ -13,6 +13,12 @@ def selection_path(data_dir: Path) -> Path:
 
 
 def load_selection(data_dir: Path) -> dict[str, str]:
+    """Return saved choices, or the current defaults when no override file exists.
+
+    A missing file uses DEFAULT_SELECTION (DeepSeek for text). An existing file
+    is left on disk, including a leftover Gemini choice. This does not rewrite
+    a user's saved non-Gemini selection.
+    """
     selection = dict(DEFAULT_SELECTION)
     path = selection_path(data_dir)
     if not path.is_file():

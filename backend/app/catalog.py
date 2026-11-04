@@ -52,10 +52,16 @@ FUNCTION_LABELS: dict[str, str] = dict(FUNCTIONS)
 
 TEXT_FUNCTIONS = ("rag_qa", "translation", "cantonese_script")
 
+# Hong Kong and some other regions often reject Google Gemini text ids.
+RECOMMENDED_HK_TEXT_MODEL = "deepseek/deepseek-chat"
+REGION_NOTE = (
+    "Often blocked in Hong Kong / some regions. If chat returns 403, pick another model."
+)
+
 DEFAULT_SELECTION: dict[str, str] = {
-    "rag_qa": "google/gemini-2.5-flash",
-    "translation": "google/gemini-2.5-flash",
-    "cantonese_script": "deepseek/deepseek-chat",
+    "rag_qa": RECOMMENDED_HK_TEXT_MODEL,
+    "translation": RECOMMENDED_HK_TEXT_MODEL,
+    "cantonese_script": RECOMMENDED_HK_TEXT_MODEL,
     "image_gen": "google/gemini-3.1-flash-image",
     "video_gen": "minimax/hailuo-2.3",
 }
@@ -88,6 +94,7 @@ MODELS: tuple[dict[str, object], ...] = (
         # models API: prompt 0.0000003, completion 0.0000025 USD per token.
         "good_for": "Fast document reading and grounded answers.",
         "quality_cost": "Balanced",
+        "region_note": REGION_NOTE,
         "functions": TEXT_FUNCTIONS,
         "compare_amount": "2.50",
         "compare_unit": "USD per 1M tokens",
@@ -304,7 +311,7 @@ def relative_note(function_id: str, model_id: str) -> str:
 
 
 def _public_model(model: dict[str, object], function_id: str) -> dict[str, object]:
-    return {
+    payload: dict[str, object] = {
         "id": model["id"],
         "provider": model["provider"],
         "name": model["name"],
@@ -313,11 +320,15 @@ def _public_model(model: dict[str, object], function_id: str) -> dict[str, objec
         "prices": list(model["prices"]),  # type: ignore[arg-type]
         "relative_note": relative_note(function_id, str(model["id"])),
     }
+    region_note = model.get("region_note")
+    if isinstance(region_note, str) and region_note:
+        payload["region_note"] = region_note
+    return payload
 
 
 def _summary_row(function_id: str, model_id: str) -> dict[str, object]:
     model = _BY_ID[model_id]
-    return {
+    row: dict[str, object] = {
         "function_id": function_id,
         "label": FUNCTION_LABELS[function_id],
         "model_id": model_id,
@@ -328,6 +339,10 @@ def _summary_row(function_id: str, model_id: str) -> dict[str, object]:
         "prices": list(model["prices"]),  # type: ignore[arg-type]
         "relative_note": relative_note(function_id, model_id),
     }
+    region_note = model.get("region_note")
+    if isinstance(region_note, str) and region_note:
+        row["region_note"] = region_note
+    return row
 
 
 def public_state(selection: dict[str, str]) -> dict[str, object]:
@@ -345,6 +360,7 @@ def public_state(selection: dict[str, str]) -> dict[str, object]:
         "prices_recorded_on": PRICES_RECORDED_ON,
         "price_source": PRICE_SOURCE,
         "cost_note": COST_NOTE,
+        "recommended_hk_text_model": RECOMMENDED_HK_TEXT_MODEL,
         "functions": functions,
         "selection": {function_id: selection[function_id] for function_id in FUNCTION_IDS},
         "summary": [

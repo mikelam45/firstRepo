@@ -26,6 +26,9 @@ def test_home_and_setup_are_distinct_html_pages(tmp_path, monkeypatch):
     assert 'id="openrouter-save"' in setup.text
     assert 'data-options="rag_qa"' in setup.text
     assert "Save selection" in setup.text
+    assert "recommended Hong Kong default" in setup.text
+    assert "deepseek/deepseek-chat" in setup.text
+    assert "region_note" in setup.text
     assert 'id="rag-upload"' not in setup.text
     assert 'id="chat-send"' not in setup.text
 

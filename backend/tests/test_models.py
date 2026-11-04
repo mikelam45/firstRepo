@@ -3,7 +3,7 @@ import json
 import pytest
 from fastapi.testclient import TestClient
 
-from app.catalog import DEFAULT_SELECTION, FUNCTION_IDS
+from app.catalog import DEFAULT_SELECTION, FUNCTION_IDS, REGION_NOTE, RECOMMENDED_HK_TEXT_MODEL
 from app.main import PAGE, SETUP_PAGE, app
 
 LABELS = (
@@ -40,6 +40,9 @@ def test_packaged_index_html_exists():
     assert "Document upload" in home
     assert "OpenRouter connection" in setup
     assert "LLM setup" in setup
+    assert "recommended Hong Kong default" in setup
+    assert "deepseek/deepseek-chat" in setup
+    assert "region_note" in setup
 
 
 def test_page_lists_every_function(client):
@@ -81,6 +84,10 @@ def test_get_returns_defaults_and_a_priced_unit(client):
     assert [item["id"] for item in payload["functions"]] == list(FUNCTION_IDS)
     assert [item["label"] for item in payload["functions"]] == list(LABELS)
     assert payload["selection"] == DEFAULT_SELECTION
+    assert payload["recommended_hk_text_model"] == RECOMMENDED_HK_TEXT_MODEL
+    assert payload["selection"]["rag_qa"] == "deepseek/deepseek-chat"
+    assert payload["selection"]["translation"] == "deepseek/deepseek-chat"
+    assert payload["selection"]["cantonese_script"] == "deepseek/deepseek-chat"
     assert payload["prices_recorded_on"] == "2026-11-03"
 
     prices = _prices(payload)
@@ -154,3 +161,27 @@ def test_production_put_requires_token_and_get_stays_open(tmp_path, monkeypatch)
     assert accepted.status_code == 200
     assert accepted.json()["selection"]["translation"] == "openai/gpt-4o"
     assert client.get("/api/models").json()["selection"]["translation"] == "openai/gpt-4o"
+
+
+def test_gemini_option_includes_region_note(client):
+    payload = client.get("/api/models").json()
+    rag = next(item for item in payload["functions"] if item["id"] == "rag_qa")
+    gemini = next(option for option in rag["options"] if option["id"] == "google/gemini-2.5-flash")
+    deepseek = next(option for option in rag["options"] if option["id"] == "deepseek/deepseek-chat")
+    assert gemini["region_note"] == REGION_NOTE
+    assert "Hong Kong" in gemini["region_note"]
+    assert "region_note" not in deepseek
+
+
+def test_saved_gemini_selection_is_left_on_disk(client, tmp_path):
+    leftover = dict(DEFAULT_SELECTION)
+    leftover["rag_qa"] = "google/gemini-2.5-flash"
+    leftover["translation"] = "openai/gpt-4o"
+    saved = client.put("/api/models", json=leftover)
+    assert saved.status_code == 200
+    again = client.get("/api/models")
+    assert again.json()["selection"]["rag_qa"] == "google/gemini-2.5-flash"
+    assert again.json()["selection"]["translation"] == "openai/gpt-4o"
+    on_disk = json.loads((tmp_path / "model-selection.json").read_text(encoding="utf-8"))
+    assert on_disk["selection"]["rag_qa"] == "google/gemini-2.5-flash"
+    assert on_disk["selection"]["translation"] == "openai/gpt-4o"

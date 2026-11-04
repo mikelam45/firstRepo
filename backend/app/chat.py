@@ -22,6 +22,9 @@ OPENROUTER_CHAT_TIMEOUT_SECONDS = 20.0
 CHAT_FUNCTIONS = TEXT_FUNCTIONS
 GENERIC_COMPLETION_ERROR = "OpenRouter did not return a chat completion."
 MAX_PROVIDER_ERROR_CHARS = 400
+REGION_SETUP_HINT = (
+    "This model is not available in your region. Open Setup and choose another text model."
+)
 MISSING_KEY_DETAIL = (
     "OpenRouter is not configured. The Mac file "
     f"{MAC_KEY_PATH} is missing. The page still loads."
@@ -145,6 +148,19 @@ def _assistant_text(payload: Any) -> str | None:
     return None
 
 
+def _is_region_block(status_code: int | None, message: str | None) -> bool:
+    if status_code != 403 or not message:
+        return False
+    lowered = message.lower()
+    return "region" in lowered or "not available in your" in lowered
+
+
+def _with_region_hint(detail: str, status_code: int | None, message: str | None) -> str:
+    if _is_region_block(status_code, message):
+        return f"{detail} {REGION_SETUP_HINT}"
+    return detail
+
+
 def _openrouter_failure(
     *,
     status_code: int | None,
@@ -154,9 +170,16 @@ def _openrouter_failure(
 ) -> ChatError:
     provider = _provider_error_message(payload, api_key)
     if provider and status_code is not None:
-        return ChatError(502, f"OpenRouter returned HTTP {status_code}: {provider}")
+        return ChatError(
+            502,
+            _with_region_hint(
+                f"OpenRouter returned HTTP {status_code}: {provider}",
+                status_code,
+                provider,
+            ),
+        )
     if provider:
-        return ChatError(502, f"OpenRouter error: {provider}")
+        return ChatError(502, _with_region_hint(f"OpenRouter error: {provider}", status_code, provider))
     if status_code == 200 and _first_choice(payload) is not None:
         return ChatError(502, f"empty reply from {model_id}")
     if status_code is not None and status_code != 200:
