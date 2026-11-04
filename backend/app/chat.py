@@ -2,12 +2,14 @@
 
 Image and video functions are rejected here. They never go to
 ``/api/v1/chat/completions``. Prices in the reply come from the recorded
-catalog, not a live quote. The OpenRouter key and provider body stay out of
-return values, logs, and error text.
+catalog, not a live quote. The OpenRouter key, request body, and raw
+provider payload stay out of return values and logs. A short
+``error.message`` and the HTTP status may be shown to the user.
 """
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 import httpx
@@ -18,10 +20,14 @@ from .openrouter_key import MAC_KEY_PATH, load_openrouter_api_key
 OPENROUTER_CHAT_URL = "https://openrouter.ai/api/v1/chat/completions"
 OPENROUTER_CHAT_TIMEOUT_SECONDS = 20.0
 CHAT_FUNCTIONS = TEXT_FUNCTIONS
+GENERIC_COMPLETION_ERROR = "OpenRouter did not return a chat completion."
+MAX_PROVIDER_ERROR_CHARS = 400
 MISSING_KEY_DETAIL = (
     "OpenRouter is not configured. The Mac file "
     f"{MAC_KEY_PATH} is missing. The page still loads."
 )
+_KEY_PATTERN = re.compile(r"sk-or-[A-Za-z0-9_-]+")
+_BEARER_PATTERN = re.compile(r"(?i)bearer\s+\S+")
 
 
 class ChatError(Exception):
@@ -63,21 +69,99 @@ def recorded_model(function_id: str, model_id: str) -> dict[str, object]:
     }
 
 
-def _assistant_text(payload: Any) -> str | None:
+def _sanitize_provider_message(text: str, api_key: str | None = None) -> str:
+    cleaned = " ".join(text.split())
+    if api_key:
+        cleaned = cleaned.replace(api_key, "[redacted]")
+    cleaned = _KEY_PATTERN.sub("[redacted]", cleaned)
+    cleaned = _BEARER_PATTERN.sub("Bearer [redacted]", cleaned)
+    if len(cleaned) > MAX_PROVIDER_ERROR_CHARS:
+        cleaned = cleaned[:MAX_PROVIDER_ERROR_CHARS].rstrip() + "…"
+    return cleaned
+
+
+def _provider_error_message(payload: Any, api_key: str | None = None) -> str | None:
+    if not isinstance(payload, dict):
+        return None
+    error = payload.get("error")
+    message: str | None = None
+    if isinstance(error, str) and error.strip():
+        message = error
+    elif isinstance(error, dict):
+        raw = error.get("message")
+        if isinstance(raw, str) and raw.strip():
+            message = raw
+    if message is None:
+        return None
+    return _sanitize_provider_message(message, api_key)
+
+
+def _text_from_content(value: Any) -> str | None:
+    if isinstance(value, str) and value.strip():
+        return value
+    if isinstance(value, list):
+        parts: list[str] = []
+        for item in value:
+            if isinstance(item, str) and item:
+                parts.append(item)
+            elif isinstance(item, dict):
+                text = item.get("text")
+                if isinstance(text, str) and text:
+                    parts.append(text)
+        joined = "".join(parts)
+        if joined.strip():
+            return joined
+    return None
+
+
+def _first_choice(payload: Any) -> dict[str, Any] | None:
     if not isinstance(payload, dict):
         return None
     choices = payload.get("choices")
     if not isinstance(choices, list) or not choices:
         return None
     first = choices[0]
-    if not isinstance(first, dict):
+    return first if isinstance(first, dict) else None
+
+
+def _assistant_text(payload: Any) -> str | None:
+    first = _first_choice(payload)
+    if first is None:
         return None
     message = first.get("message")
     if isinstance(message, dict):
-        content = message.get("content")
-        if isinstance(content, str) and content.strip():
-            return content
+        text = _text_from_content(message.get("content"))
+        if text:
+            return text
+        text = _text_from_content(message.get("reasoning"))
+        if text:
+            return text
+        text = _text_from_content(message.get("reasoning_content"))
+        if text:
+            return text
+    text = _text_from_content(first.get("text"))
+    if text:
+        return text
     return None
+
+
+def _openrouter_failure(
+    *,
+    status_code: int | None,
+    payload: Any,
+    model_id: str,
+    api_key: str | None = None,
+) -> ChatError:
+    provider = _provider_error_message(payload, api_key)
+    if provider and status_code is not None:
+        return ChatError(502, f"OpenRouter returned HTTP {status_code}: {provider}")
+    if provider:
+        return ChatError(502, f"OpenRouter error: {provider}")
+    if status_code == 200 and _first_choice(payload) is not None:
+        return ChatError(502, f"empty reply from {model_id}")
+    if status_code is not None and status_code != 200:
+        return ChatError(502, f"OpenRouter returned HTTP {status_code} without a chat completion.")
+    return ChatError(502, GENERIC_COMPLETION_ERROR)
 
 
 def complete_chat(
@@ -110,17 +194,36 @@ def complete_chat(
         )
         status_code = response.status_code
     except Exception:
-        raise ChatError(502, "OpenRouter did not return a chat completion.") from None
+        raise ChatError(502, GENERIC_COMPLETION_ERROR) from None
 
-    if status_code != 200:
-        raise ChatError(502, "OpenRouter did not return a chat completion.")
+    body: Any = None
     try:
         body = response.json()
     except Exception:
-        raise ChatError(502, "OpenRouter did not return a chat completion.") from None
+        body = None
+
+    if status_code != 200:
+        raise _openrouter_failure(
+            status_code=status_code,
+            payload=body,
+            model_id=model_id,
+            api_key=api_key,
+        )
+    if body is None:
+        raise ChatError(502, GENERIC_COMPLETION_ERROR)
+
+    provider = _provider_error_message(body, api_key)
+    if provider:
+        raise ChatError(502, f"OpenRouter returned HTTP {status_code}: {provider}")
+
     text = _assistant_text(body)
     if text is None:
-        raise ChatError(502, "OpenRouter did not return a chat completion.")
+        raise _openrouter_failure(
+            status_code=status_code,
+            payload=body,
+            model_id=model_id,
+            api_key=api_key,
+        )
     result = recorded_model(function_id, model_id)
     result["reply"] = text
     return result

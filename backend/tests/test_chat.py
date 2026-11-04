@@ -2,7 +2,12 @@ import httpx
 from fastapi.testclient import TestClient
 
 from app.catalog import DEFAULT_SELECTION, get_model
-from app.chat import MISSING_KEY_DETAIL, OPENROUTER_CHAT_TIMEOUT_SECONDS, OPENROUTER_CHAT_URL
+from app.chat import (
+    GENERIC_COMPLETION_ERROR,
+    MISSING_KEY_DETAIL,
+    OPENROUTER_CHAT_TIMEOUT_SECONDS,
+    OPENROUTER_CHAT_URL,
+)
 from app.main import app
 from app.openrouter_key import MAC_KEY_PATH
 
@@ -167,7 +172,126 @@ def test_openrouter_error_body_is_not_returned(tmp_path, monkeypatch):
     client = _client(monkeypatch, tmp_path)
     response = client.post("/api/chat", json={"message": "hello"})
     assert response.status_code == 502
+    assert "401" in response.json()["detail"]
     assert "provider echoed" not in response.text
+    _assert_secret_absent(response.text)
+
+
+def test_openrouter_error_message_is_surfaced(tmp_path, monkeypatch):
+    _install_key(tmp_path, monkeypatch)
+    provider_message = (
+        "The request is prohibited due to a violation of provider Terms Of Service."
+    )
+    _mock_chat(
+        monkeypatch,
+        status_code=403,
+        body={
+            "error": {"message": provider_message, "code": 403, "metadata": {"raw": SECRET}},
+            "user_id": "user-should-stay-private",
+        },
+    )
+    client = _client(monkeypatch, tmp_path)
+    response = client.post("/api/chat", json={"message": "hello"})
+    assert response.status_code == 502
+    detail = response.json()["detail"]
+    assert "403" in detail
+    assert provider_message in detail
+    assert "user-should-stay-private" not in response.text
+    assert "metadata" not in response.text
+    assert "provider echoed" not in response.text
+    _assert_secret_absent(response.text)
+
+
+def test_openrouter_http_200_error_object_is_surfaced(tmp_path, monkeypatch):
+    _install_key(tmp_path, monkeypatch)
+    _mock_chat(
+        monkeypatch,
+        status_code=200,
+        body={"error": {"message": "Provider returned error", "code": 502}},
+    )
+    client = _client(monkeypatch, tmp_path)
+    response = client.post("/api/chat", json={"message": "hello"})
+    assert response.status_code == 502
+    assert "Provider returned error" in response.json()["detail"]
+    assert "200" in response.json()["detail"]
+    _assert_secret_absent(response.text)
+
+
+def test_null_content_uses_reasoning_fallback(tmp_path, monkeypatch):
+    _install_key(tmp_path, monkeypatch)
+    _mock_chat(
+        monkeypatch,
+        body={
+            "choices": [
+                {
+                    "message": {
+                        "role": "assistant",
+                        "content": None,
+                        "reasoning": "Grounded fallback from reasoning",
+                    },
+                    "finish_reason": "stop",
+                }
+            ]
+        },
+    )
+    client = _client(monkeypatch, tmp_path)
+    response = client.post("/api/chat", json={"message": "What is in the notes?"})
+    assert response.status_code == 200
+    assert response.json()["reply"] == "Grounded fallback from reasoning"
+    _assert_secret_absent(response.text)
+
+
+def test_content_parts_are_concatenated(tmp_path, monkeypatch):
+    _install_key(tmp_path, monkeypatch)
+    _mock_chat(
+        monkeypatch,
+        body={
+            "choices": [
+                {
+                    "message": {
+                        "role": "assistant",
+                        "content": [
+                            {"type": "text", "text": "Part A "},
+                            {"type": "text", "text": "Part B"},
+                        ],
+                    }
+                }
+            ]
+        },
+    )
+    client = _client(monkeypatch, tmp_path)
+    response = client.post("/api/chat", json={"message": "hello"})
+    assert response.status_code == 200
+    assert response.json()["reply"] == "Part A Part B"
+    _assert_secret_absent(response.text)
+
+
+def test_empty_content_without_fallback_names_model(tmp_path, monkeypatch):
+    _install_key(tmp_path, monkeypatch)
+    _mock_chat(
+        monkeypatch,
+        body={"choices": [{"message": {"role": "assistant", "content": None}}]},
+    )
+    client = _client(monkeypatch, tmp_path)
+    response = client.post("/api/chat", json={"message": "hello"})
+    assert response.status_code == 502
+    assert response.json()["detail"] == "empty reply from google/gemini-2.5-flash"
+    _assert_secret_absent(response.text)
+
+
+def test_provider_error_redacts_api_key(tmp_path, monkeypatch):
+    _install_key(tmp_path, monkeypatch)
+    _mock_chat(
+        monkeypatch,
+        status_code=401,
+        body={"error": {"message": f"Invalid token {SECRET}"}},
+    )
+    client = _client(monkeypatch, tmp_path)
+    response = client.post("/api/chat", json={"message": "hello"})
+    assert response.status_code == 502
+    detail = response.json()["detail"]
+    assert "401" in detail
+    assert "Invalid token" in detail
     _assert_secret_absent(response.text)
 
 
@@ -177,6 +301,7 @@ def test_openrouter_transport_error_hides_details(tmp_path, monkeypatch):
     client = _client(monkeypatch, tmp_path)
     response = client.post("/api/chat", json={"message": "hello"})
     assert response.status_code == 502
+    assert response.json()["detail"] == GENERIC_COMPLETION_ERROR
     _assert_secret_absent(response.text)
 
 
