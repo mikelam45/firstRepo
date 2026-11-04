@@ -1,7 +1,11 @@
+from pathlib import Path
+
 import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 @pytest.fixture
@@ -63,3 +67,10 @@ def test_unknown_env_is_rejected(tmp_path, monkeypatch):
     monkeypatch.setenv("DATA_DIR", str(tmp_path))
     client = TestClient(app, raise_server_exceptions=False)
     assert client.get("/health").status_code == 500
+
+
+def test_dev_port_default_is_8099():
+    example = (REPO_ROOT / ".env.development.example").read_text(encoding="utf-8")
+    dev = (REPO_ROOT / "scripts" / "dev.sh").read_text(encoding="utf-8")
+    assert "PORT=8099" in example
+    assert "${PORT:-8099}" in dev

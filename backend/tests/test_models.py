@@ -38,6 +38,9 @@ def test_page_lists_every_function(client):
     for label in LABELS:
         assert label in page.text
     assert "A single total is not shown" in page.text
+    assert "Chat" in page.text
+    assert "not sent as chat completions" in page.text
+    assert 'id="chat-send"' in page.text
 
 
 def test_get_returns_defaults_and_a_priced_unit(client):

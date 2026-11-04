@@ -138,9 +138,28 @@
       cursor: pointer;
     }
     button:disabled { opacity: 0.6; cursor: wait; }
-    #save-state { font-size: 0.95rem; }
-    #save-state.error { color: var(--rust); }
+    #save-state, #chat-state { font-size: 0.95rem; }
+    #save-state.error, #chat-state.error { color: var(--rust); }
     .good-for { margin: 2px 0 0; }
+    .chat { margin-top: 20px; }
+    .chat label.field { display: block; font-size: 0.92rem; color: var(--muted); }
+    .chat select, .chat textarea {
+      display: block;
+      width: 100%;
+      margin: 4px 0 12px;
+      font: inherit;
+      padding: 8px 10px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: white;
+    }
+    .chat-reply {
+      white-space: pre-wrap;
+      background: var(--paper);
+      border-radius: 8px;
+      padding: 10px 12px;
+      margin: 12px 0 0;
+    }
   </style>
 </head>
 <body>
@@ -193,6 +212,29 @@
         <ol id="summary-list"></ol>
       </section>
     </div>
+
+    <section class="chat" aria-labelledby="chat-title">
+      <h2 id="chat-title">Chat</h2>
+      <p class="meta">
+        Uses the saved text model. Image and video functions are not sent as chat completions.
+      </p>
+      <label class="field">Function
+        <select id="chat-function">
+          <option value="rag_qa">RAG and document analysis</option>
+          <option value="translation">Standard translation</option>
+          <option value="cantonese_script">Cantonese script writing</option>
+        </select>
+      </label>
+      <p class="meta" id="chat-model"></p>
+      <label class="field">Message
+        <textarea id="chat-message" rows="4" placeholder="Ask a question"></textarea>
+      </label>
+      <div class="savebar">
+        <button type="button" id="chat-send">Send</button>
+        <span id="chat-state" role="status"></span>
+      </div>
+      <pre id="chat-reply" class="chat-reply" hidden></pre>
+    </section>
     <p class="source" id="price-source"></p>
   </main>
   <script>
@@ -328,6 +370,29 @@
       return state.catalog.functions.some((fn) => selection[fn.id] !== state.saved.selection[fn.id]);
     }
 
+    function priceSummary(prices) {
+      return (prices || []).map(function (price) {
+        return price.label + " " + price.amount_usd + " " + price.unit;
+      }).join("; ");
+    }
+
+    function renderChatModel() {
+      const line = document.getElementById("chat-model");
+      if (!state.saved || !state.catalog) {
+        line.textContent = "";
+        return;
+      }
+      const functionId = document.getElementById("chat-function").value;
+      const savedId = state.saved.selection[functionId];
+      const option = savedId ? modelById(functionId, savedId) : null;
+      if (!option) {
+        line.textContent = "";
+        return;
+      }
+      line.textContent = "Saved model: " + option.id + " · " + priceSummary(option.prices)
+        + " (recorded " + state.catalog.prices_recorded_on + ", not a live quote).";
+    }
+
     async function load() {
       const response = await fetch("/api/models");
       if (!response.ok) throw new Error("Could not load models");
@@ -341,6 +406,7 @@
       renderOpenRouter(payload);
       renderOptions();
       renderSummary();
+      renderChatModel();
     }
 
     document.getElementById("picker").addEventListener("change", () => {
@@ -377,11 +443,60 @@
         state.saved = payload;
         renderOptions();
         renderSummary();
+        renderChatModel();
         status.className = "";
         status.textContent = "Saved.";
       } catch (error) {
         status.className = "error";
         status.textContent = "Save failed.";
+      } finally {
+        button.disabled = false;
+      }
+    });
+
+    document.getElementById("chat-function").addEventListener("change", renderChatModel);
+
+    document.getElementById("chat-send").addEventListener("click", async () => {
+      const button = document.getElementById("chat-send");
+      const status = document.getElementById("chat-state");
+      const replyBox = document.getElementById("chat-reply");
+      const message = document.getElementById("chat-message").value.trim();
+      if (!message) {
+        status.className = "error";
+        status.textContent = "Enter a message.";
+        return;
+      }
+      button.disabled = true;
+      status.className = "";
+      status.textContent = "Sending…";
+      const headers = { "content-type": "application/json" };
+      const token = document.getElementById("token").value.trim();
+      if (token) headers.Authorization = "Bearer " + token;
+      try {
+        const response = await fetch("/api/chat", {
+          method: "POST",
+          headers,
+          body: JSON.stringify({
+            message,
+            function: document.getElementById("chat-function").value,
+          }),
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          status.className = "error";
+          const detail = payload.detail;
+          status.textContent = typeof detail === "string" ? detail : "Chat failed (" + response.status + ").";
+          return;
+        }
+        document.getElementById("chat-model").textContent = "Used " + payload.model_id + " · "
+          + priceSummary(payload.prices) + " (recorded " + payload.prices_recorded_on + ", not a live quote).";
+        replyBox.hidden = false;
+        replyBox.textContent = payload.reply;
+        status.className = "";
+        status.textContent = "Reply from " + payload.model_id + ".";
+      } catch (error) {
+        status.className = "error";
+        status.textContent = "Chat failed.";
       } finally {
         button.disabled = false;
       }

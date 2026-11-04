@@ -30,7 +30,7 @@ git checkout cursor/multimodal-rag-portal-1e46
 
 The first run creates `.venv`, installs `backend/requirements.txt`, and copies `.env.development.example` to `.env.development`. The server listens on `http://127.0.0.1:8099`.
 
-Open that URL in a browser to assign a model to each function. The page lists the provider, model id, a one-line use, and the recorded unit price. It loads without an OpenRouter key. Choices are stored in `data/model-selection.json` (or `$DATA_DIR/model-selection.json`).
+Open that URL in a browser to assign a model to each function. The page lists the provider, model id, a one-line use, and the recorded unit price. It loads without an OpenRouter key. Choices are stored in `data/model-selection.json` (or `$DATA_DIR/model-selection.json`). The same page has a chat panel that sends the saved text model (`rag_qa` by default) to OpenRouter. Image and video functions are rejected; they are not chat completions.
 
 `scripts/dev.sh` reads `/Users/mikelam/firstRepo/openrouter_key/.env_RAG_portal` when that file is present and `OPENROUTER_API_KEY` is not already set. It exports `OPENROUTER_API_KEY` for uvicorn and does not print the key. The file stays outside this checkout and is not committed. `.gitignore` ignores `.env` files, including a copy named `.env_RAG_portal`, so the key file cannot land in git. The file may contain `OPENROUTER_API_KEY=...`, `OPENROUTER_KEY=...`, or the raw key on one line. Blank lines and comments are ignored. If the file is missing, development still starts and the key stays unset.
 
@@ -40,9 +40,12 @@ The app resolves the key in this order: `OPENROUTER_API_KEY` in the process envi
 curl http://127.0.0.1:8099/health
 curl http://127.0.0.1:8099/api/models
 curl -X POST http://127.0.0.1:8099/api/notes -H 'content-type: application/json' -d '{"body":"hello from the mac"}'
+curl -X POST http://127.0.0.1:8099/api/chat -H 'content-type: application/json' -d '{"message":"hello","function":"rag_qa"}'
 ```
 
-`GET /api/models` is open in both modes. `PUT /api/models` is open in development. In production it requires `Authorization: Bearer $PORTAL_API_TOKEN`, the same rule as creating a note. The body is the five function keys (`rag_qa`, `translation`, `cantonese_script`, `image_gen`, `video_gen`) mapped to model ids from the catalog.
+`POST /api/chat` uses the saved model for `rag_qa`, `translation`, or `cantonese_script` (`function` defaults to `rag_qa`). With no OpenRouter key it returns 503, names the Mac file, and does not include a secret. The home page still loads. A successful reply includes the model id and the recorded catalog unit price, not a live quote.
+
+`GET /api/models` is open in both modes. `PUT /api/models` and `POST /api/chat` are open in development. In production they require `Authorization: Bearer $PORTAL_API_TOKEN`, the same rule as creating a note. The model-selection body is the five function keys (`rag_qa`, `translation`, `cantonese_script`, `image_gen`, `video_gen`) mapped to model ids from the catalog.
 
 Tests:
 

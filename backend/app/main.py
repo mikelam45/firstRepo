@@ -16,6 +16,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 from .catalog import public_state
+from .chat import ChatError, complete_chat, resolve_chat_function
 from .openrouter_key import openrouter_status_fields
 from .selection import load_selection, parse_selection, save_selection
 
@@ -47,6 +48,11 @@ app = FastAPI(title="Fieldnote dev shell")
 
 class NoteIn(BaseModel):
     body: str = Field(min_length=1, max_length=4000)
+
+
+class ChatIn(BaseModel):
+    message: str = Field(min_length=1, max_length=8000)
+    function: str = "rag_qa"
 
 
 def connect(settings: Settings) -> sqlite3.Connection:
@@ -96,6 +102,29 @@ def put_models(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     save_selection(settings.data_dir, selection)
     return public_state(selection)
+
+
+@app.post("/api/chat")
+def post_chat(
+    body: ChatIn,
+    authorization: str | None = Header(default=None),
+) -> dict[str, object]:
+    settings = get_settings()
+    require_write_access(settings, authorization)
+    message = body.message.strip()
+    if not message:
+        raise HTTPException(status_code=400, detail="message must not be empty.")
+    try:
+        function_id = resolve_chat_function(body.function)
+        selection = load_selection(settings.data_dir)
+        model_id = selection[function_id]
+        return complete_chat(
+            message=message,
+            function_id=function_id,
+            model_id=model_id,
+        )
+    except ChatError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
 
 @app.get("/health")
