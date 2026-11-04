@@ -22,4 +22,7 @@ fi
 source scripts/load-openrouter-key.sh
 load_openrouter_key
 mkdir -p "${DATA_DIR:-data}"
+# Replace a previous copy of this app on 127.0.0.1:${PORT:-8099}.
+# A foreign process listening on that port is left alone (exit 1).
+PYTHONPATH=backend .venv/bin/python -m app.dev_port
 exec .venv/bin/uvicorn app.main:app --app-dir backend --reload --host 127.0.0.1 --port "${PORT:-8099}"

@@ -28,7 +28,7 @@ If `main` does not have these scripts yet, check out the development branch afte
 git checkout cursor/multimodal-rag-portal-1e46
 ```
 
-The first run creates `.venv`, installs `backend/requirements.txt`, and copies `.env.development.example` to `.env.development`. The server listens on `http://127.0.0.1:8099`.
+The first run creates `.venv`, installs `backend/requirements.txt`, and copies `.env.development.example` to `.env.development`. The server listens on `http://127.0.0.1:8099`. A second `scripts/dev.sh` replaces the previous development server on 8099; a foreign process on that port is left alone.
 
 Open that URL in a browser to assign a model to each function. The page lists the provider, model id, a one-line use, and the recorded unit price. It loads without an OpenRouter key. Choices are stored in `data/model-selection.json` (or `$DATA_DIR/model-selection.json`). The same page has a chat panel that sends the saved text model (`rag_qa` by default) to OpenRouter. Image and video functions are rejected; they are not chat completions.
 
