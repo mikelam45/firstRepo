@@ -26,6 +26,21 @@ from .chat import (
     resolve_source_language,
     resolve_target_language,
 )
+from .image_refs import (
+    ImageRefError,
+    delete_reference,
+    get_stored_reference,
+    list_references,
+    save_reference,
+)
+from .images import (
+    ImageError,
+    enhance_prompt,
+    generate_images,
+    get_job,
+    list_jobs,
+    stored_image_path,
+)
 from .openrouter_key import (
     normalize_submitted_key,
     openrouter_status_fields,
@@ -91,6 +106,34 @@ class ChatIn(BaseModel):
 
 class OpenRouterKeyIn(BaseModel):
     api_key: str = ""
+
+
+class ImageGenerateIn(BaseModel):
+    prompt: str = ""
+    subject: str = ""
+    setting: str = ""
+    background: str = ""
+    background_attributes: str = ""
+    objects: str = ""
+    object_attributes: str = ""
+    style: str = ""
+    camera: str = ""
+    shot: str = ""
+    framing: str = ""
+    camera_framing: str = ""
+    lighting: str = ""
+    notes: str = ""
+    extra_notes: str = ""
+    width: int | None = None
+    height: int | None = None
+    format: str = "png"
+    resolution: str = ""
+    frames: list[str] | None = None
+    reference_ids: list[str] = Field(default_factory=list)
+
+
+class PromptEnhanceIn(BaseModel):
+    prompt: str = ""
 
 
 def connect(settings: Settings) -> sqlite3.Connection:
@@ -273,6 +316,124 @@ def post_chat(
             result["artifacts"] = artifacts
         return result
     except ChatError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+
+
+@app.post("/api/images/generate")
+def post_images_generate(
+    body: ImageGenerateIn,
+    authorization: str | None = Header(default=None),
+) -> dict[str, object]:
+    settings = get_settings()
+    require_write_access(settings, authorization)
+    try:
+        hidden = extra_hidden_ids()
+        selection = load_selection(settings.data_dir, extra_hidden=hidden)
+        return generate_images(
+            settings.data_dir,
+            body.model_dump(),
+            model_id=selection["image_gen"],
+            extra_hidden=hidden,
+        )
+    except (ChatError, ImageError, ImageRefError) as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+
+
+@app.get("/api/images/references")
+def get_image_references() -> dict[str, object]:
+    settings = get_settings()
+    return list_references(settings.data_dir)
+
+
+@app.post("/api/images/references", status_code=201)
+def post_image_reference(
+    file: UploadFile = File(...),
+    authorization: str | None = Header(default=None),
+) -> dict[str, object]:
+    settings = get_settings()
+    require_write_access(settings, authorization)
+    filename = file.filename or ""
+    data = file.file.read()
+    try:
+        return save_reference(settings.data_dir, filename=filename, data=data)
+    except ImageRefError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+
+
+@app.get("/api/images/references/{ref_id}")
+def get_image_reference_content(
+    ref_id: str,
+    authorization: str | None = Header(default=None),
+) -> FileResponse:
+    settings = get_settings()
+    require_write_access(settings, authorization)
+    try:
+        stored, filename, media_type = get_stored_reference(settings.data_dir, ref_id)
+    except ImageRefError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+    return FileResponse(
+        stored,
+        filename=filename,
+        media_type=media_type,
+        content_disposition_type="inline",
+    )
+
+
+@app.delete("/api/images/references/{ref_id}")
+def delete_image_reference(
+    ref_id: str,
+    authorization: str | None = Header(default=None),
+) -> dict[str, object]:
+    settings = get_settings()
+    require_write_access(settings, authorization)
+    try:
+        return delete_reference(settings.data_dir, ref_id)
+    except ImageRefError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+
+
+@app.get("/api/images")
+def get_images() -> list[dict[str, object]]:
+    settings = get_settings()
+    return list_jobs(settings.data_dir)
+
+
+@app.get("/api/images/{job_id}/file")
+def get_image_file(
+    job_id: str,
+    index: int = 0,
+    authorization: str | None = Header(default=None),
+) -> FileResponse:
+    settings = get_settings()
+    require_write_access(settings, authorization)
+    try:
+        job = get_job(settings.data_dir, job_id)
+        path, filename, media_type = stored_image_path(settings.data_dir, job, index)
+    except ImageError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+    return FileResponse(
+        path,
+        filename=filename,
+        media_type=media_type,
+        content_disposition_type="attachment",
+    )
+
+
+@app.post("/api/prompt/enhance")
+def post_prompt_enhance(
+    body: PromptEnhanceIn,
+    authorization: str | None = Header(default=None),
+) -> dict[str, str]:
+    settings = get_settings()
+    require_write_access(settings, authorization)
+    try:
+        hidden = extra_hidden_ids()
+        return enhance_prompt(
+            settings.data_dir,
+            body.prompt,
+            extra_hidden=hidden,
+        )
+    except (ChatError, ImageError) as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
 

@@ -32,6 +32,35 @@ def test_home_and_setup_are_distinct_html_pages(tmp_path, monkeypatch):
 
     assert 'id="rag-upload"' in home.text
     assert 'id="chat-send"' in home.text
+    assert "Background" in home.text
+    assert "Objects" in home.text
+    assert "Attributes of background" in home.text
+    assert "Attributes of objects" in home.text
+    assert "Assembled prompt" in home.text
+    assert 'id="image-panel"' in home.text
+    assert 'id="ref-slots"' in home.text
+    assert "Reference photos" in home.text
+    assert "0/5" in home.text
+    assert 'id="image-subject"' in home.text
+    assert 'id="image-setting"' in home.text
+    assert 'id="image-style"' in home.text
+    assert "cinematic still" in home.text
+    assert "product photo" in home.text
+    assert "storyboard frame" in home.text
+    assert "ink wash" in home.text
+    assert "documentary" in home.text
+    assert 'id="image-camera"' in home.text
+    assert 'id="image-lighting"' in home.text
+    assert 'id="image-preset"' in home.text
+    assert "1024x1024" in home.text
+    assert "1024x768" in home.text
+    assert "768x1024" in home.text
+    assert "1344x768" in home.text
+    assert "1920x1080" in home.text
+    assert 'id="image-format"' in home.text
+    assert 'id="image-generate"' in home.text
+    assert 'id="image-enhance"' in home.text
+    assert "google/gemini-3.1-flash-image" not in home.text
     assert 'id="grounding-control"' in home.text
     assert 'id="translation-languages"' in home.text
     assert 'id="source-language"' in home.text

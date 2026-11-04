@@ -150,8 +150,8 @@ button {
   cursor: pointer;
 }
 button:disabled { opacity: 0.6; cursor: wait; }
-#save-state, #chat-state, #openrouter-state, #upload-state { font-size: 0.95rem; }
-#save-state.error, #chat-state.error, #openrouter-state.error, #upload-state.error { color: var(--rust); }
+#save-state, #chat-state, #openrouter-state, #upload-state, #image-state, #image-enhance-state { font-size: 0.95rem; }
+#save-state.error, #chat-state.error, #openrouter-state.error, #upload-state.error, #image-state.error, #image-enhance-state.error { color: var(--rust); }
 button.secondary {
   background: transparent;
   color: var(--green);
@@ -161,9 +161,10 @@ button.secondary {
 .connection label.field { display: block; font-size: 0.92rem; color: var(--muted); }
 .connection input[type="password"] { min-width: min(100%, 28rem); }
 .good-for { margin: 2px 0 0; }
-.chat, .uploads, .unavailable { margin-top: 20px; }
-.chat label.field, .uploads label.field { display: block; font-size: 0.92rem; color: var(--muted); }
-.chat select, .chat textarea {
+.chat, .uploads, .unavailable, .image-studio { margin-top: 20px; }
+.chat label.field, .uploads label.field, .image-studio label.field { display: block; font-size: 0.92rem; color: var(--muted); }
+.chat select, .chat textarea,
+.image-studio select, .image-studio textarea, .image-studio input[type="text"], .image-studio input[type="number"] {
   display: block;
   width: 100%;
   margin: 4px 0 12px;
@@ -352,6 +353,128 @@ pre.chat-reply,
   text-decoration: none;
 }
 .file-list .translated-download:hover { text-decoration: underline; }
+.image-studio .image-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 12px;
+}
+.image-studio input[type="text"],
+.image-studio input[type="number"] {
+  display: block;
+  width: 100%;
+  margin: 4px 0 12px;
+  font: inherit;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: white;
+}
+.image-gallery {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+  margin-top: 14px;
+}
+.image-gallery img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+}
+.ref-count {
+  color: var(--muted);
+  font-size: 0.92rem;
+  margin: 0 0 8px;
+}
+.ref-slots {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0 0 12px;
+}
+@media (max-width: 720px) {
+  .ref-slots { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+.ref-slot {
+  position: relative;
+  aspect-ratio: 1;
+  border: 1px dashed var(--line);
+  border-radius: 10px;
+  background: var(--paper);
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+  text-align: center;
+}
+.ref-slot.add {
+  background: var(--card);
+  color: var(--muted);
+  box-shadow: none;
+  cursor: pointer;
+}
+.ref-slot img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.ref-slot .remove {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  padding: 2px 8px;
+  font-size: 0.78rem;
+}
+.image-studio fieldset.guided,
+.image-studio fieldset.output {
+  background: transparent;
+  border: 0;
+  padding: 0;
+  margin: 0 0 14px;
+}
+.image-studio fieldset.guided legend,
+.image-studio fieldset.output legend {
+  padding: 0;
+  margin-bottom: 8px;
+}
+.image-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+@media (max-width: 720px) {
+  .image-row { grid-template-columns: 1fr; }
+}
+.image-gallery {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 14px;
+  margin-top: 16px;
+}
+.image-gallery figure {
+  margin: 0;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 8px;
+}
+.image-gallery img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 6px;
+  background: white;
+}
+.image-gallery figcaption {
+  color: var(--muted);
+  font-size: 0.85rem;
+  margin-top: 6px;
+}
 .chat-grounding {
   display: inline-block;
   font-family: "Avenir Next", "Segoe UI", sans-serif;

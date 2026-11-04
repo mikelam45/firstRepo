@@ -15,7 +15,8 @@
     <h1>Functions</h1>
     <p class="lede">
       Ask a question, translate, or draft Cantonese script with the saved text model.
-      Image and video stay off this chat form; they are not chat completions.
+      Image and storyboard uses the OpenRouter Images API; those jobs are not sent as chat completions.
+      Video stays off this form.
     </p>
 
     <div class="tabs" role="tablist" aria-label="Functions">
@@ -27,6 +28,11 @@
     </div>
 
     <p class="meta model-line" id="chat-model"></p>
+    <div class="savebar auth-bar" id="auth-bar">
+      <label class="token">Production token
+        <input id="token" type="password" autocomplete="off" placeholder="Leave blank on the Mac">
+      </label>
+    </div>
 
     <section class="uploads" id="rag-upload" aria-labelledby="upload-title">
       <h2 id="upload-title">Document upload</h2>
@@ -90,19 +96,156 @@
       </label>
       <div class="savebar">
         <button type="button" id="chat-send">Send</button>
-        <label class="token">Production token
-          <input id="token" type="password" autocomplete="off" placeholder="Leave blank on the Mac">
-        </label>
         <span id="chat-state" role="status"></span>
       </div>
       <div id="chat-log" class="chat-log" hidden></div>
     </section>
 
+    <section class="chat image-studio" id="image-panel" hidden aria-labelledby="image-title">
+      <h2 id="image-title">Image and storyboard</h2>
+      <p class="meta">
+        Uses the saved image model. Image jobs are not sent as chat completions.
+        The unit price above is recorded, not a live quote.
+      </p>
+
+      <fieldset class="guided" aria-labelledby="guided-title">
+        <legend id="guided-title">Guided prompt</legend>
+        <div class="image-row">
+          <label class="field">Subject
+            <input id="image-subject" type="text" autocomplete="off" placeholder="Who or what is in the picture">
+          </label>
+          <label class="field">Setting
+            <input id="image-setting" type="text" autocomplete="off" placeholder="Where this happens">
+          </label>
+        </div>
+        <div class="image-row">
+          <label class="field">Background
+            <input id="image-background" type="text" autocomplete="off" placeholder="The backdrop behind the subject">
+          </label>
+          <label class="field">Attributes of background
+            <input id="image-background-attributes" type="text" autocomplete="off" placeholder="Color, weather, materials, depth">
+          </label>
+        </div>
+        <div class="image-row">
+          <label class="field">Objects
+            <input id="image-objects" type="text" autocomplete="off" placeholder="Props and furniture in the scene">
+          </label>
+          <label class="field">Attributes of objects
+            <input id="image-object-attributes" type="text" autocomplete="off" placeholder="Materials, condition, color, scale">
+          </label>
+        </div>
+        <label class="field">Style
+          <select id="image-style">
+            <option value="cinematic still" selected>cinematic still</option>
+            <option value="product photo">product photo</option>
+            <option value="storyboard frame">storyboard frame</option>
+            <option value="ink wash">ink wash</option>
+            <option value="documentary">documentary</option>
+          </select>
+        </label>
+        <label class="field">Camera / framing
+          <input id="image-camera" type="text" autocomplete="off" placeholder="Wide shot, close-up, overhead">
+        </label>
+        <label class="field">Shot
+          <select id="image-shot">
+            <option value="" selected>Choose a shot</option>
+            <option value="wide shot">Wide shot</option>
+            <option value="medium shot">Medium shot</option>
+            <option value="close-up">Close-up</option>
+            <option value="overhead">Overhead</option>
+          </select>
+        </label>
+        <label class="field">Lighting
+          <input id="image-lighting" type="text" autocomplete="off" placeholder="Soft window light, neon night">
+        </label>
+        <label class="field">Extra notes
+          <textarea id="image-notes" rows="2" placeholder="Colors, props, what to avoid"></textarea>
+        </label>
+      </fieldset>
+
+      <label class="field">Assembled prompt
+        <textarea id="image-prompt" rows="5" placeholder="The prompt that will be sent"></textarea>
+      </label>
+      <div class="savebar">
+        <button type="button" class="secondary" id="image-enhance">Enhance prompt</button>
+        <span id="image-enhance-state" role="status"></span>
+      </div>
+
+      <fieldset class="output" aria-labelledby="output-title">
+        <legend id="output-title">Output</legend>
+        <div class="image-row">
+          <label class="field">Resolution
+            <select id="image-resolution">
+              <option value="1:1" selected>Square 1:1</option>
+              <option value="4:3">Landscape 4:3</option>
+              <option value="3:4">Portrait 3:4</option>
+              <option value="3:2">Landscape 3:2</option>
+              <option value="2:3">Portrait 2:3</option>
+              <option value="16:9">Widescreen 16:9</option>
+              <option value="9:16">Vertical 9:16</option>
+              <option value="21:9">Ultra-wide 21:9</option>
+              <option value="auto">auto</option>
+            </select>
+          </label>
+          <label class="field">Size
+            <select id="image-preset">
+              <option value="1024x1024" selected>1024x1024</option>
+              <option value="1024x768">1024x768</option>
+              <option value="768x1024">768x1024</option>
+              <option value="1344x768">1344x768</option>
+              <option value="1920x1080">1920x1080</option>
+              <option value="custom">Custom</option>
+            </select>
+          </label>
+          <label class="field">Width
+            <input id="image-width" type="number" min="1" max="2048" value="1024">
+          </label>
+          <label class="field">Height
+            <input id="image-height" type="number" min="1" max="2048" value="1024">
+          </label>
+          <label class="field">Format
+            <select id="image-format">
+              <option value="png" selected>png</option>
+              <option value="jpeg">jpeg</option>
+              <option value="webp">webp</option>
+            </select>
+          </label>
+          <label class="field">Count
+            <select id="image-count">
+              <option value="1" selected>1 image</option>
+              <option value="4">Storyboard 4 frames</option>
+              <option value="6">Storyboard 6 frames</option>
+              <option value="8">Storyboard 8 frames</option>
+            </select>
+          </label>
+        </div>
+        <label class="field" id="image-beats-field" hidden>Storyboard beats (one per line)
+          <textarea id="image-beats" rows="6" placeholder="Beat 1&#10;Beat 2&#10;Beat 3"></textarea>
+        </label>
+      </fieldset>
+
+      <fieldset class="refs" aria-labelledby="ref-title">
+        <legend id="ref-title">Reference photos</legend>
+        <p class="meta" id="ref-hint">
+          Up to 5 jpeg, png, or webp files. 10 MB each. Used as OpenRouter input_references.
+        </p>
+        <p class="ref-count" id="ref-count" aria-live="polite">0/5</p>
+        <div class="ref-slots" id="ref-slots"></div>
+        <input id="ref-file" type="file" accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp" hidden>
+      </fieldset>
+
+      <div class="savebar">
+        <button type="button" id="image-generate">Generate</button>
+        <span id="image-state" role="status"></span>
+      </div>
+      <div class="image-gallery" id="image-gallery" hidden></div>
+    </section>
+
     <section class="unavailable" id="media-note" hidden aria-labelledby="media-title">
       <h2 id="media-title">Not a chat completion</h2>
       <p class="note">
-        Image and video generation are not sent through OpenRouter chat completions.
-        Choose a model for them on <a href="/setup">LLM setup</a>. This page does not run those jobs yet.
+        Video generation is not sent through OpenRouter chat completions.
+        Choose a model for it on <a href="/setup">LLM setup</a>. This page does not run video jobs yet.
       </p>
     </section>
   </main>
@@ -116,7 +259,8 @@
     const TRANSLATION_ACCEPT = ".pdf,.docx,.doc,.pptx,.ppt,.xlsx,.xls,.txt,.md";
     const RAG_HINT = "Accepted: .pdf, .docx, .doc, .txt, .md, .xlsx, .xls, .csv, .json. Maximum 10 MB. .doc and .xls are stored, but text extraction needs a converted copy. Chat for RAG uses the extracted text as context.";
     const TRANSLATION_HINT = "Accepted: .pdf, .docx, .doc, .pptx, .ppt, .xlsx, .xls, .txt, .md. Maximum 10 MB. .ppt, .doc, and .xls are stored, but text extraction needs a converted copy. Chat translates these documents into the target language.";
-    const state = { catalog: null, saved: null, functionId: "rag_qa", files: [] };
+    const state = { catalog: null, saved: null, functionId: "rag_qa", files: [], refs: [] };
+    const MAX_REFS = 5;
 
     function loadStoredGrounding() {
       try {
@@ -241,12 +385,14 @@
         button.setAttribute("aria-selected", button.getAttribute("data-function") === functionId ? "true" : "false");
       }
       const text = isTextFunction(functionId);
+      const isImage = functionId === "image_gen";
       const showUpload = functionId === "rag_qa" || functionId === "translation";
       document.getElementById("rag-upload").hidden = !showUpload;
       document.getElementById("grounding-control").hidden = functionId !== "rag_qa";
       document.getElementById("translation-languages").hidden = functionId !== "translation";
       document.getElementById("chat-panel").hidden = !text;
-      document.getElementById("media-note").hidden = text;
+      document.getElementById("image-panel").hidden = !isImage;
+      document.getElementById("media-note").hidden = text || isImage;
       document.getElementById("chat-send").textContent = functionId === "translation" ? "Translate" : "Send";
       const messageBox = document.getElementById("chat-message");
       if (functionId === "translation") {
@@ -268,6 +414,20 @@
           const status = document.getElementById("upload-state");
           status.className = "error";
           status.textContent = "Could not list files.";
+        });
+      }
+      if (isImage) {
+        syncAssembledPrompt();
+        updateBeatsVisibility();
+        loadRefs().catch(() => {
+          const status = document.getElementById("image-state");
+          status.className = "error";
+          status.textContent = "Could not list reference photos.";
+        });
+        loadImageJobs().catch(() => {
+          const status = document.getElementById("image-state");
+          status.className = "error";
+          status.textContent = "Could not list generated images.";
         });
       }
     }
@@ -611,9 +771,374 @@
       }
     });
 
+    const IMAGE_PRESETS = {
+      "1024x1024": [1024, 1024],
+      "1024x768": [1024, 768],
+      "768x1024": [768, 1024],
+      "1344x768": [1344, 768],
+      "1920x1080": [1920, 1080],
+    };
+    const PRESET_ASPECT = {
+      "1024x1024": "1:1",
+      "1024x768": "4:3",
+      "768x1024": "3:4",
+      "1344x768": "16:9",
+      "1920x1080": "16:9",
+    };
+
+    function assembleImagePrompt() {
+      const subject = document.getElementById("image-subject").value.trim();
+      const setting = document.getElementById("image-setting").value.trim();
+      const background = document.getElementById("image-background").value.trim();
+      const backgroundAttributes = document.getElementById("image-background-attributes").value.trim();
+      const objects = document.getElementById("image-objects").value.trim();
+      const objectAttributes = document.getElementById("image-object-attributes").value.trim();
+      const style = document.getElementById("image-style").value;
+      const camera = document.getElementById("image-camera").value.trim()
+        || document.getElementById("image-shot").value.trim();
+      const lighting = document.getElementById("image-lighting").value.trim();
+      const notes = document.getElementById("image-notes").value.trim();
+      const lines = [];
+      if (subject) lines.push("Subject: " + subject);
+      if (setting) lines.push("Setting: " + setting);
+      if (background) lines.push("Background: " + background);
+      if (backgroundAttributes) lines.push("Attributes of background: " + backgroundAttributes);
+      if (objects) lines.push("Objects: " + objects);
+      if (objectAttributes) lines.push("Attributes of objects: " + objectAttributes);
+      if (style) lines.push("Style: " + style);
+      if (camera) lines.push("Camera: " + camera);
+      if (lighting) lines.push("Lighting: " + lighting);
+      if (notes) lines.push("Notes: " + notes);
+      return lines.join("\n");
+    }
+
+    function syncAssembledPrompt() {
+      const box = document.getElementById("image-prompt");
+      if (!box || box.dataset.dirty === "1") return;
+      box.value = assembleImagePrompt();
+    }
+
+    function selectedImageSize() {
+      const preset = document.getElementById("image-preset").value;
+      if (IMAGE_PRESETS[preset]) return IMAGE_PRESETS[preset];
+      const width = Number(document.getElementById("image-width").value);
+      const height = Number(document.getElementById("image-height").value);
+      return [width, height];
+    }
+
+    function applyImagePreset() {
+      const preset = document.getElementById("image-preset").value;
+      const size = IMAGE_PRESETS[preset];
+      if (!size) return;
+      document.getElementById("image-width").value = String(size[0]);
+      document.getElementById("image-height").value = String(size[1]);
+      const aspect = PRESET_ASPECT[preset];
+      if (aspect) document.getElementById("image-resolution").value = aspect;
+    }
+
+    function updateBeatsVisibility() {
+      const count = Number(document.getElementById("image-count").value) || 1;
+      document.getElementById("image-beats-field").hidden = count <= 1;
+    }
+
+    function storyboardBeats() {
+      const count = Number(document.getElementById("image-count").value) || 1;
+      if (count <= 1) return null;
+      const lines = document.getElementById("image-beats").value.split(/\n/).map((line) => line.trim()).filter(Boolean);
+      const beats = [];
+      for (let index = 0; index < count; index += 1) {
+        beats.push(lines[index] || ("Frame " + (index + 1)));
+      }
+      return beats;
+    }
+
+    function renderImageJobs(jobs) {
+      const gallery = document.getElementById("image-gallery");
+      gallery.replaceChildren();
+      if (!jobs || !jobs.length) {
+        gallery.hidden = true;
+        return;
+      }
+      gallery.hidden = false;
+      for (const job of jobs) {
+        const images = Array.isArray(job.images) ? job.images : [];
+        for (const image of images) {
+          const figure = document.createElement("figure");
+          const img = document.createElement("img");
+          img.alt = image.caption || job.prompt || "Generated image";
+          img.src = image.href;
+          figure.appendChild(img);
+          if (image.caption) {
+            const caption = document.createElement("figcaption");
+            caption.textContent = image.caption;
+            figure.appendChild(caption);
+          }
+          const download = document.createElement("a");
+          download.className = "chat-download";
+          download.href = image.href;
+          download.download = image.filename || "image";
+          download.textContent = "Download " + (job.format || "image");
+          figure.appendChild(download);
+          gallery.appendChild(figure);
+        }
+      }
+    }
+
+    async function loadImageJobs() {
+      const response = await fetch("/api/images");
+      if (!response.ok) throw new Error("Could not list images");
+      const payload = await response.json();
+      const jobs = Array.isArray(payload) ? payload : (payload.jobs || []);
+      renderImageJobs(jobs);
+    }
+
+    ["image-subject", "image-setting", "image-background", "image-background-attributes", "image-objects", "image-object-attributes", "image-style", "image-camera", "image-shot", "image-lighting", "image-notes"].forEach((id) => {
+      document.getElementById(id).addEventListener("input", () => {
+        document.getElementById("image-prompt").dataset.dirty = "";
+        syncAssembledPrompt();
+      });
+    });
+    document.getElementById("image-prompt").addEventListener("input", (event) => {
+      event.target.dataset.dirty = event.target.value.trim() ? "1" : "";
+    });
+    document.getElementById("image-preset").addEventListener("change", applyImagePreset);
+    document.getElementById("image-count").addEventListener("change", updateBeatsVisibility);
+
+    document.getElementById("image-enhance").addEventListener("click", async () => {
+      const button = document.getElementById("image-enhance");
+      const status = document.getElementById("image-enhance-state");
+      const box = document.getElementById("image-prompt");
+      const prompt = (box.value.trim() || assembleImagePrompt());
+      if (!prompt) {
+        status.className = "error";
+        status.textContent = "Fill the guided fields first.";
+        return;
+      }
+      button.disabled = true;
+      status.className = "";
+      status.textContent = "Enhancing…";
+      try {
+        const response = await fetch("/api/prompt/enhance", {
+          method: "POST",
+          headers: authHeaders(true),
+          body: JSON.stringify({ prompt }),
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          status.className = "error";
+          const detail = payload.detail;
+          status.textContent = typeof detail === "string" ? detail : "Enhance failed (" + response.status + ").";
+          return;
+        }
+        box.value = payload.enhanced_prompt || prompt;
+        box.dataset.dirty = "1";
+        status.className = "";
+        status.textContent = "Prompt enhanced.";
+      } catch (error) {
+        status.className = "error";
+        status.textContent = "Enhance failed.";
+      } finally {
+        button.disabled = false;
+      }
+    });
+
+    function renderRefs() {
+      const slots = document.getElementById("ref-slots");
+      const count = document.getElementById("ref-count");
+      if (!slots || !count) return;
+      slots.replaceChildren();
+      const files = state.refs || [];
+      count.textContent = files.length + "/" + MAX_REFS;
+      for (const file of files) {
+        const slot = document.createElement("div");
+        slot.className = "ref-slot";
+        const img = document.createElement("img");
+        img.alt = file.name || "Reference photo";
+        img.src = file.href || ("/api/images/references/" + encodeURIComponent(file.id));
+        slot.appendChild(img);
+        const remove = document.createElement("button");
+        remove.type = "button";
+        remove.className = "remove";
+        remove.textContent = "Remove";
+        remove.addEventListener("click", () => deleteRef(file.id));
+        slot.appendChild(remove);
+        slots.appendChild(slot);
+      }
+      const remaining = MAX_REFS - files.length;
+      for (let index = 0; index < remaining; index += 1) {
+        const slot = document.createElement("button");
+        slot.type = "button";
+        slot.className = "ref-slot add";
+        slot.textContent = "Add photo";
+        slot.addEventListener("click", () => document.getElementById("ref-file").click());
+        slots.appendChild(slot);
+      }
+    }
+
+    async function loadRefs() {
+      const response = await fetch("/api/images/references");
+      if (!response.ok) throw new Error("Could not list reference photos");
+      const payload = await response.json();
+      state.refs = Array.isArray(payload) ? payload : (payload.files || []);
+      renderRefs();
+    }
+
+    async function deleteRef(id) {
+      const status = document.getElementById("image-state");
+      status.className = "";
+      status.textContent = "Removing…";
+      try {
+        const response = await fetch("/api/images/references/" + encodeURIComponent(id), {
+          method: "DELETE",
+          headers: authHeaders(false),
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          status.className = "error";
+          const detail = payload.detail;
+          status.textContent = typeof detail === "string" ? detail : "Remove failed (" + response.status + ").";
+          return;
+        }
+        await loadRefs();
+        status.textContent = "Removed.";
+      } catch (error) {
+        status.className = "error";
+        status.textContent = "Remove failed.";
+      }
+    }
+
+    document.getElementById("ref-file").addEventListener("change", async (event) => {
+      const input = event.target;
+      const file = input.files && input.files[0];
+      input.value = "";
+      const status = document.getElementById("image-state");
+      if (!file) return;
+      if ((state.refs || []).length >= MAX_REFS) {
+        status.className = "error";
+        status.textContent = "At most 5 reference photos can be stored.";
+        return;
+      }
+      status.className = "";
+      status.textContent = "Uploading…";
+      const body = new FormData();
+      body.append("file", file, file.name);
+      try {
+        const response = await fetch("/api/images/references", {
+          method: "POST",
+          headers: authHeaders(false),
+          body,
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          status.className = "error";
+          const detail = payload.detail;
+          status.textContent = typeof detail === "string" ? detail : "Upload failed (" + response.status + ").";
+          return;
+        }
+        await loadRefs();
+        status.textContent = "Uploaded " + (payload.name || file.name) + ".";
+      } catch (error) {
+        status.className = "error";
+        status.textContent = "Upload failed.";
+      }
+    });
+
+    document.getElementById("image-generate").addEventListener("click", async () => {
+      const button = document.getElementById("image-generate");
+      const status = document.getElementById("image-state");
+      const box = document.getElementById("image-prompt");
+      syncAssembledPrompt();
+      if (!box.value.trim()) box.value = assembleImagePrompt();
+      const prompt = box.value.trim();
+      if (!prompt) {
+        status.className = "error";
+        status.textContent = "Enter a subject or assembled prompt.";
+        return;
+      }
+      const size = selectedImageSize();
+      const width = size[0];
+      const height = size[1];
+      if (!width || !height || width > 2048 || height > 2048 || width < 1 || height < 1) {
+        status.className = "error";
+        status.textContent = "Width and height must be between 1 and 2048.";
+        return;
+      }
+      button.disabled = true;
+      status.className = "";
+      status.textContent = "Generating…";
+      const body = {
+        prompt,
+        subject: document.getElementById("image-subject").value.trim(),
+        setting: document.getElementById("image-setting").value.trim(),
+        background: document.getElementById("image-background").value.trim(),
+        background_attributes: document.getElementById("image-background-attributes").value.trim(),
+        objects: document.getElementById("image-objects").value.trim(),
+        object_attributes: document.getElementById("image-object-attributes").value.trim(),
+        style: document.getElementById("image-style").value,
+        camera: document.getElementById("image-camera").value.trim(),
+        shot: document.getElementById("image-shot").value,
+        lighting: document.getElementById("image-lighting").value.trim(),
+        notes: document.getElementById("image-notes").value.trim(),
+        resolution: document.getElementById("image-resolution").value,
+        width,
+        height,
+        format: document.getElementById("image-format").value,
+        reference_ids: (state.refs || []).map((file) => file.id).slice(0, MAX_REFS),
+      };
+      const frames = storyboardBeats();
+      if (frames) body.frames = frames;
+      try {
+        const response = await fetch("/api/images/generate", {
+          method: "POST",
+          headers: authHeaders(true),
+          body: JSON.stringify(body),
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          status.className = "error";
+          const detail = payload.detail;
+          status.textContent = typeof detail === "string" ? detail : "Generate failed (" + response.status + ").";
+          return;
+        }
+        const line = document.getElementById("chat-model");
+        line.replaceChildren();
+        const used = document.createElement("span");
+        used.textContent = "Used " + payload.model_id + " · "
+          + priceSummary(payload.prices) + " (recorded " + payload.prices_recorded_on + ", not a live quote). ";
+        line.appendChild(used);
+        const link = document.createElement("a");
+        link.href = "/setup";
+        link.textContent = "Change on LLM setup";
+        line.appendChild(link);
+        if (payload.image_base64) {
+          const gallery = document.getElementById("image-gallery");
+          gallery.hidden = false;
+          gallery.replaceChildren();
+          const figure = document.createElement("figure");
+          const img = document.createElement("img");
+          img.alt = payload.prompt || "Generated image";
+          img.src = "data:" + (payload.media_type || "image/png") + ";base64," + payload.image_base64;
+          figure.appendChild(img);
+          gallery.appendChild(figure);
+        } else {
+          await loadImageJobs();
+        }
+        const count = payload.image_base64 ? 1 : (payload.images || []).length;
+        status.className = "";
+        status.textContent = "Generated " + count + " image" + (count === 1 ? "" : "s") + " with " + payload.model_id + ".";
+      } catch (error) {
+        status.className = "error";
+        status.textContent = "Generate failed.";
+      } finally {
+        button.disabled = false;
+      }
+    });
+
     loadModels().then(() => {
       applyStoredGrounding();
       applyStoredTargetLanguage();
+      applyImagePreset();
+      updateBeatsVisibility();
       showFunction("rag_qa");
     }).catch(() => {
       document.getElementById("chat-state").className = "error";
