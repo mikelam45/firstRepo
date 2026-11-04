@@ -176,6 +176,10 @@ def content_href(file_id: str) -> str:
     return f"/api/rag/files/{file_id}/content"
 
 
+def translated_href(file_id: str) -> str:
+    return f"/api/rag/files/{file_id}/translated"
+
+
 def excerpt_of(text: str, limit: int = SOURCE_EXCERPT_CHARS) -> str:
     cleaned = " ".join((text or "").split())
     if len(cleaned) <= limit:
@@ -261,6 +265,11 @@ def public_record(row: dict[str, Any]) -> dict[str, Any]:
     }
     if row.get("extract_error"):
         record["extract_error"] = row["extract_error"]
+    if row.get("translated_path"):
+        record["translated_path"] = row["translated_path"]
+        record["translated_href"] = translated_href(str(row["id"]))
+        if row.get("translated_name"):
+            record["translated_name"] = row["translated_name"]
     return record
 
 
@@ -503,6 +512,9 @@ def delete_file(data_dir: Path, file_id: str) -> dict[str, Any]:
     extracted = extract_path(data_dir, chosen)
     if extracted.is_file():
         extracted.unlink()
+    translated = Path(data_dir) / str(match.get("translated_path") or "")
+    if match.get("translated_path") and translated.is_file():
+        translated.unlink()
     save_index(data_dir, [row for row in files if row.get("id") != chosen])
     return {"ok": True, "id": chosen}
 

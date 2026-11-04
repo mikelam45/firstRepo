@@ -171,4 +171,5 @@ def test_rag_and_translation_prompts_include_format_contract(tmp_path, monkeypat
     assert "natural" in messages[0]["content"]
     assert messages[1] == {"role": "user", "content": "hello"}
     assert "sources" not in translation.json()
+    assert translation.json().get("artifacts") == []
     assert seen["json"]["model"] == DEFAULT_SELECTION["translation"]

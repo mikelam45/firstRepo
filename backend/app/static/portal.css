@@ -331,6 +331,27 @@ pre.chat-reply,
   color: var(--green);
   font-size: 0.9rem;
 }
+.chat-artifacts {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+.chat-artifacts-label { font-weight: 650; color: var(--ink); }
+.chat-artifacts ul {
+  margin: 4px 0 0;
+  padding-left: 1.1rem;
+}
+.chat-artifacts a { color: var(--green); }
+.file-list .translated-download {
+  display: inline-block;
+  margin-top: 4px;
+  color: var(--green);
+  font-size: 0.88rem;
+  text-decoration: none;
+}
+.file-list .translated-download:hover { text-decoration: underline; }
 .chat-grounding {
   display: inline-block;
   font-family: "Avenir Next", "Segoe UI", sans-serif;

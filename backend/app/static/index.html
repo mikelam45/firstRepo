@@ -302,6 +302,18 @@
           error.textContent = file.extract_error;
           body.appendChild(error);
         }
+        if (file.translated_href) {
+          const translated = document.createElement("a");
+          translated.className = "translated-download";
+          translated.href = file.translated_href;
+          translated.target = "_blank";
+          translated.rel = "noopener noreferrer";
+          translated.textContent = artifactDownloadLabel({
+            name: file.translated_name || file.name,
+            source_name: file.name,
+          });
+          body.appendChild(translated);
+        }
         item.appendChild(body);
         const remove = document.createElement("button");
         remove.type = "button";
@@ -402,6 +414,16 @@
       }
     });
 
+    function artifactDownloadLabel(artifact) {
+      const name = String((artifact && (artifact.name || artifact.source_name)) || "").toLowerCase();
+      if (name.endsWith(".pdf")) return "Download translated PDF";
+      if (name.endsWith(".docx") || name.endsWith(".doc")) return "Download translated Word";
+      if (name.endsWith(".pptx") || name.endsWith(".ppt")) return "Download translated PPT";
+      if (name.endsWith(".xlsx") || name.endsWith(".xls")) return "Download translated Excel";
+      if (name.endsWith(".txt") || name.endsWith(".md")) return "Download translated text";
+      return "Download translated file";
+    }
+
     function appendSources(article, sources) {
       if (!Array.isArray(sources) || !sources.length) return;
       const block = document.createElement("div");
@@ -424,6 +446,36 @@
           excerpt.className = "chat-source-excerpt";
           excerpt.textContent = " — " + source.excerpt;
           item.appendChild(excerpt);
+        }
+        list.appendChild(item);
+      }
+      block.appendChild(list);
+      article.appendChild(block);
+    }
+
+    function appendArtifacts(article, artifacts) {
+      if (!Array.isArray(artifacts) || !artifacts.length) return;
+      const block = document.createElement("div");
+      block.className = "chat-artifacts";
+      const label = document.createElement("div");
+      label.className = "chat-artifacts-label";
+      label.textContent = "Translated files";
+      block.appendChild(label);
+      const list = document.createElement("ul");
+      for (const artifact of artifacts) {
+        const item = document.createElement("li");
+        const link = document.createElement("a");
+        link.className = "chat-download";
+        link.href = artifact.href;
+        link.target = "_blank";
+        link.rel = "noopener noreferrer";
+        link.textContent = artifactDownloadLabel(artifact);
+        item.appendChild(link);
+        if (artifact.name) {
+          const filename = document.createElement("span");
+          filename.className = "chat-source-excerpt";
+          filename.textContent = " — " + artifact.name;
+          item.appendChild(filename);
         }
         list.appendChild(item);
       }
@@ -466,6 +518,7 @@
       } else {
         article.appendChild(renderAssistantReply(text)); // parseChartFence, markdownTableToHtml, escapeHtml
         appendSources(article, sources);
+        appendArtifacts(article, options && options.artifacts);
         if (options && options.downloadMarkdown) {
           appendMarkdownDownload(article, text);
         }
@@ -540,8 +593,14 @@
           payload.reply,
           payload.sources,
           payload.grounding,
-          { downloadMarkdown: state.functionId === "translation" }
+          {
+            downloadMarkdown: state.functionId === "translation",
+            artifacts: payload.artifacts,
+          }
         );
+        if (state.functionId === "translation") {
+          loadFiles().catch(() => {});
+        }
         status.className = "";
         status.textContent = "Reply from " + payload.model_id + ".";
       } catch (error) {

@@ -15,6 +15,7 @@ openrouter_key/
 data/
 data/uploads/
 data/extracts/
+data/translated/
 data/rag-files.json
 data/openrouter.env
 *.db

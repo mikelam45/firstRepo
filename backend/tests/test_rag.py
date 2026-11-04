@@ -93,6 +93,7 @@ def test_upload_list_and_rag_chat_includes_extracts(tmp_path, monkeypatch):
     assert chat.json()["grounding"] == "mixed"
 
     sources = chat.json()["sources"]
+    assert "artifacts" not in chat.json()
     assert {row["name"] for row in sources} == {"notes.csv", "memo.txt", "meta.json"}
     by_name = {row["name"]: row for row in sources}
     assert by_name["memo.txt"]["id"] == txt_resp.json()["id"]
@@ -239,6 +240,7 @@ def test_translation_does_not_invent_sources(tmp_path, monkeypatch):
     )
     assert chat.status_code == 200
     assert "sources" not in chat.json()
+    assert chat.json().get("artifacts") == []
 
 
 def test_missing_file_content_is_404(tmp_path, monkeypatch):

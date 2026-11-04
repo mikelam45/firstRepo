@@ -8,6 +8,7 @@ from app.rag import (
     PPT_CONVERSION_NOTE,
     extract_text,
 )
+from app.repack import TRANSLATED_NOT_FOUND, write_pdf_bytes
 
 
 def _client(monkeypatch, tmp_path):
@@ -61,6 +62,21 @@ def _pptx_bytes(text: str) -> bytes:
     slide.shapes.title.text = text
     buffer = io.BytesIO()
     presentation.save(buffer)
+    return buffer.getvalue()
+
+
+def _pdf_bytes(text: str, pages: int = 1) -> bytes:
+    from reportlab.lib.pagesizes import letter
+    from reportlab.pdfgen import canvas
+
+    buffer = io.BytesIO()
+    drawing = canvas.Canvas(buffer, pagesize=letter)
+    for index in range(pages):
+        drawing.setFont("Helvetica", 12)
+        label = f"{text} page {index + 1}" if pages > 1 else text
+        drawing.drawString(72, 720, label)
+        drawing.showPage()
+    drawing.save()
     return buffer.getvalue()
 
 
@@ -278,3 +294,207 @@ def test_functions_page_has_translation_language_and_upload(tmp_path, monkeypatc
     assert "translation-target-language" in home.text
     assert "Translate the uploaded documents." in home.text
     assert PAGE.is_file()
+
+
+def test_functions_page_has_artifact_download_hook(tmp_path, monkeypatch):
+    client = _client(monkeypatch, tmp_path)
+    home = client.get("/")
+    css = client.get("/static/portal.css")
+    script = client.get("/static/chat_format.js")
+    assert home.status_code == 200
+    assert "appendArtifacts" in home.text
+    assert "payload.artifacts" in home.text
+    assert "Download translated PDF" in home.text
+    assert "Download translated Word" in home.text
+    assert "Download translated PPT" in home.text
+    assert "artifactDownloadLabel" in home.text
+    assert "translated-download" in home.text
+    assert "translated_href" in home.text
+    assert "chat-artifacts" in css.text
+    assert "isSafeHref" in script.text
+    assert "api\\/translation" in script.text
+    assert PAGE.is_file()
+
+
+def test_write_pdf_bytes_has_header_and_cjk_content():
+    payload = write_pdf_bytes(title="报告", pages=["你好世界 Hello"])
+    assert payload.startswith(b"%PDF")
+    assert len(payload) > 100
+    assert b"/Font" in payload or b"/Type /Font" in payload
+
+
+def test_translation_chat_repacks_txt_docx_pdf(tmp_path, monkeypatch):
+    _install_key(tmp_path, monkeypatch)
+    reply = (
+        "# notes.txt\nTRANSLATED_TXT_BODY\n\n"
+        "# brief.docx\nTRANSLATED_DOCX_BODY\n\n"
+        "# report.pdf\n## Page 1\nTRANSLATED_PDF_BODY\n"
+    )
+    _mock_chat(monkeypatch, reply=reply)
+    client = _client(monkeypatch, tmp_path)
+
+    txt = client.post(
+        "/api/translation/files",
+        files={"file": ("notes.txt", b"SOURCE_TXT_BODY\n", "text/plain")},
+    )
+    docx = client.post(
+        "/api/translation/files",
+        files={
+            "file": (
+                "brief.docx",
+                _docx_bytes("SOURCE_DOCX_BODY"),
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            )
+        },
+    )
+    pdf = client.post(
+        "/api/translation/files",
+        files={"file": ("report.pdf", _pdf_bytes("SOURCE_PDF_BODY"), "application/pdf")},
+    )
+    assert txt.status_code == 201
+    assert docx.status_code == 201
+    assert pdf.status_code == 201
+    pdf_id = pdf.json()["id"]
+    missing = client.get(f"/api/rag/files/{pdf_id}/translated")
+    assert missing.status_code == 404
+    assert missing.json()["detail"] == TRANSLATED_NOT_FOUND
+
+    chat = client.post(
+        "/api/chat",
+        json={"function": "translation", "target_language": "zh_hk"},
+    )
+    assert chat.status_code == 200
+    assert "artifacts" not in str(chat.json().get("reply"))
+    artifacts = chat.json()["artifacts"]
+    assert {row["source_name"] for row in artifacts} == {
+        "notes.txt",
+        "brief.docx",
+        "report.pdf",
+    }
+    by_source = {row["source_name"]: row for row in artifacts}
+    assert by_source["notes.txt"]["name"] == "notes.zh_hk.txt"
+    assert by_source["brief.docx"]["name"] == "brief.zh_hk.docx"
+    assert by_source["report.pdf"]["name"] == "report.zh_hk.pdf"
+    assert by_source["report.pdf"]["href"] == f"/api/rag/files/{pdf_id}/translated"
+    assert by_source["brief.docx"]["id"] == docx.json()["id"]
+
+    listed = client.get("/api/translation/files")
+    listed_by_name = {row["name"]: row for row in listed.json()}
+    assert listed_by_name["report.pdf"]["translated_href"] == f"/api/rag/files/{pdf_id}/translated"
+    assert listed_by_name["report.pdf"]["translated_path"].startswith("translated/")
+    assert listed_by_name["brief.docx"]["translated_name"] == "brief.zh_hk.docx"
+
+    pdf_download = client.get(by_source["report.pdf"]["href"])
+    assert pdf_download.status_code == 200
+    assert "application/pdf" in pdf_download.headers["content-type"]
+    assert pdf_download.content.startswith(b"%PDF")
+    assert len(pdf_download.content) > 100
+    assert "report.zh_hk.pdf" in pdf_download.headers["content-disposition"]
+
+    docx_download = client.get(by_source["brief.docx"]["href"])
+    assert docx_download.status_code == 200
+    assert docx_download.content[:2] == b"PK"
+    assert "brief.zh_hk.docx" in docx_download.headers["content-disposition"]
+    from docx import Document
+
+    translated_doc = Document(io.BytesIO(docx_download.content))
+    joined = "\n".join(p.text for p in translated_doc.paragraphs)
+    assert "TRANSLATED_DOCX_BODY" in joined
+
+    txt_download = client.get(by_source["notes.txt"]["href"])
+    assert txt_download.status_code == 200
+    assert b"TRANSLATED_TXT_BODY" in txt_download.content
+
+    alias = client.get(f"/api/translation/files/{pdf_id}/download")
+    assert alias.status_code == 200
+    assert alias.content.startswith(b"%PDF")
+    assert alias.content == pdf_download.content
+
+
+def test_translation_repacks_pptx(tmp_path, monkeypatch):
+    _install_key(tmp_path, monkeypatch)
+    _mock_chat(monkeypatch, reply="TRANSLATED_SLIDE_TEXT")
+    client = _client(monkeypatch, tmp_path)
+    uploaded = client.post(
+        "/api/translation/files",
+        files={
+            "file": (
+                "deck.pptx",
+                _pptx_bytes("SLIDE_ONLY_FOR_TRANSLATION"),
+                "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            )
+        },
+    )
+    assert uploaded.status_code == 201
+    chat = client.post(
+        "/api/chat",
+        json={"function": "translation", "target_language": "zh_cn"},
+    )
+    assert chat.status_code == 200
+    artifacts = chat.json()["artifacts"]
+    assert len(artifacts) == 1
+    assert artifacts[0]["name"] == "deck.zh_cn.pptx"
+    downloaded = client.get(artifacts[0]["href"])
+    assert downloaded.status_code == 200
+    assert downloaded.content[:2] == b"PK"
+    from pptx import Presentation
+
+    presentation = Presentation(io.BytesIO(downloaded.content))
+    texts = []
+    for slide in presentation.slides:
+        for shape in slide.shapes:
+            if getattr(shape, "has_text_frame", False):
+                texts.append(shape.text_frame.text)
+    assert any("TRANSLATED_SLIDE_TEXT" in text for text in texts)
+
+
+def test_rag_uploads_do_not_get_translated_artifacts(tmp_path, monkeypatch):
+    _install_key(tmp_path, monkeypatch)
+    _mock_chat(monkeypatch, reply="grounded")
+    client = _client(monkeypatch, tmp_path)
+    uploaded = client.post(
+        "/api/rag/files",
+        files={"file": ("report.pdf", _pdf_bytes("RAG_ONLY_PDF"), "application/pdf")},
+    )
+    assert uploaded.status_code == 201
+    file_id = uploaded.json()["id"]
+    chat = client.post("/api/chat", json={"message": "What is in the file?", "function": "rag_qa"})
+    assert chat.status_code == 200
+    assert "artifacts" not in chat.json()
+    listed = client.get("/api/rag/files").json()
+    assert listed[0]["id"] == file_id
+    assert "translated_href" not in listed[0]
+    assert "translated_path" not in listed[0]
+    missing = client.get(f"/api/rag/files/{file_id}/translated")
+    assert missing.status_code == 404
+
+
+def test_production_translated_download_requires_token(tmp_path, monkeypatch):
+    monkeypatch.setenv("APP_ENV", "production")
+    monkeypatch.setenv("DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("PORTAL_API_TOKEN", "test-token")
+    env_file = tmp_path / "openrouter.env"
+    env_file.write_text("OPENROUTER_API_KEY=test-openrouter-key-not-a-secret\n", encoding="utf-8")
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    monkeypatch.setenv("OPENROUTER_ENV_FILE", str(env_file))
+    _mock_chat(monkeypatch, reply="TOKEN_TRANSLATED")
+    client = TestClient(app)
+    headers = {"Authorization": "Bearer test-token"}
+    uploaded = client.post(
+        "/api/translation/files",
+        files={"file": ("memo.txt", b"please translate\n", "text/plain")},
+        headers=headers,
+    )
+    assert uploaded.status_code == 201
+    chat = client.post(
+        "/api/chat",
+        json={"function": "translation", "target_language": "en"},
+        headers=headers,
+    )
+    assert chat.status_code == 200
+    href = chat.json()["artifacts"][0]["href"]
+    rejected = client.get(href)
+    assert rejected.status_code == 401
+    accepted = client.get(href, headers=headers)
+    assert accepted.status_code == 200
+    assert b"TOKEN_TRANSLATED" in accepted.content

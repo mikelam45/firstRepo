@@ -23,7 +23,7 @@
   }
 
   function isSafeHref(href) {
-    return /^(https?:\/\/|\/api\/rag\/)/i.test(String(href || "").trim());
+    return /^(https?:\/\/|\/api\/rag\/|\/api\/translation\/)/i.test(String(href || "").trim());
   }
 
   function parseChartFence(body) {

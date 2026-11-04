@@ -48,6 +48,7 @@ from .rag import (
     resolve_collection,
     save_upload,
 )
+from .repack import get_translated_file, media_type_for, repack_translation_files
 from .selection import load_selection, parse_selection, save_selection
 
 ALLOWED_ENVS = ("development", "production")
@@ -257,6 +258,19 @@ def post_chat(
         result["grounding"] = grounding
         if sources is not None:
             result["sources"] = order_sources(sources, str(result.get("reply") or ""))
+        if function_id == "translation":
+            artifacts: list[dict[str, str]] = []
+            if sources:
+                try:
+                    artifacts = repack_translation_files(
+                        settings.data_dir,
+                        target_language=target_language or "en",
+                        reply=str(result.get("reply") or ""),
+                        sources=sources,
+                    )
+                except Exception:
+                    artifacts = []
+            result["artifacts"] = artifacts
         return result
     except ChatError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
@@ -286,6 +300,26 @@ def get_rag_file_content(
     return FileResponse(
         stored,
         filename=filename,
+        content_disposition_type="attachment",
+    )
+
+
+@app.get("/api/rag/files/{file_id}/translated")
+@app.get("/api/translation/files/{file_id}/download")
+def get_translated_file_content(
+    file_id: str,
+    authorization: str | None = Header(default=None),
+) -> FileResponse:
+    settings = get_settings()
+    require_write_access(settings, authorization)
+    try:
+        stored, filename = get_translated_file(settings.data_dir, file_id)
+    except RagError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+    return FileResponse(
+        stored,
+        filename=filename,
+        media_type=media_type_for(filename),
         content_disposition_type="attachment",
     )
 
