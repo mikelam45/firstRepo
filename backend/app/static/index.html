@@ -513,9 +513,9 @@
           on the job and added as a high-detail prompt hint (native max is 4 megapixels).
         </p>
         <p class="meta" id="image-count-hint">
-          1 to 10 photos. Use Facial change and Motion change below to set batch variance.
-          Default Medium still cycles expression (neutral, slight smile, smile, focused, speaking, surprised)
-          and movement (idle, walking, turning, reaching, sitting, stepping). Recorded price is shown times the photo count.
+          1 to 10 photos. Global Facial change and Motion change below are the default for every photo.
+          When generating 2–10 photos, the Batch variance steps table lets you override intensity and
+          expression/pose per step. Recorded price is shown times the photo count.
         </p>
         <label class="field" id="image-beats-field" hidden>Storyboard beats (one per line)
           <textarea id="image-beats" rows="6" placeholder="Beat 1&#10;Beat 2&#10;Beat 3"></textarea>
@@ -570,6 +570,26 @@
               <label><input type="checkbox" name="motion-cycle" value="sitting" checked> sitting</label>
               <label><input type="checkbox" name="motion-cycle" value="stepping" checked> stepping</label>
             </fieldset>
+          </div>
+        </div>
+        <div id="image-variance-steps" hidden>
+          <p class="option-title" id="variance-steps-title">Batch variance steps</p>
+          <p class="meta">
+            One row per photo (up to 10). Global intensity above is the default; override any step.
+            Expression and pose notes are sent as that photo’s facial_note and motion_note.
+          </p>
+          <div class="variance-steps-toolbar">
+            <button type="button" class="secondary" id="image-variance-apply">Apply intensity to all steps</button>
+          </div>
+          <div class="variance-steps-table" role="table" aria-labelledby="variance-steps-title">
+            <div class="variance-step-row head" role="row">
+              <span>Step</span>
+              <span>Facial change</span>
+              <span>Expression</span>
+              <span>Motion change</span>
+              <span>Pose / action</span>
+            </div>
+            <div id="image-variance-step-rows"></div>
           </div>
         </div>
       </fieldset>
@@ -1620,6 +1640,40 @@
     const OUTPUT_RESOLUTIONS = ["1K", "2K", "4K"];
     const DEFAULT_FACIAL_CYCLE = ["neutral", "slight smile", "smile", "focused", "speaking", "surprised"];
     const DEFAULT_MOTION_CYCLE = ["idle", "walking", "turning", "reaching", "sitting", "stepping"];
+    const FACIAL_SUBTLE_CYCLE = [
+      "nearly the same expression, a faint softening around the eyes",
+      "a barely-there hint of a smile",
+      "a slight brightening of the mouth",
+      "a small increase in focus, brow barely tightened",
+      "lips slightly parted as if about to speak",
+      "a tiny lift of surprise in the eyelids",
+    ];
+    const FACIAL_STRONG_CYCLE = [
+      "neutral, composed, eyes steady",
+      "a clear warm smile",
+      "an open laugh, teeth visible, eyes crinkled",
+      "intensely focused, brow engaged",
+      "mid-sentence, mouth clearly shaping words",
+      "obvious surprise, eyes wide, brows raised",
+    ];
+    const MOTION_SUBTLE_CYCLE = [
+      "almost idle, a tiny weight shift",
+      "the start of a step, heel just lifting",
+      "a small turn of the shoulders",
+      "fingers beginning to reach",
+      "a slight settle as if considering sitting",
+      "a short, contained step in place",
+    ];
+    const MOTION_STRONG_CYCLE = [
+      "planted and still",
+      "a clear walking stride",
+      "a decisive turn of the torso and head",
+      "arm fully extended, reaching for an object",
+      "sitting down or already seated in motion",
+      "a full stepping motion across the frame",
+    ];
+    const MAX_VARIANCE_STEPS = 10;
+    const VARIANCE_LEVELS = ["off", "subtle", "medium", "strong"];
 
     function fieldValue(id) {
       const node = document.getElementById(id);
@@ -1826,6 +1880,132 @@
       return values;
     }
 
+    function checkedCycleValues(name) {
+      const boxes = Array.prototype.slice.call(document.querySelectorAll('input[name="' + name + '"]:checked'));
+      return boxes.map((box) => box.value).filter(Boolean);
+    }
+
+    function cycleForLevel(kind, level) {
+      const selected = checkedCycleValues(kind === "facial" ? "facial-cycle" : "motion-cycle");
+      const medium = kind === "facial" ? DEFAULT_FACIAL_CYCLE : DEFAULT_MOTION_CYCLE;
+      const custom = selected.length && selected.join("|") !== medium.join("|");
+      if (custom) return selected;
+      if (level === "subtle") return kind === "facial" ? FACIAL_SUBTLE_CYCLE : MOTION_SUBTLE_CYCLE;
+      if (level === "strong") return kind === "facial" ? FACIAL_STRONG_CYCLE : MOTION_STRONG_CYCLE;
+      return medium;
+    }
+
+    function ensureVarianceStepRows() {
+      const host = document.getElementById("image-variance-step-rows");
+      if (!host || host.children.length) return;
+      for (let step = 1; step <= MAX_VARIANCE_STEPS; step += 1) {
+        const row = document.createElement("div");
+        row.className = "variance-step-row";
+        row.dataset.step = String(step);
+        row.setAttribute("role", "row");
+        row.hidden = true;
+        const num = document.createElement("span");
+        num.className = "variance-step-num";
+        num.textContent = String(step);
+        row.appendChild(num);
+        row.appendChild(varianceStepSelect("Facial change", "variance-step-facial", step));
+        row.appendChild(varianceStepNote("Expression", "variance-step-facial-note", step, "slight smile"));
+        row.appendChild(varianceStepSelect("Motion change", "variance-step-motion", step));
+        row.appendChild(varianceStepNote("Pose / action", "variance-step-motion-note", step, "walking"));
+        row.querySelectorAll("select").forEach((select) => {
+          select.addEventListener("change", () => {
+            select.dataset.touched = "1";
+          });
+        });
+        host.appendChild(row);
+      }
+    }
+
+    function varianceStepSelect(labelText, className, step) {
+      const label = document.createElement("label");
+      label.className = "field";
+      label.appendChild(document.createTextNode(labelText));
+      const select = document.createElement("select");
+      select.className = className;
+      select.dataset.step = String(step);
+      VARIANCE_LEVELS.forEach((level) => {
+        const option = document.createElement("option");
+        option.value = level;
+        option.textContent = level.charAt(0).toUpperCase() + level.slice(1);
+        if (level === "medium") option.selected = true;
+        select.appendChild(option);
+      });
+      label.appendChild(select);
+      return label;
+    }
+
+    function varianceStepNote(labelText, className, step, placeholder) {
+      const label = document.createElement("label");
+      label.className = "field";
+      label.appendChild(document.createTextNode(labelText));
+      const input = document.createElement("input");
+      input.type = "text";
+      input.className = className;
+      input.dataset.step = String(step);
+      input.autocomplete = "off";
+      input.placeholder = placeholder;
+      label.appendChild(input);
+      return label;
+    }
+
+    function varianceStepControl(className, step) {
+      return document.querySelector("." + className + '[data-step="' + step + '"]');
+    }
+
+    function fillEmptyVarianceSteps(count, applyIntensity) {
+      ensureVarianceStepRows();
+      const facialLevel = selectedVarianceLevel("facial-variance", "medium");
+      const motionLevel = selectedVarianceLevel("motion-variance", "medium");
+      const facialCycle = cycleForLevel("facial", facialLevel);
+      const motionCycle = cycleForLevel("motion", motionLevel);
+      const limit = Math.max(1, Math.min(MAX_VARIANCE_STEPS, count || 1));
+      for (let step = 1; step <= limit; step += 1) {
+        const facialSelect = varianceStepControl("variance-step-facial", step);
+        const motionSelect = varianceStepControl("variance-step-motion", step);
+        const facialNote = varianceStepControl("variance-step-facial-note", step);
+        const motionNote = varianceStepControl("variance-step-motion-note", step);
+        if (applyIntensity) {
+          if (facialSelect) facialSelect.value = facialLevel;
+          if (motionSelect) motionSelect.value = motionLevel;
+        } else {
+          if (facialSelect && !facialSelect.dataset.touched) facialSelect.value = facialLevel;
+          if (motionSelect && !motionSelect.dataset.touched) motionSelect.value = motionLevel;
+        }
+        if (facialNote && !facialNote.value.trim() && facialCycle.length) {
+          facialNote.value = facialCycle[(step - 1) % facialCycle.length];
+        }
+        if (motionNote && !motionNote.value.trim() && motionCycle.length) {
+          motionNote.value = motionCycle[(step - 1) % motionCycle.length];
+        }
+      }
+    }
+
+    function collectVarianceSteps(count) {
+      ensureVarianceStepRows();
+      const steps = [];
+      const limit = Math.max(1, Math.min(MAX_VARIANCE_STEPS, count || 1));
+      for (let step = 1; step <= limit; step += 1) {
+        const facialSelect = varianceStepControl("variance-step-facial", step);
+        const motionSelect = varianceStepControl("variance-step-motion", step);
+        const facialNote = varianceStepControl("variance-step-facial-note", step);
+        const motionNote = varianceStepControl("variance-step-motion-note", step);
+        const facial = facialSelect ? facialSelect.value : "medium";
+        const motion = motionSelect ? motionSelect.value : "medium";
+        steps.push({
+          facial: VARIANCE_LEVELS.indexOf(facial) >= 0 ? facial : "medium",
+          facial_note: facialNote ? String(facialNote.value || "").trim() : "",
+          motion: VARIANCE_LEVELS.indexOf(motion) >= 0 ? motion : "medium",
+          motion_note: motionNote ? String(motionNote.value || "").trim() : "",
+        });
+      }
+      return steps;
+    }
+
     function variancePayload() {
       const facial = selectedVarianceLevel("facial-variance", "medium");
       const motion = selectedVarianceLevel("motion-variance", "medium");
@@ -1839,6 +2019,11 @@
       const motionCycle = selectedCycle("motion-cycle", DEFAULT_MOTION_CYCLE);
       if (facialCycle) payload.facial_cycle = facialCycle;
       if (motionCycle) payload.motion_cycle = motionCycle;
+      const sel = selectedImageMode();
+      if (sel.count > 1) {
+        fillEmptyVarianceSteps(sel.count, false);
+        payload.variance_steps = collectVarianceSteps(sel.count);
+      }
       return payload;
     }
 
@@ -1851,6 +2036,14 @@
       const motionCycle = document.getElementById("motion-cycle-field");
       if (facialCycle) facialCycle.hidden = !batch || facialOff;
       if (motionCycle) motionCycle.hidden = !batch || motionOff;
+      ensureVarianceStepRows();
+      const stepsHost = document.getElementById("image-variance-steps");
+      if (stepsHost) stepsHost.hidden = !batch;
+      for (let step = 1; step <= MAX_VARIANCE_STEPS; step += 1) {
+        const row = document.querySelector('.variance-step-row[data-step="' + step + '"]');
+        if (row) row.hidden = !batch || step > sel.count;
+      }
+      if (batch) fillEmptyVarianceSteps(sel.count, false);
     }
 
     function selectedImageMode() {
@@ -1963,6 +2156,17 @@
     document.querySelectorAll('input[name="facial-variance"], input[name="motion-variance"]').forEach((input) => {
       input.addEventListener("change", syncVarianceVisibility);
     });
+    const applyVariance = document.getElementById("image-variance-apply");
+    if (applyVariance) {
+      applyVariance.addEventListener("click", () => {
+        const sel = selectedImageMode();
+        if (sel.count < 2) return;
+        fillEmptyVarianceSteps(sel.count, true);
+        document.querySelectorAll(".variance-step-facial, .variance-step-motion").forEach((select) => {
+          if (Number(select.dataset.step || 0) <= sel.count) select.dataset.touched = "";
+        });
+      });
+    }
 
     document.getElementById("image-enhance").addEventListener("click", async () => {
       const button = document.getElementById("image-enhance");

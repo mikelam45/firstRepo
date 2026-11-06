@@ -530,6 +530,88 @@ pre.chat-reply,
 @media (max-width: 720px) {
   .image-studio .variance-levels { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
+.image-studio .variance-steps-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 10px;
+}
+.image-studio .variance-steps-toolbar button {
+  padding: 6px 12px;
+  font-size: 0.88rem;
+}
+.image-studio .variance-steps-table {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.image-studio .variance-step-row {
+  display: grid;
+  grid-template-columns: 2.6rem minmax(6.5rem, 0.85fr) minmax(7.5rem, 1.2fr) minmax(6.5rem, 0.85fr) minmax(7.5rem, 1.2fr);
+  gap: 8px;
+  align-items: end;
+}
+.image-studio .variance-step-row.head {
+  align-items: center;
+  color: var(--muted);
+  font-family: "Avenir Next", "Segoe UI", sans-serif;
+  font-size: 0.78rem;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  padding: 0 2px;
+}
+.image-studio .variance-step-num {
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  padding-bottom: 8px;
+}
+.image-studio .variance-step-row .field {
+  margin: 0;
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+.image-studio .variance-step-row select,
+.image-studio .variance-step-row input[type="text"] {
+  width: 100%;
+  min-width: 0;
+  margin-top: 4px;
+  font: inherit;
+  font-size: 0.92rem;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: white;
+}
+@media (min-width: 721px) {
+  .image-studio .variance-step-row:not(.head) .field {
+    font-size: 0;
+    color: transparent;
+    line-height: 0;
+  }
+  .image-studio .variance-step-row:not(.head) select,
+  .image-studio .variance-step-row:not(.head) input[type="text"] {
+    margin-top: 0;
+    font-size: 0.92rem;
+    line-height: 1.3;
+    color: var(--ink);
+  }
+}
+@media (max-width: 720px) {
+  .image-studio .variance-step-row.head { display: none; }
+  .image-studio .variance-step-row {
+    grid-template-columns: 2.2rem 1fr 1fr;
+    background: var(--card);
+    border: 1px dashed var(--line);
+    border-radius: 10px;
+    padding: 8px;
+  }
+  .image-studio .variance-step-num {
+    grid-row: span 2;
+    padding-bottom: 0;
+    align-self: center;
+  }
+}
 .image-row {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
