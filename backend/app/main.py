@@ -64,6 +64,13 @@ from .image_refs import (
     list_references,
     save_reference,
 )
+from .image_projects import (
+    create_project,
+    delete_project,
+    get_project,
+    list_projects,
+    update_project,
+)
 from .images import (
     ImageError,
     enhance_prompt,
@@ -250,6 +257,12 @@ class ImageGenerateIn(BaseModel):
 
 class PromptEnhanceIn(BaseModel):
     prompt: str = ""
+
+
+class ImageProjectIn(BaseModel):
+    name: str = Field(default="", max_length=200)
+    prompt_detail: dict[str, Any] = Field(default_factory=dict)
+    model_id: str = ""
 
 
 def connect(settings: Settings) -> sqlite3.Connection:
@@ -717,6 +730,72 @@ async def post_dse_mark(
     except ChatError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
     except (OcrError,) as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+
+
+@app.get("/api/images/projects")
+def get_image_projects() -> list[dict[str, object]]:
+    settings = get_settings()
+    return list_projects(settings.data_dir)
+
+
+@app.post("/api/images/projects", status_code=201)
+def post_image_project(
+    body: ImageProjectIn,
+    authorization: str | None = Header(default=None),
+) -> dict[str, object]:
+    settings = get_settings()
+    require_write_access(settings, authorization)
+    try:
+        hidden = extra_hidden_ids()
+        return create_project(
+            settings.data_dir,
+            body.model_dump(),
+            extra_hidden=hidden,
+        )
+    except ImageError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+
+
+@app.get("/api/images/projects/{project_id}")
+def get_image_project(project_id: str) -> dict[str, object]:
+    settings = get_settings()
+    try:
+        return get_project(settings.data_dir, project_id)
+    except ImageError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+
+
+@app.put("/api/images/projects/{project_id}")
+def put_image_project(
+    project_id: str,
+    body: ImageProjectIn,
+    authorization: str | None = Header(default=None),
+) -> dict[str, object]:
+    settings = get_settings()
+    require_write_access(settings, authorization)
+    try:
+        hidden = extra_hidden_ids()
+        return update_project(
+            settings.data_dir,
+            project_id,
+            body.model_dump(),
+            extra_hidden=hidden,
+        )
+    except ImageError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+
+
+@app.delete("/api/images/projects/{project_id}")
+def delete_image_project(
+    project_id: str,
+    authorization: str | None = Header(default=None),
+) -> dict[str, object]:
+    settings = get_settings()
+    require_write_access(settings, authorization)
+    try:
+        return delete_project(settings.data_dir, project_id)
+    except ImageError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
 

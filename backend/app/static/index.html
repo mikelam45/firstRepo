@@ -241,6 +241,30 @@
         The unit price above is recorded, not a live quote.
       </p>
 
+      <fieldset class="projects" id="image-projects" aria-labelledby="projects-title">
+        <legend id="projects-title">Save project</legend>
+        <p class="meta">
+          Save this studio setup to reuse the prompt detail and generation settings.
+          Pick a past project from the list to restore it.
+        </p>
+        <div class="image-row">
+          <label class="field">Past projects
+            <select id="image-project-select" aria-label="Past projects" disabled>
+              <option value="">No saved projects yet</option>
+            </select>
+          </label>
+          <label class="field">Project name
+            <input id="image-project-name" type="text" maxlength="120" autocomplete="off" placeholder="e.g. Red panda workstation">
+          </label>
+        </div>
+        <div class="savebar">
+          <button type="button" id="image-project-save">Save project</button>
+          <button type="button" class="secondary" id="image-project-rename">Rename</button>
+          <button type="button" class="secondary" id="image-project-delete">Delete</button>
+          <span id="image-project-state" role="status"></span>
+        </div>
+      </fieldset>
+
       <fieldset class="guided" aria-labelledby="guided-title">
         <legend id="guided-title">Guided prompt</legend>
         <div class="image-row">
@@ -635,7 +659,7 @@
     const RAG_HINT = "Accepted: .pdf, .docx, .doc, .txt, .md, .xlsx, .xls, .csv, .json. Maximum 10 MB. .doc and .xls are stored, but text extraction needs a converted copy. Chat for RAG uses the extracted text as context.";
     const TRANSLATION_HINT = "Accepted: .pdf, .docx, .doc, .pptx, .ppt, .xlsx, .xls, .txt, .md. Maximum 10 MB. .ppt, .doc, and .xls are stored, but text extraction needs a converted copy. Chat translates these documents into the target language.";
     const DSE_HINT = "Accepted: .pdf, .docx, .doc, .txt, .md, .xlsx, .xls, .csv, .json. Maximum 10 MB. Isolated from RAG and translation. Chat for DSE Math uses these syllabus and notes extracts.";
-    const state = { catalog: null, saved: null, functionId: "rag_qa", files: [], refs: [] };
+    const state = { catalog: null, saved: null, functionId: "rag_qa", files: [], refs: [], projects: [], currentProjectId: "" };
     const MAX_REFS = 5;
 
     function loadStoredGrounding() {
@@ -942,6 +966,11 @@
       if (isImage) {
         syncAssembledPrompt();
         updateBeatsVisibility();
+        loadImageProjects().catch(() => {
+          const status = document.getElementById("image-project-state");
+          status.className = "error";
+          status.textContent = "Could not list saved projects.";
+        });
         loadRefs().catch(() => {
           const status = document.getElementById("image-state");
           status.className = "error";
@@ -2125,6 +2154,424 @@
       renderImageJobs(jobs);
     }
 
+    function projectStatus(kind, text) {
+      const status = document.getElementById("image-project-state");
+      if (!status) return;
+      status.className = kind === "error" ? "error" : "";
+      status.textContent = text || "";
+    }
+
+    function currentImageModelId() {
+      return (state.saved && state.saved.selection && state.saved.selection.image_gen) || "";
+    }
+
+    function collectPromptDetail() {
+      syncAssembledPrompt();
+      const box = document.getElementById("image-prompt");
+      const size = selectedImageSize();
+      const imageMode = selectedImageMode();
+      const refs = (state.refs || []).map((file) => ({
+        id: file.id,
+        name: file.name || "",
+      })).slice(0, MAX_REFS);
+      const detail = Object.assign({
+        subject: fieldValue("image-subject"),
+        setting: fieldValue("image-setting"),
+        background: fieldValue("image-background"),
+        background_attributes: fieldValue("image-background-attributes"),
+        objects: fieldValue("image-objects"),
+        object_attributes: fieldValue("image-object-attributes"),
+        nationality_select: fieldValue("image-nationality"),
+        nationality_other: fieldValue("image-nationality-other"),
+        person_height_select: fieldValue("image-person-height"),
+        style: fieldValue("image-style"),
+        camera: fieldValue("image-camera"),
+        shot: fieldValue("image-shot"),
+        lighting: fieldValue("image-lighting"),
+        notes: fieldValue("image-notes"),
+        resolution: fieldValue("image-resolution"),
+        aspect_ratio: fieldValue("image-resolution"),
+        output_resolution: selectedOutputResolution(),
+        width: size[0],
+        height: size[1],
+        format: fieldValue("image-format") || "png",
+        count_mode: String((document.getElementById("image-count") || {}).value || "1"),
+        n: imageMode.count,
+        beats: document.getElementById("image-beats") ? document.getElementById("image-beats").value : "",
+        prompt: box ? box.value : "",
+        prompt_dirty: !!(box && box.dataset.dirty === "1"),
+        facial_cycle: checkedCycleValues("facial-cycle"),
+        motion_cycle: checkedCycleValues("motion-cycle"),
+        reference_ids: refs.map((file) => file.id),
+        references: refs,
+        model_id: currentImageModelId(),
+      }, personPayload(), variancePayload());
+      if (imageMode.mode === "storyboard") {
+        const frames = storyboardBeats();
+        if (frames) detail.frames = frames;
+      }
+      return detail;
+    }
+
+    function setFieldValue(id, value) {
+      const node = document.getElementById(id);
+      if (!node) return;
+      node.value = value == null ? "" : String(value);
+    }
+
+    function applyRadioGroup(name, value, fallback) {
+      const chosen = value || fallback;
+      document.querySelectorAll('input[name="' + name + '"]').forEach((input) => {
+        input.checked = input.value === chosen;
+      });
+    }
+
+    function applyCycleChecks(name, values, defaults) {
+      const boxes = Array.prototype.slice.call(document.querySelectorAll('input[name="' + name + '"]'));
+      if (!boxes.length) return;
+      const wanted = Array.isArray(values) ? values : null;
+      const fallback = wanted && wanted.length ? wanted : defaults;
+      boxes.forEach((box) => {
+        box.checked = fallback.indexOf(box.value) !== -1;
+      });
+    }
+
+    function applyNationality(detail) {
+      const select = document.getElementById("image-nationality");
+      const other = document.getElementById("image-nationality-other");
+      if (!select) return;
+      const storedSelect = detail.nationality_select;
+      const storedOther = detail.nationality_other || "";
+      if (storedSelect !== undefined && storedSelect !== null) {
+        select.value = storedSelect;
+        if (other) other.value = storedOther;
+        if (storedSelect && Array.prototype.some.call(select.options, (opt) => opt.value === storedSelect)) {
+          return;
+        }
+      }
+      const nationality = String(detail.nationality || "");
+      const optionValues = Array.prototype.map.call(select.options, (opt) => opt.value);
+      if (nationality && optionValues.indexOf(nationality) !== -1 && nationality !== "other") {
+        select.value = nationality;
+        if (other) other.value = storedOther;
+      } else if (nationality) {
+        select.value = "other";
+        if (other) other.value = storedOther || nationality;
+      } else {
+        select.value = "";
+        if (other) other.value = storedOther;
+      }
+    }
+
+    function applyVarianceSteps(steps) {
+      ensureVarianceStepRows();
+      const rows = Array.isArray(steps) ? steps : [];
+      for (let step = 1; step <= MAX_VARIANCE_STEPS; step += 1) {
+        const item = rows[step - 1] || {};
+        const facialSelect = varianceStepControl("variance-step-facial", step);
+        const motionSelect = varianceStepControl("variance-step-motion", step);
+        const facialNote = varianceStepControl("variance-step-facial-note", step);
+        const motionNote = varianceStepControl("variance-step-motion-note", step);
+        if (facialSelect) {
+          facialSelect.value = item.facial || "medium";
+          facialSelect.dataset.touched = rows[step - 1] ? "1" : "";
+        }
+        if (motionSelect) {
+          motionSelect.value = item.motion || "medium";
+          motionSelect.dataset.touched = rows[step - 1] ? "1" : "";
+        }
+        if (facialNote) facialNote.value = item.facial_note || item.facial_notes || "";
+        if (motionNote) motionNote.value = item.motion_note || item.motion_notes || "";
+      }
+    }
+
+    function applyPromptDetail(detail) {
+      const data = detail && typeof detail === "object" ? detail : {};
+      setFieldValue("image-subject", data.subject || "");
+      setFieldValue("image-setting", data.setting || "");
+      setFieldValue("image-background", data.background || "");
+      setFieldValue("image-background-attributes", data.background_attributes || "");
+      setFieldValue("image-objects", data.objects || "");
+      setFieldValue("image-object-attributes", data.object_attributes || "");
+      applyNationality(data);
+      const heightSelect = data.person_height_select
+        || (data.person_height === "short" || data.person_height === "average" || data.person_height === "tall"
+          ? data.person_height : "");
+      setFieldValue("image-person-height", heightSelect);
+      setFieldValue("image-height-cm", data.height_cm || "");
+      setFieldValue("image-body", data.body || data.body_type || "");
+      setFieldValue("image-hair-color", data.hair_color || "");
+      setFieldValue("image-hair-length", data.hair_length || "");
+      setFieldValue("image-hair-style", data.hair_style || "");
+      setFieldValue("image-eyes-size", data.eyes_size || "");
+      setFieldValue("image-eyes-color", data.eyes_color || "");
+      setFieldValue("image-nose-size", data.nose_size || "");
+      setFieldValue("image-nose-shape", data.nose_shape || data.nose_note || "");
+      setFieldValue("image-mouth-size", data.mouth_size || "");
+      setFieldValue("image-mouth-shape", data.mouth_shape || "");
+      setFieldValue("image-expression", data.facial_expression || "");
+      setFieldValue("image-expression-note", data.expression_note || "");
+      setFieldValue("image-dress", data.dress || "");
+      setFieldValue("image-top", data.top || "");
+      setFieldValue("image-bottom", data.bottom || "");
+      setFieldValue("image-shoes", data.shoes || "");
+      setFieldValue("image-props", data.props || "");
+      setFieldValue("image-object-action", data.object_action || data.action_on_objects || "");
+      setFieldValue("image-style", data.style || "cinematic still");
+      setFieldValue("image-camera", data.camera || "");
+      setFieldValue("image-shot", data.shot || data.framing || data.camera_framing || "");
+      setFieldValue("image-lighting", data.lighting || "");
+      setFieldValue("image-notes", data.notes || data.extra_notes || "");
+      setFieldValue("image-output-resolution", data.output_resolution || data.size_tier || "1K");
+      setFieldValue("image-resolution", data.aspect_ratio || data.resolution || "1:1");
+      setFieldValue("image-format", data.format || "png");
+      const countSelect = document.getElementById("image-count");
+      if (countSelect) {
+        if (data.count_mode) {
+          countSelect.value = data.count_mode;
+        } else if (Array.isArray(data.frames) && data.frames.length > 1) {
+          countSelect.value = "storyboard-" + data.frames.length;
+        } else if (data.n || data.count) {
+          countSelect.value = String(data.n || data.count);
+        } else {
+          countSelect.value = "1";
+        }
+      }
+      const beats = document.getElementById("image-beats");
+      if (beats) {
+        if (typeof data.beats === "string" && data.beats) {
+          beats.value = data.beats;
+        } else if (Array.isArray(data.frames)) {
+          beats.value = data.frames.join("\n");
+        } else {
+          beats.value = "";
+        }
+      }
+      applyRadioGroup("facial-variance", data.facial_variance || data.facial_change, "medium");
+      applyRadioGroup("motion-variance", data.motion_variance || data.motion_change, "medium");
+      setFieldValue("image-facial-notes", data.facial_variance_notes || data.facial_notes || "");
+      setFieldValue("image-motion-notes", data.motion_variance_notes || data.motion_notes || "");
+      applyCycleChecks("facial-cycle", data.facial_cycle || data.expression_cycle, DEFAULT_FACIAL_CYCLE);
+      applyCycleChecks("motion-cycle", data.motion_cycle || data.movement_cycle, DEFAULT_MOTION_CYCLE);
+      if (data.width && data.height) {
+        applyPixelSize(data.width, data.height);
+      } else {
+        applyOutputResolution();
+      }
+      updateBeatsVisibility();
+      applyVarianceSteps(data.variance_steps);
+      const box = document.getElementById("image-prompt");
+      if (box) {
+        if (data.prompt_dirty && data.prompt) {
+          box.value = data.prompt;
+          box.dataset.dirty = "1";
+        } else {
+          box.dataset.dirty = "";
+          syncAssembledPrompt();
+        }
+      }
+    }
+
+    function syncProjectActions() {
+      const has = !!state.currentProjectId;
+      const rename = document.getElementById("image-project-rename");
+      const remove = document.getElementById("image-project-delete");
+      if (rename) rename.disabled = !has;
+      if (remove) remove.disabled = !has;
+    }
+
+    function renderProjectSelect(selectedId) {
+      const select = document.getElementById("image-project-select");
+      if (!select) return;
+      const projects = state.projects || [];
+      const chosen = selectedId || state.currentProjectId || "";
+      select.replaceChildren();
+      if (!projects.length) {
+        const empty = document.createElement("option");
+        empty.value = "";
+        empty.textContent = "No saved projects yet";
+        select.appendChild(empty);
+        select.disabled = true;
+        select.value = "";
+        syncProjectActions();
+        return;
+      }
+      select.disabled = false;
+      const placeholder = document.createElement("option");
+      placeholder.value = "";
+      placeholder.textContent = "Past projects…";
+      select.appendChild(placeholder);
+      for (const project of projects) {
+        const option = document.createElement("option");
+        option.value = project.id;
+        option.textContent = project.name;
+        select.appendChild(option);
+      }
+      select.value = chosen && projects.some((row) => row.id === chosen) ? chosen : "";
+      syncProjectActions();
+    }
+
+    async function loadImageProjects() {
+      const response = await fetch("/api/images/projects");
+      if (!response.ok) throw new Error("Could not list projects");
+      const payload = await response.json();
+      state.projects = Array.isArray(payload) ? payload : (payload.projects || []);
+      renderProjectSelect(state.currentProjectId);
+    }
+
+    function missingRefNote(missing) {
+      if (!missing || !missing.length) return "";
+      const names = missing.map((row) => row.name || row.id).filter(Boolean);
+      return " Missing reference" + (missing.length === 1 ? "" : "s") + ": " + names.join(", ") + ".";
+    }
+
+    async function loadImageProject(projectId) {
+      if (!projectId) return;
+      projectStatus("", "Loading…");
+      try {
+        const response = await fetch("/api/images/projects/" + encodeURIComponent(projectId));
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          const detail = payload.detail;
+          projectStatus("error", typeof detail === "string" ? detail : "Could not load project.");
+          return;
+        }
+        state.currentProjectId = payload.id;
+        setFieldValue("image-project-name", payload.name || "");
+        applyPromptDetail(payload.prompt_detail || {});
+        renderProjectSelect(payload.id);
+        projectStatus("", "Loaded “" + (payload.name || "project") + "”." + missingRefNote(payload.missing_references));
+      } catch (error) {
+        projectStatus("error", "Could not load project.");
+      }
+    }
+
+    function findProjectByName(name) {
+      const wanted = String(name || "").trim().toLowerCase();
+      if (!wanted) return null;
+      return (state.projects || []).find((row) => String(row.name || "").trim().toLowerCase() === wanted) || null;
+    }
+
+    async function saveImageProject() {
+      const name = fieldValue("image-project-name");
+      if (!name) {
+        projectStatus("error", "Enter a project name.");
+        return;
+      }
+      const existing = findProjectByName(name);
+      const currentId = state.currentProjectId;
+      let method = "POST";
+      let url = "/api/images/projects";
+      let overwritten = false;
+      if (existing) {
+        if (existing.id !== currentId) {
+          const ok = window.confirm('A project named "' + existing.name + '" already exists. Overwrite it?');
+          if (!ok) {
+            projectStatus("", "Save cancelled.");
+            return;
+          }
+        }
+        method = "PUT";
+        url = "/api/images/projects/" + encodeURIComponent(existing.id);
+        overwritten = true;
+      }
+      projectStatus("", overwritten ? "Updating…" : "Saving…");
+      try {
+        const response = await fetch(url, {
+          method,
+          headers: authHeaders(true),
+          body: JSON.stringify({
+            name,
+            prompt_detail: collectPromptDetail(),
+            model_id: currentImageModelId(),
+          }),
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          const detail = payload.detail;
+          projectStatus("error", typeof detail === "string" ? detail : "Save failed (" + response.status + ").");
+          return;
+        }
+        state.currentProjectId = payload.id;
+        setFieldValue("image-project-name", payload.name || name);
+        await loadImageProjects();
+        renderProjectSelect(payload.id);
+        projectStatus("", overwritten
+          ? "Updated project “" + (payload.name || name) + "”."
+          : "Saved project “" + (payload.name || name) + "”.");
+      } catch (error) {
+        projectStatus("error", "Save failed.");
+      }
+    }
+
+    async function renameImageProject() {
+      const current = (state.projects || []).find((row) => row.id === state.currentProjectId);
+      if (!current) {
+        projectStatus("error", "Load or save a project first.");
+        return;
+      }
+      const next = window.prompt("Rename project", current.name || "");
+      if (next === null) return;
+      const name = String(next).trim();
+      if (!name) {
+        projectStatus("error", "Enter a project name.");
+        return;
+      }
+      projectStatus("", "Renaming…");
+      try {
+        const response = await fetch("/api/images/projects/" + encodeURIComponent(current.id), {
+          method: "PUT",
+          headers: authHeaders(true),
+          body: JSON.stringify({
+            name,
+            prompt_detail: collectPromptDetail(),
+            model_id: currentImageModelId(),
+          }),
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          const detail = payload.detail;
+          projectStatus("error", typeof detail === "string" ? detail : "Rename failed (" + response.status + ").");
+          return;
+        }
+        setFieldValue("image-project-name", payload.name || name);
+        await loadImageProjects();
+        renderProjectSelect(payload.id);
+        projectStatus("", "Renamed to “" + (payload.name || name) + "”.");
+      } catch (error) {
+        projectStatus("error", "Rename failed.");
+      }
+    }
+
+    async function deleteImageProject() {
+      const current = (state.projects || []).find((row) => row.id === state.currentProjectId);
+      if (!current) {
+        projectStatus("error", "Load or save a project first.");
+        return;
+      }
+      const ok = window.confirm('Delete project "' + current.name + '"? This cannot be undone.');
+      if (!ok) return;
+      projectStatus("", "Deleting…");
+      try {
+        const response = await fetch("/api/images/projects/" + encodeURIComponent(current.id), {
+          method: "DELETE",
+          headers: authHeaders(false),
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          const detail = payload.detail;
+          projectStatus("error", typeof detail === "string" ? detail : "Delete failed (" + response.status + ").");
+          return;
+        }
+        state.currentProjectId = "";
+        setFieldValue("image-project-name", "");
+        await loadImageProjects();
+        projectStatus("", "Deleted “" + current.name + "”.");
+      } catch (error) {
+        projectStatus("error", "Delete failed.");
+      }
+    }
+
     [
       "image-subject", "image-setting", "image-background", "image-background-attributes",
       "image-objects", "image-object-attributes", "image-nationality", "image-nationality-other",
@@ -2153,6 +2600,15 @@
     document.getElementById("image-output-resolution").addEventListener("change", applyOutputResolution);
     document.getElementById("image-resolution").addEventListener("change", applyOutputResolution);
     document.getElementById("image-count").addEventListener("change", updateBeatsVisibility);
+    document.getElementById("image-project-select").addEventListener("change", (event) => {
+      const projectId = event.target.value;
+      if (!projectId) return;
+      loadImageProject(projectId);
+    });
+    document.getElementById("image-project-save").addEventListener("click", saveImageProject);
+    document.getElementById("image-project-rename").addEventListener("click", renameImageProject);
+    document.getElementById("image-project-delete").addEventListener("click", deleteImageProject);
+    syncProjectActions();
     document.querySelectorAll('input[name="facial-variance"], input[name="motion-variance"]').forEach((input) => {
       input.addEventListener("change", syncVarianceVisibility);
     });

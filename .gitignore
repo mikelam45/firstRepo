@@ -21,6 +21,7 @@ data/image-refs/
 data/dse-ocr/
 data/dse-sessions.json
 data/image-jobs.json
+data/image-projects.json
 data/rag-files.json
 data/openrouter.env
 *.db

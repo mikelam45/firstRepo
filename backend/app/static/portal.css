@@ -151,8 +151,8 @@ button {
   cursor: pointer;
 }
 button:disabled { opacity: 0.6; cursor: wait; }
-#save-state, #chat-state, #openrouter-state, #upload-state, #image-state, #image-enhance-state, #dse-ocr-state { font-size: 0.95rem; }
-#save-state.error, #chat-state.error, #openrouter-state.error, #upload-state.error, #image-state.error, #image-enhance-state.error, #dse-ocr-state.error { color: var(--rust); }
+#save-state, #chat-state, #openrouter-state, #upload-state, #image-state, #image-enhance-state, #image-project-state, #dse-ocr-state { font-size: 0.95rem; }
+#save-state.error, #chat-state.error, #openrouter-state.error, #upload-state.error, #image-state.error, #image-enhance-state.error, #image-project-state.error, #dse-ocr-state.error { color: var(--rust); }
 button.secondary {
   background: transparent;
   color: var(--green);
@@ -480,7 +480,8 @@ pre.chat-reply,
   margin-bottom: 8px;
 }
 .image-studio fieldset.person,
-.image-studio fieldset.variance {
+.image-studio fieldset.variance,
+.image-studio fieldset.projects {
   background: var(--paper);
   border: 1px solid var(--line);
   border-radius: 12px;
@@ -488,11 +489,13 @@ pre.chat-reply,
   margin: 4px 0 14px;
 }
 .image-studio fieldset.person legend,
-.image-studio fieldset.variance legend {
+.image-studio fieldset.variance legend,
+.image-studio fieldset.projects legend {
   padding: 0 6px;
 }
 .image-studio fieldset.person .meta,
-.image-studio fieldset.variance .meta {
+.image-studio fieldset.variance .meta,
+.image-studio fieldset.projects .meta {
   margin: 0 0 10px;
 }
 .image-studio .variance-levels {
