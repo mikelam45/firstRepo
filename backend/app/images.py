@@ -13,6 +13,7 @@ import io
 import json
 import re
 import uuid
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -52,6 +53,7 @@ OPENROUTER_DOWNLOAD_TIMEOUT_SECONDS = 60.0
 INDEX_NAME = "image-jobs.json"
 IMAGES_DIRNAME = "images"
 MAX_DIMENSION = 2048
+MAX_MEGAPIXELS = 4.0
 MAX_PROMPT_CHARS = 8000
 MAX_FIELD_CHARS = 2000
 ALLOWED_FORMATS = ("png", "jpeg", "webp")
@@ -75,6 +77,66 @@ MOVEMENT_VARIANTS: tuple[str, ...] = (
     "sitting",
     "stepping",
 )
+FACIAL_SUBTLE_VARIANTS: tuple[str, ...] = (
+    "nearly the same expression, a faint softening around the eyes",
+    "a barely-there hint of a smile",
+    "a slight brightening of the mouth",
+    "a small increase in focus, brow barely tightened",
+    "lips slightly parted as if about to speak",
+    "a tiny lift of surprise in the eyelids",
+)
+FACIAL_STRONG_VARIANTS: tuple[str, ...] = (
+    "neutral, composed, eyes steady",
+    "a clear warm smile",
+    "an open laugh, teeth visible, eyes crinkled",
+    "intensely focused, brow engaged",
+    "mid-sentence, mouth clearly shaping words",
+    "obvious surprise, eyes wide, brows raised",
+)
+MOTION_SUBTLE_VARIANTS: tuple[str, ...] = (
+    "almost idle, a tiny weight shift",
+    "the start of a step, heel just lifting",
+    "a small turn of the shoulders",
+    "fingers beginning to reach",
+    "a slight settle as if considering sitting",
+    "a short, contained step in place",
+)
+MOTION_STRONG_VARIANTS: tuple[str, ...] = (
+    "planted and still",
+    "a clear walking stride",
+    "a decisive turn of the torso and head",
+    "arm fully extended, reaching for an object",
+    "sitting down or already seated in motion",
+    "a full stepping motion across the frame",
+)
+VARIANCE_LEVELS: tuple[str, ...] = ("off", "subtle", "medium", "strong")
+DEFAULT_VARIANCE_LEVEL = "medium"
+MAX_CYCLE_ITEMS = 12
+IDENTITY_LOCK = (
+    "Keep the same person, identity, facial structure, hair, clothing, props, "
+    "and setting as the other photos in this set. Do not change who they are."
+)
+OUTPUT_RESOLUTIONS: tuple[str, ...] = ("1K", "2K", "4K")
+DEFAULT_OUTPUT_RESOLUTION = "1K"
+OUTPUT_RESOLUTION_ALIASES: dict[str, str] = {
+    "1k": "1K",
+    "1K": "1K",
+    "1024": "1K",
+    "studio": "1K",
+    "2k": "2K",
+    "2K": "2K",
+    "2048": "2K",
+    "4k": "4K",
+    "4K": "4K",
+    "4096": "4K",
+}
+RESOLUTION_HINTS: dict[str, str] = {
+    "2K": "High-resolution 2K photograph, sharp fine detail, about two megapixels.",
+    "4K": (
+        "Ultra high-resolution 4K photograph, maximum FLUX.2 detail, about four "
+        "megapixels, extremely sharp textures."
+    ),
+}
 PROVIDER_RASTER_FORMATS = frozenset({"png", "jpeg"})
 GEMINI_IMAGE_ID = "google/gemini-3.1-flash-image"
 IMAGE_REGION_SETUP_HINT = REGION_SETUP_HINT.replace("text model", "image model")
@@ -133,13 +195,72 @@ ALLOWED_RESOLUTIONS: tuple[str, ...] = (
     "auto",
 )
 DEFAULT_RESOLUTION = "1:1"
+DEFAULT_ASPECT_RATIO = DEFAULT_RESOLUTION
 STRICT_FORMATS = ("png", "jpeg")
 SIZE_TO_RATIO: dict[tuple[int, int], str] = {
     (1024, 1024): "1:1",
     (1024, 768): "4:3",
     (768, 1024): "3:4",
+    (1152, 768): "3:2",
+    (768, 1152): "2:3",
     (1344, 768): "16:9",
+    (768, 1344): "9:16",
+    (1536, 656): "21:9",
     (1920, 1080): "16:9",
+    (1440, 1440): "1:1",
+    (1632, 1216): "4:3",
+    (1216, 1632): "3:4",
+    (1728, 1152): "3:2",
+    (1152, 1728): "2:3",
+    (1920, 1088): "16:9",
+    (1088, 1920): "9:16",
+    (2048, 880): "21:9",
+    (2048, 2048): "1:1",
+    (2048, 1536): "4:3",
+    (1536, 2048): "3:4",
+    (2048, 1360): "3:2",
+    (1360, 2048): "2:3",
+    (2048, 1152): "16:9",
+    (1152, 2048): "9:16",
+}
+# Long-edge pixel sizes per OpenRouter-style 1K/2K/4K tier. FLUX.2 Pro via
+# OpenRouter only accepts aspect_ratio (not size/resolution); these populate
+# portal metadata and the prompt hint. Sides are multiples of 16, capped at
+# 2048 and 4 megapixels (the native FLUX.2 maximum).
+PIXELS_FOR_OUTPUT: dict[str, dict[str, tuple[int, int]]] = {
+    "1K": {
+        "1:1": (1024, 1024),
+        "4:3": (1024, 768),
+        "3:4": (768, 1024),
+        "3:2": (1152, 768),
+        "2:3": (768, 1152),
+        "16:9": (1344, 768),
+        "9:16": (768, 1344),
+        "21:9": (1536, 656),
+        "auto": (1024, 1024),
+    },
+    "2K": {
+        "1:1": (1440, 1440),
+        "4:3": (1632, 1216),
+        "3:4": (1216, 1632),
+        "3:2": (1728, 1152),
+        "2:3": (1152, 1728),
+        "16:9": (1920, 1088),
+        "9:16": (1088, 1920),
+        "21:9": (2048, 880),
+        "auto": (1440, 1440),
+    },
+    "4K": {
+        "1:1": (2048, 2048),
+        "4:3": (2048, 1536),
+        "3:4": (1536, 2048),
+        "3:2": (2048, 1360),
+        "2:3": (1360, 2048),
+        "16:9": (2048, 1152),
+        "9:16": (1152, 2048),
+        "21:9": (2048, 880),
+        "auto": (2048, 2048),
+    },
 }
 
 
@@ -160,6 +281,52 @@ def _aspect_from_wh(width: int, height: int) -> str:
             best = item
             best_diff = diff
     return best
+
+
+def pixels_for(output_resolution: str, aspect_ratio: str) -> tuple[int, int]:
+    """Studio pixel size for a 1K/2K/4K tier and FLUX.2 aspect ratio."""
+    tier = output_resolution if output_resolution in PIXELS_FOR_OUTPUT else DEFAULT_OUTPUT_RESOLUTION
+    table = PIXELS_FOR_OUTPUT[tier]
+    if aspect_ratio in table:
+        return table[aspect_ratio]
+    return table[DEFAULT_ASPECT_RATIO]
+
+
+def infer_output_resolution(width: int, height: int) -> str:
+    megapixels = (width * height) / 1_000_000
+    if megapixels >= 3.0:
+        return "4K"
+    if megapixels >= 1.6:
+        return "2K"
+    return "1K"
+
+
+def images_timeout_seconds(output_resolution: str) -> float:
+    if output_resolution == "4K":
+        return 180.0
+    if output_resolution == "2K":
+        return 150.0
+    return OPENROUTER_IMAGES_TIMEOUT_SECONDS
+
+
+@dataclass(frozen=True)
+class VarianceSpec:
+    facial_level: str = DEFAULT_VARIANCE_LEVEL
+    motion_level: str = DEFAULT_VARIANCE_LEVEL
+    facial_notes: str = ""
+    motion_notes: str = ""
+    facial_cycle: tuple[str, ...] = EXPRESSION_VARIANTS
+    motion_cycle: tuple[str, ...] = MOVEMENT_VARIANTS
+
+    def uses_legacy_suffix(self) -> bool:
+        return (
+            self.facial_level == "medium"
+            and self.motion_level == "medium"
+            and not self.facial_notes
+            and not self.motion_notes
+            and self.facial_cycle == EXPRESSION_VARIANTS
+            and self.motion_cycle == MOVEMENT_VARIANTS
+        )
 
 
 class ImageError(Exception):
@@ -352,15 +519,75 @@ def resolve_prompt(body: dict[str, Any]) -> str:
 
 
 def resolve_resolution(value: object, width: object = None, height: object = None) -> str:
+    """Portal aspect ratio. OpenRouter field is ``aspect_ratio``, not ``size``."""
     if isinstance(value, str) and value.strip():
         chosen = value.strip()
+        if chosen in OUTPUT_RESOLUTION_ALIASES:
+            # ``resolution: "2K"`` is the output-size tier, not an aspect ratio.
+            return DEFAULT_RESOLUTION
         if chosen not in ALLOWED_RESOLUTIONS:
             allowed = ", ".join(ALLOWED_RESOLUTIONS)
             raise ImageError(400, f"resolution must be an aspect ratio from: {allowed}.")
         return chosen
     if value not in (None, ""):
         raise ImageError(400, "resolution must be a string.")
+    if width not in (None, "") and height not in (None, ""):
+        try:
+            return _aspect_from_wh(int(width), int(height))  # type: ignore[arg-type]
+        except (TypeError, ValueError):
+            pass
     return DEFAULT_RESOLUTION
+
+
+def resolve_aspect_ratio(body: dict[str, Any]) -> str:
+    raw = body.get("aspect_ratio")
+    if isinstance(raw, str) and raw.strip():
+        return resolve_resolution(raw)
+    raw_resolution = body.get("resolution")
+    if isinstance(raw_resolution, str) and raw_resolution.strip() in OUTPUT_RESOLUTION_ALIASES:
+        return DEFAULT_RESOLUTION
+    return resolve_resolution(raw_resolution, body.get("width"), body.get("height"))
+
+
+def resolve_output_resolution(value: object) -> str:
+    if value is None or value == "":
+        return DEFAULT_OUTPUT_RESOLUTION
+    if not isinstance(value, str):
+        allowed = ", ".join(OUTPUT_RESOLUTIONS)
+        raise ImageError(400, f"output_resolution must be one of: {allowed}.")
+    chosen = value.strip()
+    mapped = OUTPUT_RESOLUTION_ALIASES.get(chosen) or OUTPUT_RESOLUTION_ALIASES.get(chosen.upper())
+    if mapped is None:
+        allowed = ", ".join(OUTPUT_RESOLUTIONS)
+        raise ImageError(400, f"output_resolution must be one of: {allowed}.")
+    return mapped
+
+
+def resolve_output_and_size(body: dict[str, Any]) -> tuple[int, int, str, str]:
+    """Return width, height, aspect_ratio, output_resolution (1K/2K/4K)."""
+    aspect = resolve_aspect_ratio(body)
+    raw_tier = body.get("output_resolution")
+    if raw_tier in (None, "") and isinstance(body.get("size_tier"), str):
+        raw_tier = body.get("size_tier")
+    if raw_tier in (None, "") and isinstance(body.get("resolution"), str):
+        maybe = body.get("resolution")
+        if maybe in OUTPUT_RESOLUTION_ALIASES or str(maybe).strip() in OUTPUT_RESOLUTION_ALIASES:
+            raw_tier = maybe
+    width_in = body.get("width")
+    height_in = body.get("height")
+    if width_in in (None, "") and height_in in (None, ""):
+        output_resolution = resolve_output_resolution(raw_tier)
+        width, height = pixels_for(output_resolution, aspect)
+        return width, height, aspect, output_resolution
+    width, height = resolve_size(
+        1024 if width_in in (None, "") else width_in,
+        1024 if height_in in (None, "") else height_in,
+    )
+    if raw_tier not in (None, ""):
+        output_resolution = resolve_output_resolution(raw_tier)
+    else:
+        output_resolution = infer_output_resolution(width, height)
+    return width, height, aspect, output_resolution
 
 
 def resolve_format(value: object) -> str:
@@ -427,21 +654,198 @@ def resolve_count(value: object) -> int:
     return count
 
 
-def variant_spec(index: int) -> tuple[str, str]:
-    expression = EXPRESSION_VARIANTS[index % len(EXPRESSION_VARIANTS)]
-    movement = MOVEMENT_VARIANTS[index % len(MOVEMENT_VARIANTS)]
+def _body_value(body: dict[str, Any], *keys: str) -> object:
+    for key in keys:
+        if key in body and body[key] not in (None, ""):
+            return body[key]
+    return None
+
+
+def resolve_variance_level(value: object, field: str) -> str:
+    if value is None or value == "":
+        return DEFAULT_VARIANCE_LEVEL
+    if not isinstance(value, str):
+        allowed = ", ".join(VARIANCE_LEVELS)
+        raise ImageError(400, f"{field} must be one of: {allowed}.")
+    chosen = value.strip().lower()
+    if chosen not in VARIANCE_LEVELS:
+        allowed = ", ".join(VARIANCE_LEVELS)
+        raise ImageError(400, f"{field} must be one of: {allowed}.")
+    return chosen
+
+
+def resolve_cycle(value: object, *, field: str, default: tuple[str, ...]) -> tuple[str, ...]:
+    if value is None or value == "":
+        return default
+    if isinstance(value, str):
+        items = [part.strip()[:MAX_FIELD_CHARS] for part in value.split(",") if part.strip()]
+    elif isinstance(value, list):
+        items = []
+        for item in value:
+            if item is None or item == "":
+                continue
+            if not isinstance(item, str):
+                raise ImageError(400, f"{field} must be a list of labels.")
+            label = item.strip()[:MAX_FIELD_CHARS]
+            if label:
+                items.append(label)
+    else:
+        raise ImageError(400, f"{field} must be a list of labels.")
+    if not items:
+        return default
+    if len(items) > MAX_CYCLE_ITEMS:
+        raise ImageError(400, f"{field} can list at most {MAX_CYCLE_ITEMS} items.")
+    return tuple(items)
+
+
+def _cycle_for_level(level: str, custom: tuple[str, ...], default: tuple[str, ...], subtle: tuple[str, ...], strong: tuple[str, ...]) -> tuple[str, ...]:
+    if custom != default:
+        return custom
+    if level == "subtle":
+        return subtle
+    if level == "strong":
+        return strong
+    return default
+
+
+def resolve_variance(body: dict[str, Any]) -> VarianceSpec:
+    facial_level = resolve_variance_level(
+        _body_value(body, "facial_variance", "facial_change", "face_variance"),
+        "facial_variance",
+    )
+    motion_level = resolve_variance_level(
+        _body_value(body, "motion_variance", "motion_change", "movement_variance"),
+        "motion_variance",
+    )
+    facial_notes = _strip(
+        _body_value(body, "facial_variance_notes", "facial_notes", "facial_change_notes") or ""
+    )
+    motion_notes = _strip(
+        _body_value(body, "motion_variance_notes", "motion_notes", "motion_change_notes") or ""
+    )
+    facial_custom = resolve_cycle(
+        _body_value(body, "facial_cycle", "expression_cycle"),
+        field="facial_cycle",
+        default=EXPRESSION_VARIANTS,
+    )
+    motion_custom = resolve_cycle(
+        _body_value(body, "motion_cycle", "movement_cycle"),
+        field="motion_cycle",
+        default=MOVEMENT_VARIANTS,
+    )
+    return VarianceSpec(
+        facial_level=facial_level,
+        motion_level=motion_level,
+        facial_notes=facial_notes,
+        motion_notes=motion_notes,
+        facial_cycle=_cycle_for_level(
+            facial_level,
+            facial_custom,
+            EXPRESSION_VARIANTS,
+            FACIAL_SUBTLE_VARIANTS,
+            FACIAL_STRONG_VARIANTS,
+        ),
+        motion_cycle=_cycle_for_level(
+            motion_level,
+            motion_custom,
+            MOVEMENT_VARIANTS,
+            MOTION_SUBTLE_VARIANTS,
+            MOTION_STRONG_VARIANTS,
+        ),
+    )
+
+
+def variant_spec(index: int, spec: VarianceSpec | None = None) -> tuple[str, str]:
+    chosen = spec or VarianceSpec()
+    if chosen.facial_level == "off":
+        expression = "same face"
+    else:
+        cycle = chosen.facial_cycle or EXPRESSION_VARIANTS
+        expression = cycle[index % len(cycle)]
+    if chosen.motion_level == "off":
+        movement = "same pose"
+    else:
+        cycle = chosen.motion_cycle or MOVEMENT_VARIANTS
+        movement = cycle[index % len(cycle)]
     return expression, movement
 
 
-def variant_suffix(index: int) -> str:
-    expression, movement = variant_spec(index)
-    return f"Facial expression: {expression}. Movement: {movement}."
+def variant_suffix(index: int, spec: VarianceSpec | None = None) -> str:
+    chosen = spec or VarianceSpec()
+    if chosen.uses_legacy_suffix():
+        expression, movement = variant_spec(index, chosen)
+        return f"Facial expression: {expression}. Movement: {movement}."
+    return "\n".join(_variance_lines(index, max(index + 1, 2), chosen))
 
 
-def variant_prompt(base: str, index: int, total: int) -> str:
+def _progress_note(notes: str, index: int, total: int) -> str:
+    if not notes:
+        return ""
+    if total <= 1:
+        return notes
+    return f"Progress {index + 1} of {total} along: {notes}"
+
+
+def _variance_lines(index: int, total: int, spec: VarianceSpec) -> list[str]:
+    lines = [IDENTITY_LOCK, f"Photo {index + 1} of {total}."]
+    if spec.facial_level == "off":
+        lines.append(
+            "Facial change: off. Keep the same facial expression, gaze, head angle, "
+            "and emotion. Only microscopic natural variation is allowed."
+        )
+    else:
+        expression, _movement = variant_spec(index, spec)
+        lines.append(
+            f"Facial change ({spec.facial_level}): {expression}. "
+            "Vary expression, gaze, head turn, and emotion intensity while keeping identity stable."
+        )
+        progress = _progress_note(spec.facial_notes, index, total)
+        if progress:
+            lines.append(f"Facial direction: {progress}.")
+    if spec.motion_level == "off":
+        lines.append(
+            "Motion change: off. Keep the same pose, gesture, and body position. "
+            "Only microscopic natural variation is allowed."
+        )
+    else:
+        _expression, movement = variant_spec(index, spec)
+        lines.append(
+            f"Motion change ({spec.motion_level}): {movement}. "
+            "Vary pose, gesture, body movement, and action on objects."
+        )
+        progress = _progress_note(spec.motion_notes, index, total)
+        if progress:
+            lines.append(f"Motion direction: {progress}.")
+    return lines
+
+
+def variant_prompt(
+    base: str,
+    index: int,
+    total: int,
+    spec: VarianceSpec | None = None,
+) -> str:
     if total <= 1:
         return base
-    return f"{base}\n\n{variant_suffix(index)}"
+    chosen = spec or VarianceSpec()
+    if chosen.uses_legacy_suffix():
+        return f"{base}\n\n{variant_suffix(index, chosen)}"
+    extra = "\n".join(_variance_lines(index, total, chosen))
+    return f"{base}\n\n{extra}"
+
+
+def resolution_prompt(base: str, output_resolution: str) -> str:
+    hint = RESOLUTION_HINTS.get(output_resolution, "")
+    if not hint:
+        return base
+    return f"{base}\n\n{hint}"
+
+
+def variant_caption(index: int, total: int, spec: VarianceSpec | None = None) -> str:
+    if total <= 1:
+        return ""
+    expression, movement = variant_spec(index, spec)
+    return f"{expression}, {movement}"
 
 
 def _provider_output_format(requested: str) -> str:
@@ -590,6 +994,11 @@ def public_job(job: dict[str, Any]) -> dict[str, Any]:
                 "caption": item.get("caption") or "",
                 "filename": item.get("filename") or "",
                 "href": file_href(job_id, index),
+                "output_resolution": item.get("output_resolution") or job.get("output_resolution"),
+                "width": item.get("width") or job.get("width"),
+                "height": item.get("height") or job.get("height"),
+                "facial": item.get("facial") or "",
+                "motion": item.get("motion") or "",
             }
         )
     return {
@@ -604,6 +1013,12 @@ def public_job(job: dict[str, Any]) -> dict[str, Any]:
         "width": job.get("width"),
         "height": job.get("height"),
         "format": job.get("format"),
+        "aspect_ratio": job.get("aspect_ratio") or job.get("resolution"),
+        "output_resolution": job.get("output_resolution") or DEFAULT_OUTPUT_RESOLUTION,
+        "facial_variance": job.get("facial_variance") or DEFAULT_VARIANCE_LEVEL,
+        "motion_variance": job.get("motion_variance") or DEFAULT_VARIANCE_LEVEL,
+        "facial_variance_notes": job.get("facial_variance_notes") or "",
+        "motion_variance_notes": job.get("motion_variance_notes") or "",
         "n": int(job.get("n") or len(images) or DEFAULT_IMAGE_COUNT),
         "prices": list(job.get("prices") or []),
         "prices_recorded_on": job.get("prices_recorded_on") or PRICES_RECORDED_ON,
@@ -746,13 +1161,16 @@ def _post_openrouter_image(
     output_format: str,
     input_references: list[dict[str, Any]] | None = None,
     aspect_ratio: str | None = None,
+    seed: int | None = None,
+    timeout: float | None = None,
 ) -> tuple[bytes, str | None]:
     if OPENROUTER_IMAGES_URL == OPENROUTER_CHAT_URL:
         raise ImageError(500, "Image jobs must not use chat completions.")
-    # Provider field names (OpenRouter Image API / FLUX.2 Pro):
-    #   prompt, n, aspect_ratio (from portal resolution or width/height),
-    #   output_format (portal format), input_references (portal reference_ids).
-    # FLUX.2 Pro does not list ``size``; unlisted fields are rejected.
+    # Provider field names (OpenRouter Image API / FLUX.2 Pro endpoints API):
+    #   prompt, n, aspect_ratio, output_format, input_references, seed.
+    # FLUX.2 Pro does not list ``size``, ``resolution``, ``width``, or ``height``;
+    # unlisted fields are rejected. Portal 1K/2K/4K is stored as metadata and a
+    # prompt hint; OpenRouter still receives aspect_ratio only for dimensions.
     # https://openrouter.ai/black-forest-labs/flux.2-pro/llms.txt
     payload: dict[str, Any] = {
         "model": model_id,
@@ -763,6 +1181,8 @@ def _post_openrouter_image(
     }
     if input_references:
         payload["input_references"] = input_references
+    if seed is not None:
+        payload["seed"] = seed
     try:
         response = httpx.post(
             OPENROUTER_IMAGES_URL,
@@ -771,7 +1191,7 @@ def _post_openrouter_image(
                 "Authorization": f"Bearer {api_key}",
                 "Content-Type": "application/json",
             },
-            timeout=OPENROUTER_IMAGES_TIMEOUT_SECONDS,
+            timeout=timeout if timeout is not None else OPENROUTER_IMAGES_TIMEOUT_SECONDS,
             follow_redirects=False,
         )
         status_code = response.status_code
@@ -805,10 +1225,7 @@ def generate_images(
 ) -> dict[str, Any]:
     _assert_image_model(model_id, extra_hidden)
     prompt = resolve_prompt(body)
-    width, height = resolve_size(
-        1024 if body.get("width") is None else body.get("width"),
-        1024 if body.get("height") is None else body.get("height"),
-    )
+    width, height, aspect, output_resolution = resolve_output_and_size(body)
     fmt = resolve_format(body.get("format", "png"))
     frames_value = body.get("frames")
     storyboard = isinstance(frames_value, list) and len(frames_value) > 1
@@ -820,6 +1237,7 @@ def generate_images(
         if frames_value is not None:
             resolve_frames(frames_value)
         frames = [""] * count
+    variance = resolve_variance(body)
     raw_ids = body.get("reference_ids") or []
     if not isinstance(raw_ids, list):
         raise ImageError(400, "reference_ids must be a list.")
@@ -838,19 +1256,21 @@ def generate_images(
     folder = images_dir(data_dir)
     extension = "jpg" if fmt == "jpeg" else fmt
     provider_format = _provider_output_format(fmt)
-    aspect = (
-        resolve_resolution(body.get("resolution"))
-        if _strip(body.get("resolution"))
-        else _aspect_from_wh(width, height)
-    )
+    timeout = images_timeout_seconds(output_resolution)
     written: list[Path] = []
     image_rows: list[dict[str, Any]] = []
     try:
         for index, caption in enumerate(frames):
             if storyboard:
                 frame_prompt = _frame_prompt(prompt, caption, index, len(frames))
+                if count > 1:
+                    frame_prompt = variant_prompt(frame_prompt, index, count, variance)
             else:
-                frame_prompt = variant_prompt(prompt, index, count)
+                frame_prompt = variant_prompt(prompt, index, count, variance)
+            frame_prompt = resolution_prompt(frame_prompt, output_resolution)
+            seed = None
+            if count > 1 and variance.facial_level == "off" and variance.motion_level == "off":
+                seed = 1000 + index
             raw, media_type = _post_openrouter_image(
                 api_key=api_key,
                 model_id=model_id,
@@ -860,6 +1280,8 @@ def generate_images(
                 output_format=provider_format,
                 input_references=references or None,
                 aspect_ratio=aspect,
+                seed=seed,
+                timeout=timeout,
             )
             converted = convert_image_bytes(raw, fmt, media_type)
             filename = f"{job_id}-{index}.{extension}"
@@ -867,16 +1289,28 @@ def generate_images(
             path = folder / filename
             path.write_bytes(converted)
             written.append(path)
-            row_caption = caption
-            if not storyboard and count > 1:
-                expression, movement = variant_spec(index)
-                row_caption = f"{expression}, {movement}"
+            size_label = f"{output_resolution} · {width}×{height}"
+            expression, movement = variant_spec(index, variance) if count > 1 else ("", "")
+            row_caption = caption or size_label
+            if count > 1:
+                variant_label = variant_caption(index, count, variance)
+                if storyboard and caption:
+                    row_caption = f"{size_label} · {caption} · {variant_label}"
+                else:
+                    row_caption = f"{size_label} · {variant_label}"
+            elif not storyboard:
+                row_caption = size_label
             image_rows.append(
                 {
                     "index": index,
                     "caption": row_caption,
                     "filename": filename,
                     "stored_path": relative,
+                    "output_resolution": output_resolution,
+                    "width": width,
+                    "height": height,
+                    "facial": expression,
+                    "motion": movement,
                 }
             )
     except Exception:
@@ -897,6 +1331,12 @@ def generate_images(
         "width": width,
         "height": height,
         "format": fmt,
+        "aspect_ratio": aspect,
+        "output_resolution": output_resolution,
+        "facial_variance": variance.facial_level,
+        "motion_variance": variance.motion_level,
+        "facial_variance_notes": variance.facial_notes,
+        "motion_variance_notes": variance.motion_notes,
         "n": count,
         "prices": meta["prices"],
         "prices_recorded_on": meta["prices_recorded_on"],

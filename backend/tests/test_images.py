@@ -11,7 +11,12 @@ from app.images import (
     OPENROUTER_IMAGE_TIMEOUT_SECONDS,
     OPENROUTER_IMAGES_TIMEOUT_SECONDS,
     OPENROUTER_IMAGES_URL,
+    ImageError,
     assemble_prompt,
+    pixels_for,
+    resolve_output_resolution,
+    resolve_variance,
+    variant_prompt,
     variant_suffix,
 )
 from app.main import PAGE, app
@@ -498,11 +503,21 @@ def test_page_has_guided_fields_and_output_controls(tmp_path, monkeypatch):
     assert "768x1024" in html
     assert "1344x768" in html
     assert "1920x1080" in html
+    assert "2048x2048" in html
     assert 'id="image-format"' in html
     assert 'id="image-width"' in html
     assert 'id="image-height"' in html
     assert 'id="image-generate"' in html
     assert 'id="image-count"' in html
+    assert 'id="image-output-resolution"' in html
+    assert 'id="image-variance"' in html
+    assert "1K" in html
+    assert "2K" in html
+    assert "4K" in html
+    assert "Facial change" in html
+    assert "Motion change" in html
+    assert "from slight smile to laugh" in html
+    assert "walk left to right" in html
     assert "1 photo" in html
     assert "10 photos" in html
     assert "11 photos" not in html
@@ -541,6 +556,8 @@ def test_generate_saves_png_and_list_file_work(tmp_path, monkeypatch):
     assert payload["width"] == 1024
     assert payload["height"] == 1024
     assert payload["format"] == "png"
+    assert payload["output_resolution"] == "1K"
+    assert payload["aspect_ratio"] == "1:1"
     catalog_prices = list(get_model("black-forest-labs/flux.2-pro")["prices"])
     assert payload["prices"] == catalog_prices
     assert len(payload["images"]) == 1
@@ -765,12 +782,177 @@ def test_generate_n_three_varies_expression_and_movement(tmp_path, monkeypatch):
         assert suffix not in prompts[(index + 1) % 3]
         assert "messages" not in outbound
         assert "size" not in outbound
-    assert payload["images"][0]["caption"] == "neutral, idle"
-    assert payload["images"][1]["caption"] == "slight smile, walking"
-    assert payload["images"][2]["caption"] == "smile, turning"
+    assert payload["images"][0]["caption"] == "1K · 1024×1024 · neutral, idle"
+    assert payload["images"][1]["caption"] == "1K · 1024×1024 · slight smile, walking"
+    assert payload["images"][2]["caption"] == "1K · 1024×1024 · smile, turning"
+    assert payload["output_resolution"] == "1K"
+    assert payload["facial_variance"] == "medium"
+    assert payload["motion_variance"] == "medium"
     files = list((tmp_path / "data" / "images").glob("*.png"))
     assert len(files) == 3
     listed = client.get("/api/images")
     assert listed.status_code == 200
     assert len(listed.json()[0]["images"]) == 3
     _assert_secret_absent(response.text)
+
+
+def test_pixels_for_and_output_resolution_presets():
+    assert pixels_for("1K", "1:1") == (1024, 1024)
+    assert pixels_for("2K", "16:9") == (1920, 1088)
+    assert pixels_for("4K", "1:1") == (2048, 2048)
+    assert pixels_for("4K", "16:9") == (2048, 1152)
+    assert resolve_output_resolution(None) == "1K"
+    assert resolve_output_resolution("2k") == "2K"
+    assert resolve_output_resolution("4K") == "4K"
+    try:
+        resolve_output_resolution("8K")
+        raise AssertionError("8K must be rejected")
+    except ImageError as exc:
+        assert exc.status_code == 400
+        assert "1K" in exc.detail
+        assert "4K" in exc.detail
+
+
+def test_variance_prompt_off_keeps_identity_and_strong_is_distinct():
+    off = resolve_variance({"facial_variance": "off", "motion_variance": "off"})
+    medium = resolve_variance({})
+    strong = resolve_variance(
+        {
+            "facial_variance": "strong",
+            "motion_variance": "subtle",
+            "facial_variance_notes": "from slight smile to laugh",
+            "motion_variance_notes": "walk left to right, then reach for the cup",
+        }
+    )
+    assert off.facial_level == "off"
+    assert off.motion_level == "off"
+    assert medium.uses_legacy_suffix()
+    assert not strong.uses_legacy_suffix()
+    base = "a portrait of a tea master"
+    off_prompts = [variant_prompt(base, index, 3, off) for index in range(3)]
+    strong_prompts = [variant_prompt(base, index, 3, strong) for index in range(3)]
+    assert len(set(off_prompts)) == 3
+    for prompt in off_prompts:
+        assert "Facial change: off" in prompt
+        assert "Motion change: off" in prompt
+        assert "same person, identity" in prompt.lower() or "Keep the same person" in prompt
+        assert "Facial expression: slight smile" not in prompt
+        assert "Movement: walking" not in prompt
+    assert "from slight smile to laugh" in strong_prompts[0]
+    assert "walk left to right" in strong_prompts[1]
+    assert "Facial change (strong)" in strong_prompts[0]
+    assert "Motion change (subtle)" in strong_prompts[0]
+    assert strong_prompts[0] != strong_prompts[1]
+    try:
+        resolve_variance({"facial_variance": "wild"})
+        raise AssertionError("unknown variance must be rejected")
+    except ImageError as exc:
+        assert exc.status_code == 400
+        assert "facial_variance" in exc.detail
+
+
+def test_generate_4k_is_opt_in_and_not_sent_as_size(tmp_path, monkeypatch):
+    _install_key(tmp_path, monkeypatch)
+    seen = _mock_images(monkeypatch)
+    client = _client(monkeypatch, tmp_path)
+    response = client.post(
+        "/api/images/generate",
+        json={
+            "prompt": "a quiet harbor at dusk",
+            "output_resolution": "4K",
+            "aspect_ratio": "16:9",
+            "format": "png",
+        },
+    )
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["output_resolution"] == "4K"
+    assert payload["aspect_ratio"] == "16:9"
+    assert payload["width"] == 2048
+    assert payload["height"] == 1152
+    assert payload["images"][0]["caption"] == "4K · 2048×1152"
+    assert payload["images"][0]["output_resolution"] == "4K"
+    outbound = seen["json"]
+    assert outbound["aspect_ratio"] == "16:9"
+    assert "size" not in outbound
+    assert "resolution" not in outbound
+    assert "width" not in outbound
+    assert "height" not in outbound
+    assert "Ultra high-resolution 4K" in outbound["prompt"]
+    assert seen["timeout"] == 180.0
+    _assert_secret_absent(response.text)
+
+
+def test_generate_unknown_output_resolution_is_400(tmp_path, monkeypatch):
+    _install_key(tmp_path, monkeypatch)
+    seen = _mock_images(monkeypatch)
+    client = _client(monkeypatch, tmp_path)
+    response = client.post(
+        "/api/images/generate",
+        json={"prompt": "a lamp", "output_resolution": "8K"},
+    )
+    assert response.status_code == 400
+    assert "1K" in response.json()["detail"]
+    assert seen["calls"] == 0
+    bad_variance = client.post(
+        "/api/images/generate",
+        json={"prompt": "a lamp", "n": 2, "facial_variance": "extreme"},
+    )
+    assert bad_variance.status_code == 400
+    assert "facial_variance" in bad_variance.json()["detail"]
+    assert seen["calls"] == 0
+
+
+def test_generate_batch_variance_off_and_independent(tmp_path, monkeypatch):
+    _install_key(tmp_path, monkeypatch)
+    seen = _mock_images(monkeypatch)
+    client = _client(monkeypatch, tmp_path)
+    off = client.post(
+        "/api/images/generate",
+        json={
+            "prompt": "a portrait of a tea master",
+            "n": 3,
+            "facial_variance": "off",
+            "motion_variance": "off",
+            "width": 1024,
+            "height": 1024,
+        },
+    )
+    assert off.status_code == 200, off.text
+    payload = off.json()
+    assert payload["facial_variance"] == "off"
+    assert payload["motion_variance"] == "off"
+    assert payload["images"][0]["caption"] == "1K · 1024×1024 · same face, same pose"
+    prompts = [row["prompt"] for row in seen["payloads"]]
+    assert len(prompts) == 3
+    for outbound in seen["payloads"]:
+        assert "Facial change: off" in outbound["prompt"]
+        assert "Motion change: off" in outbound["prompt"]
+        assert "Facial expression: slight smile" not in outbound["prompt"]
+        assert outbound.get("seed") in {1000, 1001, 1002}
+        assert "size" not in outbound
+    mixed = client.post(
+        "/api/images/generate",
+        json={
+            "prompt": "a portrait of a tea master",
+            "n": 2,
+            "facial_variance": "strong",
+            "motion_variance": "off",
+            "facial_variance_notes": "from slight smile to laugh",
+            "facial_cycle": ["slight smile", "laugh"],
+            "width": 1024,
+            "height": 1024,
+        },
+    )
+    assert mixed.status_code == 200, mixed.text
+    mixed_payload = mixed.json()
+    assert mixed_payload["facial_variance"] == "strong"
+    assert mixed_payload["motion_variance"] == "off"
+    later = seen["payloads"][-2:]
+    assert "Facial change (strong)" in later[0]["prompt"]
+    assert "from slight smile to laugh" in later[0]["prompt"]
+    assert "Motion change: off" in later[0]["prompt"]
+    assert "slight smile" in later[0]["prompt"]
+    assert "laugh" in later[1]["prompt"]
+    assert later[0].get("seed") is None
+    _assert_secret_absent(mixed.text)
