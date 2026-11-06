@@ -329,6 +329,24 @@ class VarianceSpec:
         )
 
 
+@dataclass(frozen=True)
+class VarianceStep:
+    """Explicit per-photo facial + motion settings (1–10 steps)."""
+
+    facial_level: str = DEFAULT_VARIANCE_LEVEL
+    motion_level: str = DEFAULT_VARIANCE_LEVEL
+    facial_note: str = ""
+    motion_note: str = ""
+
+    def as_public(self) -> dict[str, str]:
+        return {
+            "facial": self.facial_level,
+            "facial_note": self.facial_note,
+            "motion": self.motion_level,
+            "motion_note": self.motion_note,
+        }
+
+
 class ImageError(Exception):
     def __init__(self, status_code: int, detail: str) -> None:
         super().__init__(detail)
@@ -755,6 +773,113 @@ def resolve_variance(body: dict[str, Any]) -> VarianceSpec:
     )
 
 
+def resolve_variance_steps(
+    body: dict[str, Any],
+    count: int,
+    fallback: VarianceSpec | None = None,
+) -> list[VarianceStep] | None:
+    """Parse explicit per-photo variance. ``None`` keeps global intensity + cycle.
+
+    When provided, ``variance_steps`` must be a list whose length equals ``count``
+    (the photo / storyboard frame count, 1–10). Each item is an object::
+
+        {"facial": "off|subtle|medium|strong", "facial_note": "...",
+         "motion": "off|subtle|medium|strong", "motion_note": "..."}
+
+    Omitted levels fall back to the global ``facial_variance`` / ``motion_variance``.
+    """
+    raw = body.get("variance_steps")
+    if raw is None:
+        return None
+    if not isinstance(raw, list):
+        raise ImageError(400, "variance_steps must be a list.")
+    if len(raw) != count:
+        raise ImageError(
+            400,
+            f"variance_steps must have exactly {count} items, one per photo.",
+        )
+    chosen = fallback or VarianceSpec()
+    steps: list[VarianceStep] = []
+    for index, item in enumerate(raw):
+        if not isinstance(item, dict):
+            raise ImageError(400, f"variance_steps[{index}] must be an object.")
+        raw_facial = _body_value(item, "facial", "facial_variance", "facial_change")
+        raw_motion = _body_value(item, "motion", "motion_variance", "motion_change")
+        facial_level = resolve_variance_level(
+            raw_facial if raw_facial is not None else chosen.facial_level,
+            f"variance_steps[{index}].facial",
+        )
+        motion_level = resolve_variance_level(
+            raw_motion if raw_motion is not None else chosen.motion_level,
+            f"variance_steps[{index}].motion",
+        )
+        facial_note = _strip(
+            _body_value(item, "facial_note", "facial_notes", "expression") or ""
+        )
+        motion_note = _strip(
+            _body_value(item, "motion_note", "motion_notes", "movement") or ""
+        )
+        steps.append(
+            VarianceStep(
+                facial_level=facial_level,
+                motion_level=motion_level,
+                facial_note=facial_note,
+                motion_note=motion_note,
+            )
+        )
+    return steps
+
+
+def variance_spec_for_step(
+    step: VarianceStep | None,
+    fallback: VarianceSpec,
+    _index: int = 0,
+) -> VarianceSpec:
+    """Build the prompt spec for one photo from an explicit step."""
+    if step is None:
+        return fallback
+    facial_custom = (
+        fallback.facial_cycle
+        if fallback.facial_cycle
+        not in (EXPRESSION_VARIANTS, FACIAL_SUBTLE_VARIANTS, FACIAL_STRONG_VARIANTS)
+        else EXPRESSION_VARIANTS
+    )
+    motion_custom = (
+        fallback.motion_cycle
+        if fallback.motion_cycle
+        not in (MOVEMENT_VARIANTS, MOTION_SUBTLE_VARIANTS, MOTION_STRONG_VARIANTS)
+        else MOVEMENT_VARIANTS
+    )
+    if step.facial_note:
+        facial_cycle: tuple[str, ...] = (step.facial_note,)
+    else:
+        facial_cycle = _cycle_for_level(
+            step.facial_level,
+            facial_custom,
+            EXPRESSION_VARIANTS,
+            FACIAL_SUBTLE_VARIANTS,
+            FACIAL_STRONG_VARIANTS,
+        )
+    if step.motion_note:
+        motion_cycle: tuple[str, ...] = (step.motion_note,)
+    else:
+        motion_cycle = _cycle_for_level(
+            step.motion_level,
+            motion_custom,
+            MOVEMENT_VARIANTS,
+            MOTION_SUBTLE_VARIANTS,
+            MOTION_STRONG_VARIANTS,
+        )
+    return VarianceSpec(
+        facial_level=step.facial_level,
+        motion_level=step.motion_level,
+        facial_notes="",
+        motion_notes="",
+        facial_cycle=facial_cycle,
+        motion_cycle=motion_cycle,
+    )
+
+
 def variant_spec(index: int, spec: VarianceSpec | None = None) -> tuple[str, str]:
     chosen = spec or VarianceSpec()
     if chosen.facial_level == "off":
@@ -824,14 +949,21 @@ def variant_prompt(
     index: int,
     total: int,
     spec: VarianceSpec | None = None,
+    *,
+    explicit_step: bool = False,
 ) -> str:
     if total <= 1:
         return base
     chosen = spec or VarianceSpec()
-    if chosen.uses_legacy_suffix():
+    if not explicit_step and chosen.uses_legacy_suffix():
         return f"{base}\n\n{variant_suffix(index, chosen)}"
     extra = "\n".join(_variance_lines(index, total, chosen))
     return f"{base}\n\n{extra}"
+
+
+def step_variant_caption(index: int, spec: VarianceSpec) -> str:
+    expression, movement = variant_spec(index, spec)
+    return f"{expression} ({spec.facial_level}), {movement} ({spec.motion_level})"
 
 
 def resolution_prompt(base: str, output_resolution: str) -> str:
@@ -999,6 +1131,8 @@ def public_job(job: dict[str, Any]) -> dict[str, Any]:
                 "height": item.get("height") or job.get("height"),
                 "facial": item.get("facial") or "",
                 "motion": item.get("motion") or "",
+                "facial_level": item.get("facial_level") or "",
+                "motion_level": item.get("motion_level") or "",
             }
         )
     return {
@@ -1019,6 +1153,7 @@ def public_job(job: dict[str, Any]) -> dict[str, Any]:
         "motion_variance": job.get("motion_variance") or DEFAULT_VARIANCE_LEVEL,
         "facial_variance_notes": job.get("facial_variance_notes") or "",
         "motion_variance_notes": job.get("motion_variance_notes") or "",
+        "variance_steps": job.get("variance_steps"),
         "n": int(job.get("n") or len(images) or DEFAULT_IMAGE_COUNT),
         "prices": list(job.get("prices") or []),
         "prices_recorded_on": job.get("prices_recorded_on") or PRICES_RECORDED_ON,
@@ -1238,6 +1373,7 @@ def generate_images(
             resolve_frames(frames_value)
         frames = [""] * count
     variance = resolve_variance(body)
+    steps = resolve_variance_steps(body, count, variance)
     raw_ids = body.get("reference_ids") or []
     if not isinstance(raw_ids, list):
         raise ImageError(400, "reference_ids must be a list.")
@@ -1261,15 +1397,22 @@ def generate_images(
     image_rows: list[dict[str, Any]] = []
     try:
         for index, caption in enumerate(frames):
+            step = steps[index] if steps else None
+            spec = variance_spec_for_step(step, variance, index)
+            explicit_step = steps is not None
             if storyboard:
                 frame_prompt = _frame_prompt(prompt, caption, index, len(frames))
                 if count > 1:
-                    frame_prompt = variant_prompt(frame_prompt, index, count, variance)
+                    frame_prompt = variant_prompt(
+                        frame_prompt, index, count, spec, explicit_step=explicit_step
+                    )
             else:
-                frame_prompt = variant_prompt(prompt, index, count, variance)
+                frame_prompt = variant_prompt(
+                    prompt, index, count, spec, explicit_step=explicit_step
+                )
             frame_prompt = resolution_prompt(frame_prompt, output_resolution)
             seed = None
-            if count > 1 and variance.facial_level == "off" and variance.motion_level == "off":
+            if count > 1 and spec.facial_level == "off" and spec.motion_level == "off":
                 seed = 1000 + index
             raw, media_type = _post_openrouter_image(
                 api_key=api_key,
@@ -1290,10 +1433,13 @@ def generate_images(
             path.write_bytes(converted)
             written.append(path)
             size_label = f"{output_resolution} · {width}×{height}"
-            expression, movement = variant_spec(index, variance) if count > 1 else ("", "")
+            expression, movement = variant_spec(index, spec) if count > 1 else ("", "")
             row_caption = caption or size_label
             if count > 1:
-                variant_label = variant_caption(index, count, variance)
+                if explicit_step:
+                    variant_label = step_variant_caption(index, spec)
+                else:
+                    variant_label = variant_caption(index, count, spec)
                 if storyboard and caption:
                     row_caption = f"{size_label} · {caption} · {variant_label}"
                 else:
@@ -1311,6 +1457,8 @@ def generate_images(
                     "height": height,
                     "facial": expression,
                     "motion": movement,
+                    "facial_level": spec.facial_level if count > 1 else "",
+                    "motion_level": spec.motion_level if count > 1 else "",
                 }
             )
     except Exception:
@@ -1337,6 +1485,7 @@ def generate_images(
         "motion_variance": variance.motion_level,
         "facial_variance_notes": variance.facial_notes,
         "motion_variance_notes": variance.motion_notes,
+        "variance_steps": [step.as_public() for step in steps] if steps else None,
         "n": count,
         "prices": meta["prices"],
         "prices_recorded_on": meta["prices_recorded_on"],

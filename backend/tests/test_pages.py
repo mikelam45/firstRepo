@@ -57,6 +57,11 @@ def test_home_and_setup_are_distinct_html_pages(tmp_path, monkeypatch):
     assert "walking" in home.text
     assert "Facial change" in home.text
     assert "Motion change" in home.text
+    assert 'id="image-variance-steps"' in home.text
+    assert "Batch variance steps" in home.text
+    assert "Apply intensity to all steps" in home.text
+    assert "MAX_VARIANCE_STEPS = 10" in home.text
+    assert "variance_steps" in home.text
     assert 'id="image-output-resolution"' in home.text
     assert "1K" in home.text
     assert "2K" in home.text

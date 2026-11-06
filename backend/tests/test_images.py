@@ -16,6 +16,7 @@ from app.images import (
     pixels_for,
     resolve_output_resolution,
     resolve_variance,
+    resolve_variance_steps,
     variant_prompt,
     variant_suffix,
 )
@@ -511,6 +512,13 @@ def test_page_has_guided_fields_and_output_controls(tmp_path, monkeypatch):
     assert 'id="image-count"' in html
     assert 'id="image-output-resolution"' in html
     assert 'id="image-variance"' in html
+    assert 'id="image-variance-steps"' in html
+    assert "Batch variance steps" in html
+    assert "Apply intensity to all steps" in html
+    assert "MAX_VARIANCE_STEPS = 10" in html
+    assert "variance_steps" in html
+    assert "facial_note" in html
+    assert "motion_note" in html
     assert "1K" in html
     assert "2K" in html
     assert "4K" in html
@@ -956,3 +964,186 @@ def test_generate_batch_variance_off_and_independent(tmp_path, monkeypatch):
     assert "laugh" in later[1]["prompt"]
     assert later[0].get("seed") is None
     _assert_secret_absent(mixed.text)
+
+
+def _ten_variance_steps() -> list[dict[str, str]]:
+    faces = [
+        "slight smile",
+        "laugh",
+        "looking left",
+        "looking right",
+        "neutral",
+        "focused",
+        "speaking",
+        "surprised",
+        "wink",
+        "soft smile",
+    ]
+    motions = [
+        "idle",
+        "walking",
+        "reach for the cup",
+        "turning",
+        "sitting",
+        "stepping",
+        "wave",
+        "lean in",
+        "stand still",
+        "turn away",
+    ]
+    facials = ["off", "subtle", "medium", "strong", "medium", "subtle", "strong", "off", "medium", "strong"]
+    motion_levels = ["medium", "off", "strong", "subtle", "medium", "off", "strong", "medium", "subtle", "off"]
+    return [
+        {
+            "facial": facials[index],
+            "facial_note": faces[index],
+            "motion": motion_levels[index],
+            "motion_note": motions[index],
+        }
+        for index in range(10)
+    ]
+
+
+def test_resolve_variance_steps_requires_length_match():
+    fallback = resolve_variance({"facial_variance": "medium", "motion_variance": "off"})
+    steps = resolve_variance_steps(
+        {"variance_steps": _ten_variance_steps()},
+        10,
+        fallback,
+    )
+    assert steps is not None
+    assert len(steps) == 10
+    assert steps[1].facial_note == "laugh"
+    assert steps[1].motion_level == "off"
+    assert resolve_variance_steps({}, 3, fallback) is None
+    try:
+        resolve_variance_steps({"variance_steps": _ten_variance_steps()[:3]}, 10, fallback)
+        raise AssertionError("length mismatch must be rejected")
+    except ImageError as exc:
+        assert exc.status_code == 400
+        assert "exactly 10" in exc.detail
+    try:
+        resolve_variance_steps(
+            {"variance_steps": [{"facial": "wild", "motion": "off"}]},
+            1,
+            fallback,
+        )
+        raise AssertionError("unknown step intensity must be rejected")
+    except ImageError as exc:
+        assert exc.status_code == 400
+        assert "variance_steps[0].facial" in exc.detail
+
+
+def test_generate_ten_variance_steps_apply_per_photo(tmp_path, monkeypatch):
+    _install_key(tmp_path, monkeypatch)
+    seen = _mock_images(monkeypatch)
+    client = _client(monkeypatch, tmp_path)
+    steps = _ten_variance_steps()
+    response = client.post(
+        "/api/images/generate",
+        json={
+            "prompt": "a portrait of a tea master",
+            "n": 10,
+            "width": 1024,
+            "height": 1024,
+            "facial_variance": "medium",
+            "motion_variance": "medium",
+            "variance_steps": steps,
+        },
+    )
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["n"] == 10
+    assert len(payload["images"]) == 10
+    assert payload["variance_steps"] == steps
+    assert seen["calls"] == 10
+    prompts = [row["prompt"] for row in seen["payloads"]]
+    assert len(set(prompts)) == 10
+    for index, step in enumerate(steps):
+        outbound = seen["payloads"][index]
+        image = payload["images"][index]
+        assert f"Photo {index + 1} of 10." in outbound["prompt"]
+        assert "Keep the same person" in outbound["prompt"]
+        assert outbound["prompt"].startswith("a portrait of a tea master")
+        if step["facial"] == "off":
+            assert "Facial change: off" in outbound["prompt"]
+            assert image["facial"] == "same face"
+        else:
+            assert f"Facial change ({step['facial']}): {step['facial_note']}" in outbound["prompt"]
+            assert image["facial"] == step["facial_note"]
+        if step["motion"] == "off":
+            assert "Motion change: off" in outbound["prompt"]
+            assert image["motion"] == "same pose"
+        else:
+            assert f"Motion change ({step['motion']}): {step['motion_note']}" in outbound["prompt"]
+            assert image["motion"] == step["motion_note"]
+        assert image["facial_level"] == step["facial"]
+        assert image["motion_level"] == step["motion"]
+        assert step["facial"] in image["caption"] or image["facial"] in image["caption"]
+        assert step["motion"] in image["caption"] or image["motion"] in image["caption"]
+        assert "messages" not in outbound
+        assert "size" not in outbound
+    assert payload["images"][1]["caption"] == "1K · 1024×1024 · laugh (subtle), same pose (off)"
+    listed = client.get("/api/images")
+    assert listed.status_code == 200
+    assert listed.json()[0]["variance_steps"][2]["facial_note"] == "looking left"
+    _assert_secret_absent(response.text)
+
+
+def test_generate_variance_steps_length_mismatch_is_400(tmp_path, monkeypatch):
+    _install_key(tmp_path, monkeypatch)
+    seen = _mock_images(monkeypatch)
+    client = _client(monkeypatch, tmp_path)
+    short = client.post(
+        "/api/images/generate",
+        json={
+            "prompt": "a lamp",
+            "n": 3,
+            "variance_steps": _ten_variance_steps()[:2],
+        },
+    )
+    assert short.status_code == 400
+    assert "exactly 3" in short.json()["detail"]
+    assert seen["calls"] == 0
+    long = client.post(
+        "/api/images/generate",
+        json={
+            "prompt": "a lamp",
+            "n": 3,
+            "variance_steps": _ten_variance_steps(),
+        },
+    )
+    assert long.status_code == 400
+    assert "exactly 3" in long.json()["detail"]
+    assert seen["calls"] == 0
+    bad = client.post(
+        "/api/images/generate",
+        json={
+            "prompt": "a lamp",
+            "n": 2,
+            "variance_steps": [
+                {"facial": "medium", "motion": "off"},
+                {"facial": "extreme", "motion": "walk"},
+            ],
+        },
+    )
+    assert bad.status_code == 400
+    assert "variance_steps[1].facial" in bad.json()["detail"]
+    assert seen["calls"] == 0
+
+
+def test_generate_without_variance_steps_keeps_global_cycle(tmp_path, monkeypatch):
+    _install_key(tmp_path, monkeypatch)
+    seen = _mock_images(monkeypatch)
+    client = _client(monkeypatch, tmp_path)
+    response = client.post(
+        "/api/images/generate",
+        json={"prompt": "a portrait of a tea master", "n": 2, "width": 1024, "height": 1024},
+    )
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["variance_steps"] is None
+    assert payload["images"][0]["caption"] == "1K · 1024×1024 · neutral, idle"
+    assert payload["images"][1]["caption"] == "1K · 1024×1024 · slight smile, walking"
+    assert "Facial expression: slight smile" in seen["payloads"][1]["prompt"]
+    _assert_secret_absent(response.text)

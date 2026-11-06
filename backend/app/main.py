@@ -241,6 +241,7 @@ class ImageGenerateIn(BaseModel):
     motion_cycle: list[str] | None = None
     expression_cycle: list[str] | None = None
     movement_cycle: list[str] | None = None
+    variance_steps: list[dict[str, Any]] | None = None
     n: int | None = None
     count: int | None = None
     frames: list[str] | None = None
