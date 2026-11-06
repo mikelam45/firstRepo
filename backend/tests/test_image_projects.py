@@ -154,6 +154,44 @@ def test_create_list_get_restores_prompt_detail(tmp_path, monkeypatch):
     assert "a red panda at a workstation" in store.read_text(encoding="utf-8")
 
 
+def test_save_restores_two_person_prompt_detail(tmp_path, monkeypatch):
+    client = _client(monkeypatch, tmp_path)
+    created = client.post(
+        "/api/images/projects",
+        json={
+            "name": "Two at tea",
+            "prompt_detail": {
+                "subject": "two friends",
+                "person_count": 2,
+                "people_relation": "sitting across a table",
+                "persons": [
+                    {
+                        "nationality": "Korean",
+                        "nationality_select": "East Asian",
+                        "hair_color": "black",
+                        "dress": "hanbok",
+                    },
+                    {
+                        "nationality": "Hong Kong",
+                        "hair_color": "brown",
+                        "top": "linen shirt",
+                    },
+                ],
+            },
+        },
+    )
+    assert created.status_code == 201, created.text
+    detail = created.json()["prompt_detail"]
+    assert detail["person_count"] == 2
+    assert detail["people_relation"] == "sitting across a table"
+    assert detail["persons"][0]["dress"] == "hanbok"
+    assert detail["persons"][1]["top"] == "linen shirt"
+    fetched = client.get(f"/api/images/projects/{created.json()['id']}")
+    restored = fetched.json()["prompt_detail"]
+    assert restored["person_count"] == 2
+    assert restored["persons"][1]["nationality"] == "Hong Kong"
+
+
 def test_update_and_delete_project(tmp_path, monkeypatch):
     client = _client(monkeypatch, tmp_path)
     created = client.post(

@@ -21,6 +21,7 @@ from .images import (
     ImageError,
     MAX_FIELD_CHARS,
     MAX_IMAGE_COUNT,
+    MAX_PERSONS,
     MAX_PROMPT_CHARS,
     VARIANCE_LEVELS,
 )
@@ -82,6 +83,12 @@ PROMPT_DETAIL_KEYS = frozenset(
         "props",
         "object_action",
         "action_on_objects",
+        "person_count",
+        "people_count",
+        "people_relation",
+        "together",
+        "persons",
+        "person_2",
         "style",
         "camera",
         "shot",
@@ -231,6 +238,70 @@ def _sanitize_frames(value: object) -> list[str]:
     return frames
 
 
+PERSON_DETAIL_KEYS = frozenset(
+    {
+        "nationality",
+        "nationality_select",
+        "nationality_other",
+        "ethnicity",
+        "ethnicity_presentation",
+        "person_height",
+        "person_height_select",
+        "stature",
+        "height_cm",
+        "body",
+        "body_type",
+        "hair",
+        "hair_color",
+        "hair_length",
+        "hair_style",
+        "eyes",
+        "eyes_size",
+        "eyes_color",
+        "nose",
+        "nose_size",
+        "nose_shape",
+        "nose_note",
+        "mouth",
+        "mouth_size",
+        "mouth_shape",
+        "expression",
+        "facial_expression",
+        "expression_note",
+        "dress",
+        "top",
+        "bottom",
+        "shoes",
+        "props",
+        "object_action",
+        "action_on_objects",
+    }
+)
+
+
+def _sanitize_person_detail(value: object) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        return {}
+    detail: dict[str, Any] = {}
+    for key, item in value.items():
+        if str(key) not in PERSON_DETAIL_KEYS:
+            continue
+        cleaned = _sanitize_scalar(item)
+        if cleaned is not None:
+            detail[str(key)] = cleaned
+    return detail
+
+
+def _sanitize_persons(value: object) -> list[dict[str, Any]]:
+    if not isinstance(value, list):
+        return []
+    people: list[dict[str, Any]] = []
+    for item in value[:MAX_PERSONS]:
+        if isinstance(item, dict):
+            people.append(_sanitize_person_detail(item))
+    return people
+
+
 def _sanitize_references(value: object, names: object = None) -> list[dict[str, str]]:
     rows: list[dict[str, str]] = []
     if isinstance(value, list):
@@ -283,6 +354,21 @@ def sanitize_prompt_detail(
                 detail[key] = int(value)  # type: ignore[arg-type]
             except (TypeError, ValueError):
                 continue
+        elif key in {"person_count", "people_count"}:
+            try:
+                count = int(value)  # type: ignore[arg-type]
+            except (TypeError, ValueError):
+                continue
+            if count in (1, 2):
+                detail[key] = count
+        elif key == "persons":
+            people = _sanitize_persons(value)
+            if people:
+                detail[key] = people
+        elif key == "person_2":
+            person = _sanitize_person_detail(value)
+            if person:
+                detail[key] = person
         else:
             cleaned = _sanitize_scalar(value)
             if cleaned is not None:
