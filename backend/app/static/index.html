@@ -242,10 +242,10 @@
       </p>
 
       <fieldset class="projects" id="image-projects" aria-labelledby="projects-title">
-        <legend id="projects-title">Save project</legend>
+        <legend id="projects-title">Image projects</legend>
         <p class="meta">
-          Save this studio setup to reuse the prompt detail and generation settings.
-          Pick a past project from the list to restore it.
+          Add a new project to save this setup for reuse. Pick a past project from the list to restore the prompt detail.
+          Save updates the loaded project. Blank studio clears the form without deleting saved projects.
         </p>
         <div class="image-row">
           <label class="field">Past projects
@@ -258,7 +258,9 @@
           </label>
         </div>
         <div class="savebar">
-          <button type="button" id="image-project-save">Save project</button>
+          <button type="button" id="image-project-add">Add new project</button>
+          <button type="button" class="secondary" id="image-project-save">Save</button>
+          <button type="button" class="secondary" id="image-project-new">Blank studio</button>
           <button type="button" class="secondary" id="image-project-rename">Rename</button>
           <button type="button" class="secondary" id="image-project-delete">Delete</button>
           <span id="image-project-state" role="status"></span>
@@ -2698,30 +2700,8 @@
       return (state.projects || []).find((row) => String(row.name || "").trim().toLowerCase() === wanted) || null;
     }
 
-    async function saveImageProject() {
-      const name = fieldValue("image-project-name");
-      if (!name) {
-        projectStatus("error", "Enter a project name.");
-        return;
-      }
-      const existing = findProjectByName(name);
-      const currentId = state.currentProjectId;
-      let method = "POST";
-      let url = "/api/images/projects";
-      let overwritten = false;
-      if (existing) {
-        if (existing.id !== currentId) {
-          const ok = window.confirm('A project named "' + existing.name + '" already exists. Overwrite it?');
-          if (!ok) {
-            projectStatus("", "Save cancelled.");
-            return;
-          }
-        }
-        method = "PUT";
-        url = "/api/images/projects/" + encodeURIComponent(existing.id);
-        overwritten = true;
-      }
-      projectStatus("", overwritten ? "Updating…" : "Saving…");
+    async function writeImageProject(method, url, name, busyLabel, doneLabel) {
+      projectStatus("", busyLabel);
       try {
         const response = await fetch(url, {
           method,
@@ -2736,18 +2716,109 @@
         if (!response.ok) {
           const detail = payload.detail;
           projectStatus("error", typeof detail === "string" ? detail : "Save failed (" + response.status + ").");
-          return;
+          return null;
         }
         state.currentProjectId = payload.id;
         setFieldValue("image-project-name", payload.name || name);
         await loadImageProjects();
         renderProjectSelect(payload.id);
-        projectStatus("", overwritten
-          ? "Updated project “" + (payload.name || name) + "”."
-          : "Saved project “" + (payload.name || name) + "”.");
+        projectStatus("", doneLabel.replace("{name}", payload.name || name));
+        return payload;
       } catch (error) {
         projectStatus("error", "Save failed.");
+        return null;
       }
+    }
+
+    async function addNewImageProject() {
+      const name = fieldValue("image-project-name");
+      if (!name) {
+        projectStatus("error", "Enter a project name to add a new project.");
+        return;
+      }
+      const existing = findProjectByName(name);
+      if (existing) {
+        projectStatus(
+          "error",
+          "A project named “" + existing.name + "” already exists. Choose another name, or Save to update it."
+        );
+        return;
+      }
+      await writeImageProject(
+        "POST",
+        "/api/images/projects",
+        name,
+        "Adding new project…",
+        "Added new project “{name}”."
+      );
+    }
+
+    function startBlankImageProject() {
+      const name = fieldValue("image-project-name");
+      const subject = fieldValue("image-subject");
+      if (name || subject || state.currentProjectId) {
+        const ok = window.confirm("Clear the studio and start a new project? Saved projects stay in the list.");
+        if (!ok) return;
+      }
+      state.currentProjectId = "";
+      setFieldValue("image-project-name", "");
+      applyPromptDetail({});
+      applyRadioGroup("person-count", "1", "1");
+      updatePersonVisibility();
+      renderProjectSelect("");
+      const box = document.getElementById("image-prompt");
+      if (box) {
+        box.dataset.dirty = "";
+        syncAssembledPrompt();
+      }
+      projectStatus("", "New project. Name it and click Add new project.");
+      const nameField = document.getElementById("image-project-name");
+      if (nameField) nameField.focus();
+    }
+
+    async function saveImageProject() {
+      const name = fieldValue("image-project-name");
+      if (!name) {
+        projectStatus("error", "Enter a project name.");
+        return;
+      }
+      const existing = findProjectByName(name);
+      const currentId = state.currentProjectId;
+      if (!existing && !currentId) {
+        await writeImageProject(
+          "POST",
+          "/api/images/projects",
+          name,
+          "Saving…",
+          "Saved project “{name}”."
+        );
+        return;
+      }
+      const target = existing || (state.projects || []).find((row) => row.id === currentId);
+      if (existing && existing.id !== currentId) {
+        const ok = window.confirm('A project named "' + existing.name + '" already exists. Overwrite it?');
+        if (!ok) {
+          projectStatus("", "Save cancelled.");
+          return;
+        }
+      }
+      if (!target) {
+        await writeImageProject(
+          "POST",
+          "/api/images/projects",
+          name,
+          "Saving…",
+          "Saved project “{name}”."
+        );
+        return;
+      }
+      await writeImageProject(
+        "PUT",
+        "/api/images/projects/" + encodeURIComponent(existing ? existing.id : target.id),
+        name,
+        "Updating…",
+        "Updated project “{name}”."
+      );
     }
 
     async function renameImageProject() {
@@ -2856,6 +2927,8 @@
       if (!projectId) return;
       loadImageProject(projectId);
     });
+    document.getElementById("image-project-add").addEventListener("click", addNewImageProject);
+    document.getElementById("image-project-new").addEventListener("click", startBlankImageProject);
     document.getElementById("image-project-save").addEventListener("click", saveImageProject);
     document.getElementById("image-project-rename").addEventListener("click", renameImageProject);
     document.getElementById("image-project-delete").addEventListener("click", deleteImageProject);

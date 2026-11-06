@@ -540,8 +540,10 @@ def test_page_has_guided_fields_and_output_controls(tmp_path, monkeypatch):
     assert "/api/images/generate" in html
     assert "/api/images/projects" in html
     assert "Past projects" in html
-    assert "Save project" in html
+    assert "Add new project" in html
+    assert "Blank studio" in html
     assert 'id="image-project-select"' in html
+    assert 'id="image-project-add"' in html
     assert "not sent as chat completions" in html
     assert "google/gemini-3.1-flash-image" not in html
 
