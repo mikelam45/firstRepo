@@ -442,7 +442,14 @@
       <fieldset class="output" aria-labelledby="output-title">
         <legend id="output-title">Output</legend>
         <div class="image-row">
-          <label class="field">Resolution
+          <label class="field">Output resolution
+            <select id="image-output-resolution">
+              <option value="1K" selected>1K — studio (default)</option>
+              <option value="2K">2K — high resolution</option>
+              <option value="4K">4K — maximum (FLUX.2 4 MP)</option>
+            </select>
+          </label>
+          <label class="field">Aspect ratio
             <select id="image-resolution">
               <option value="1:1" selected>Square 1:1</option>
               <option value="4:3">Landscape 4:3</option>
@@ -462,6 +469,10 @@
               <option value="768x1024">768x1024</option>
               <option value="1344x768">1344x768</option>
               <option value="1920x1080">1920x1080</option>
+              <option value="1440x1440">1440x1440 (2K)</option>
+              <option value="1920x1088">1920x1088 (2K 16:9)</option>
+              <option value="2048x2048">2048x2048 (4K)</option>
+              <option value="2048x1152">2048x1152 (4K 16:9)</option>
               <option value="custom">Custom</option>
             </select>
           </label>
@@ -496,12 +507,71 @@
             </select>
           </label>
         </div>
+        <p class="meta" id="image-resolution-hint">
+          1K is the studio default so a 10-photo batch stays modest. 2K and 4K are opt-in.
+          FLUX.2 Pro on OpenRouter accepts aspect_ratio, not a size field; 2K/4K are stored
+          on the job and added as a high-detail prompt hint (native max is 4 megapixels).
+        </p>
         <p class="meta" id="image-count-hint">
-          1 to 10 photos. Extra photos vary facial expression (neutral, slight smile, smile, focused, speaking, surprised) and movement (idle, walking, turning, reaching, sitting, stepping). Recorded price is shown times the photo count.
+          1 to 10 photos. Use Facial change and Motion change below to set batch variance.
+          Default Medium still cycles expression (neutral, slight smile, smile, focused, speaking, surprised)
+          and movement (idle, walking, turning, reaching, sitting, stepping). Recorded price is shown times the photo count.
         </p>
         <label class="field" id="image-beats-field" hidden>Storyboard beats (one per line)
           <textarea id="image-beats" rows="6" placeholder="Beat 1&#10;Beat 2&#10;Beat 3"></textarea>
         </label>
+      </fieldset>
+
+      <fieldset class="variance" id="image-variance" aria-labelledby="variance-title">
+        <legend id="variance-title">Batch variance</legend>
+        <p class="meta">
+          Applies when generating 2–10 photos. Identity, clothing, setting, and reference photos stay consistent.
+          Off keeps the same face or pose; Subtle / Medium / Strong add a distinct prompt delta per photo.
+        </p>
+        <div class="image-row">
+          <div>
+            <p class="option-title" id="facial-variance-title">Facial change</p>
+            <div class="variance-levels" role="radiogroup" aria-labelledby="facial-variance-title">
+              <label class="option"><input type="radio" name="facial-variance" value="off"> Off</label>
+              <label class="option"><input type="radio" name="facial-variance" value="subtle"> Subtle</label>
+              <label class="option"><input type="radio" name="facial-variance" value="medium" checked> Medium</label>
+              <label class="option"><input type="radio" name="facial-variance" value="strong"> Strong</label>
+            </div>
+            <label class="field">Facial notes
+              <input id="image-facial-notes" type="text" autocomplete="off" placeholder="from slight smile to laugh">
+            </label>
+            <fieldset class="cycle-picks" id="facial-cycle-field">
+              <legend>Expressions to cycle</legend>
+              <label><input type="checkbox" name="facial-cycle" value="neutral" checked> neutral</label>
+              <label><input type="checkbox" name="facial-cycle" value="slight smile" checked> slight smile</label>
+              <label><input type="checkbox" name="facial-cycle" value="smile" checked> smile</label>
+              <label><input type="checkbox" name="facial-cycle" value="focused" checked> focused</label>
+              <label><input type="checkbox" name="facial-cycle" value="speaking" checked> speaking</label>
+              <label><input type="checkbox" name="facial-cycle" value="surprised" checked> surprised</label>
+            </fieldset>
+          </div>
+          <div>
+            <p class="option-title" id="motion-variance-title">Motion change</p>
+            <div class="variance-levels" role="radiogroup" aria-labelledby="motion-variance-title">
+              <label class="option"><input type="radio" name="motion-variance" value="off"> Off</label>
+              <label class="option"><input type="radio" name="motion-variance" value="subtle"> Subtle</label>
+              <label class="option"><input type="radio" name="motion-variance" value="medium" checked> Medium</label>
+              <label class="option"><input type="radio" name="motion-variance" value="strong"> Strong</label>
+            </div>
+            <label class="field">Motion notes
+              <input id="image-motion-notes" type="text" autocomplete="off" placeholder="walk left to right, then reach for the cup">
+            </label>
+            <fieldset class="cycle-picks" id="motion-cycle-field">
+              <legend>Motions to cycle</legend>
+              <label><input type="checkbox" name="motion-cycle" value="idle" checked> idle</label>
+              <label><input type="checkbox" name="motion-cycle" value="walking" checked> walking</label>
+              <label><input type="checkbox" name="motion-cycle" value="turning" checked> turning</label>
+              <label><input type="checkbox" name="motion-cycle" value="reaching" checked> reaching</label>
+              <label><input type="checkbox" name="motion-cycle" value="sitting" checked> sitting</label>
+              <label><input type="checkbox" name="motion-cycle" value="stepping" checked> stepping</label>
+            </fieldset>
+          </div>
+        </div>
       </fieldset>
 
       <fieldset class="refs" aria-labelledby="ref-title">
@@ -1514,6 +1584,10 @@
       "768x1024": [768, 1024],
       "1344x768": [1344, 768],
       "1920x1080": [1920, 1080],
+      "1440x1440": [1440, 1440],
+      "1920x1088": [1920, 1088],
+      "2048x2048": [2048, 2048],
+      "2048x1152": [2048, 1152],
     };
     const PRESET_ASPECT = {
       "1024x1024": "1:1",
@@ -1521,7 +1595,31 @@
       "768x1024": "3:4",
       "1344x768": "16:9",
       "1920x1080": "16:9",
+      "1440x1440": "1:1",
+      "1920x1088": "16:9",
+      "2048x2048": "1:1",
+      "2048x1152": "16:9",
     };
+    const PIXELS_FOR_OUTPUT = {
+      "1K": {
+        "1:1": [1024, 1024], "4:3": [1024, 768], "3:4": [768, 1024],
+        "3:2": [1152, 768], "2:3": [768, 1152], "16:9": [1344, 768],
+        "9:16": [768, 1344], "21:9": [1536, 656], "auto": [1024, 1024],
+      },
+      "2K": {
+        "1:1": [1440, 1440], "4:3": [1632, 1216], "3:4": [1216, 1632],
+        "3:2": [1728, 1152], "2:3": [1152, 1728], "16:9": [1920, 1088],
+        "9:16": [1088, 1920], "21:9": [2048, 880], "auto": [1440, 1440],
+      },
+      "4K": {
+        "1:1": [2048, 2048], "4:3": [2048, 1536], "3:4": [1536, 2048],
+        "3:2": [2048, 1360], "2:3": [1360, 2048], "16:9": [2048, 1152],
+        "9:16": [1152, 2048], "21:9": [2048, 880], "auto": [2048, 2048],
+      },
+    };
+    const OUTPUT_RESOLUTIONS = ["1K", "2K", "4K"];
+    const DEFAULT_FACIAL_CYCLE = ["neutral", "slight smile", "smile", "focused", "speaking", "surprised"];
+    const DEFAULT_MOTION_CYCLE = ["idle", "walking", "turning", "reaching", "sitting", "stepping"];
 
     function fieldValue(id) {
       const node = document.getElementById(id);
@@ -1670,12 +1768,37 @@
       box.value = assembleImagePrompt();
     }
 
+    function selectedOutputResolution() {
+      const value = fieldValue("image-output-resolution") || "1K";
+      return OUTPUT_RESOLUTIONS.indexOf(value) !== -1 ? value : "1K";
+    }
+
     function selectedImageSize() {
       const preset = document.getElementById("image-preset").value;
       if (IMAGE_PRESETS[preset]) return IMAGE_PRESETS[preset];
       const width = Number(document.getElementById("image-width").value);
       const height = Number(document.getElementById("image-height").value);
       return [width, height];
+    }
+
+    function sizeKey(width, height) {
+      return width + "x" + height;
+    }
+
+    function applyPixelSize(width, height) {
+      document.getElementById("image-width").value = String(width);
+      document.getElementById("image-height").value = String(height);
+      const preset = document.getElementById("image-preset");
+      const key = sizeKey(width, height);
+      preset.value = IMAGE_PRESETS[key] ? key : "custom";
+    }
+
+    function applyOutputResolution() {
+      const tier = selectedOutputResolution();
+      const aspect = fieldValue("image-resolution") || "1:1";
+      const table = PIXELS_FOR_OUTPUT[tier] || PIXELS_FOR_OUTPUT["1K"];
+      const size = table[aspect] || table["1:1"];
+      applyPixelSize(size[0], size[1]);
     }
 
     function applyImagePreset() {
@@ -1686,6 +1809,48 @@
       document.getElementById("image-height").value = String(size[1]);
       const aspect = PRESET_ASPECT[preset];
       if (aspect) document.getElementById("image-resolution").value = aspect;
+    }
+
+    function selectedVarianceLevel(name, fallback) {
+      const checked = document.querySelector('input[name="' + name + '"]:checked');
+      const value = checked ? checked.value : fallback;
+      return value === "off" || value === "subtle" || value === "medium" || value === "strong"
+        ? value
+        : fallback;
+    }
+
+    function selectedCycle(name, defaults) {
+      const boxes = Array.prototype.slice.call(document.querySelectorAll('input[name="' + name + '"]:checked'));
+      const values = boxes.map((box) => box.value).filter(Boolean);
+      if (!values.length || values.join("|") === defaults.join("|")) return null;
+      return values;
+    }
+
+    function variancePayload() {
+      const facial = selectedVarianceLevel("facial-variance", "medium");
+      const motion = selectedVarianceLevel("motion-variance", "medium");
+      const payload = {
+        facial_variance: facial,
+        motion_variance: motion,
+        facial_variance_notes: fieldValue("image-facial-notes"),
+        motion_variance_notes: fieldValue("image-motion-notes"),
+      };
+      const facialCycle = selectedCycle("facial-cycle", DEFAULT_FACIAL_CYCLE);
+      const motionCycle = selectedCycle("motion-cycle", DEFAULT_MOTION_CYCLE);
+      if (facialCycle) payload.facial_cycle = facialCycle;
+      if (motionCycle) payload.motion_cycle = motionCycle;
+      return payload;
+    }
+
+    function syncVarianceVisibility() {
+      const sel = selectedImageMode();
+      const batch = sel.count > 1;
+      const facialOff = selectedVarianceLevel("facial-variance", "medium") === "off";
+      const motionOff = selectedVarianceLevel("motion-variance", "medium") === "off";
+      const facialCycle = document.getElementById("facial-cycle-field");
+      const motionCycle = document.getElementById("motion-cycle-field");
+      if (facialCycle) facialCycle.hidden = !batch || facialOff;
+      if (motionCycle) motionCycle.hidden = !batch || motionOff;
     }
 
     function selectedImageMode() {
@@ -1705,6 +1870,7 @@
     function updateBeatsVisibility() {
       const sel = selectedImageMode();
       document.getElementById("image-beats-field").hidden = sel.mode !== "storyboard";
+      syncVarianceVisibility();
       if (state.functionId === "image_gen") renderChatModel();
     }
 
@@ -1736,9 +1902,15 @@
           img.alt = image.caption || job.prompt || "Generated image";
           img.src = image.href;
           figure.appendChild(img);
-          if (image.caption) {
+          const captionBits = [];
+          if (image.caption) captionBits.push(image.caption);
+          const resolutionLabel = image.output_resolution || job.output_resolution;
+          if (resolutionLabel && (!image.caption || image.caption.indexOf(resolutionLabel) === -1)) {
+            captionBits.push(resolutionLabel);
+          }
+          if (captionBits.length) {
             const caption = document.createElement("figcaption");
-            caption.textContent = image.caption;
+            caption.textContent = captionBits.join(" · ");
             figure.appendChild(caption);
           }
           const download = document.createElement("a");
@@ -1785,7 +1957,12 @@
       event.target.dataset.dirty = event.target.value.trim() ? "1" : "";
     });
     document.getElementById("image-preset").addEventListener("change", applyImagePreset);
+    document.getElementById("image-output-resolution").addEventListener("change", applyOutputResolution);
+    document.getElementById("image-resolution").addEventListener("change", applyOutputResolution);
     document.getElementById("image-count").addEventListener("change", updateBeatsVisibility);
+    document.querySelectorAll('input[name="facial-variance"], input[name="motion-variance"]').forEach((input) => {
+      input.addEventListener("change", syncVarianceVisibility);
+    });
 
     document.getElementById("image-enhance").addEventListener("click", async () => {
       const button = document.getElementById("image-enhance");
@@ -1941,6 +2118,7 @@
       const size = selectedImageSize();
       const width = size[0];
       const height = size[1];
+      const outputResolution = selectedOutputResolution();
       if (!width || !height || width > 2048 || height > 2048 || width < 1 || height < 1) {
         status.className = "error";
         status.textContent = "Width and height must be between 1 and 2048.";
@@ -1948,7 +2126,11 @@
       }
       button.disabled = true;
       status.className = "";
-      status.textContent = "Generating…";
+      const imageMode = selectedImageMode();
+      const photoCount = imageMode.count || 1;
+      status.textContent = photoCount > 1
+        ? ("Generating " + photoCount + " photos at " + outputResolution + ". High-res batches can take several minutes…")
+        : ("Generating " + outputResolution + " image…");
       const body = Object.assign({
         prompt,
         subject: fieldValue("image-subject"),
@@ -1963,12 +2145,13 @@
         lighting: fieldValue("image-lighting"),
         notes: fieldValue("image-notes"),
         resolution: fieldValue("image-resolution"),
+        aspect_ratio: fieldValue("image-resolution"),
+        output_resolution: outputResolution,
         width,
         height,
         format: fieldValue("image-format"),
         reference_ids: (state.refs || []).map((file) => file.id).slice(0, MAX_REFS),
-      }, personPayload());
-      const imageMode = selectedImageMode();
+      }, personPayload(), variancePayload());
       if (imageMode.mode === "storyboard") {
         const frames = storyboardBeats();
         if (frames) body.frames = frames;
@@ -2013,8 +2196,10 @@
           await loadImageJobs();
         }
         const count = payload.image_base64 ? 1 : (payload.images || []).length;
+        const usedRes = payload.output_resolution || outputResolution;
         status.className = "";
-        status.textContent = "Generated " + count + " image" + (count === 1 ? "" : "s") + " with " + payload.model_id + ".";
+        status.textContent = "Generated " + count + " image" + (count === 1 ? "" : "s")
+          + " at " + usedRes + " with " + payload.model_id + ".";
       } catch (error) {
         status.className = "error";
         status.textContent = "Generate failed.";
@@ -2029,6 +2214,7 @@
       applyStoredDseLanguage();
       applyStoredDseMode();
       applyImagePreset();
+      applyOutputResolution();
       updateBeatsVisibility();
       showFunction("rag_qa");
     }).catch(() => {

@@ -55,6 +55,13 @@ def test_home_and_setup_are_distinct_html_pages(tmp_path, monkeypatch):
     assert "11 photos" not in home.text
     assert "slight smile" in home.text
     assert "walking" in home.text
+    assert "Facial change" in home.text
+    assert "Motion change" in home.text
+    assert 'id="image-output-resolution"' in home.text
+    assert "1K" in home.text
+    assert "2K" in home.text
+    assert "4K" in home.text
+    assert "2048x2048" in home.text
     assert 'id="image-panel"' in home.text
     assert 'id="ref-slots"' in home.text
     assert "Reference photos" in home.text
