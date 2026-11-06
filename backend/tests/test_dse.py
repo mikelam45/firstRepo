@@ -68,12 +68,16 @@ def test_functions_page_contains_dse_math(tmp_path, monkeypatch):
     assert 'id="dse-option-solve"' in home.text
     assert 'id="dse-option-create"' in home.text
     assert 'id="dse-option-explain"' in home.text
+    assert 'id="dse-solve-workspace"' in home.text
+    assert 'id="dse-create-workspace"' in home.text
+    assert 'id="dse-explain-workspace"' in home.text
     assert 'id="dse-mode-guided_no_answer"' in home.text
     assert 'id="dse-mode-guided_with_answer"' in home.text
     assert "Hints by steps" in home.text
     assert "Immediate answer" in home.text
     assert 'id="dse-question-count"' in home.text
     assert 'max="20"' in home.text
+    assert "syncChatChrome" in home.text
     assert 'id="dse-level"' in home.text
     assert 'value="S1"' in home.text
     assert 'value="S6"' in home.text
@@ -496,6 +500,9 @@ def test_page_has_three_mode_controls_and_s1_s6(tmp_path, monkeypatch):
     assert 'id="dse-option-solve"' in home.text
     assert 'id="dse-option-create"' in home.text
     assert 'id="dse-option-explain"' in home.text
+    assert 'id="dse-solve-workspace"' in home.text
+    assert 'id="dse-create-workspace"' in home.text
+    assert 'id="dse-explain-workspace"' in home.text
     assert 'id="dse-mode-guided_no_answer"' in home.text
     assert 'id="dse-mode-guided_with_answer"' in home.text
     assert "Hints by steps" in home.text
