@@ -27,7 +27,6 @@ from .chat import (
     resolve_target_language,
 )
 from .dse import (
-    CREATE_QUESTION_USER_MESSAGE,
     DEFAULT_DSE_PRACTICE_MESSAGE,
     GUIDED_MODES,
     MODE_CREATE_AND_MARK,
@@ -39,8 +38,9 @@ from .dse import (
     SHOW_ANSWER_USER_MESSAGE,
     build_dse_context,
     build_mark_context,
+    create_question_user_message,
     is_next_hint_message,
-    parse_generated_question,
+    parse_generated_questions,
     parse_mark_verdict,
     public_mark_payload,
     public_question_payload,
@@ -51,6 +51,7 @@ from .dse import (
     resolve_dse_module,
     resolve_dse_paper,
     resolve_dse_topic,
+    resolve_question_count,
     resolve_request_mode,
     scrub_hidden_fields,
     store_created_question,
@@ -150,6 +151,7 @@ class ChatIn(BaseModel):
     level: str | None = None
     session_id: str | None = None
     attempt_text: str | None = None
+    count: int | None = None
 
 
 class DseAskIn(BaseModel):
@@ -165,6 +167,7 @@ class DseAskIn(BaseModel):
     level: str | None = None
     session_id: str | None = None
     attempt_text: str | None = None
+    count: int | None = None
 
 
 class DseQuestionIn(BaseModel):
@@ -175,6 +178,7 @@ class DseQuestionIn(BaseModel):
     module: str | None = None
     paper: str | None = None
     difficulty: str | None = None
+    count: int | None = None
 
 
 class OpenRouterKeyIn(BaseModel):
@@ -398,6 +402,7 @@ def post_chat(
         dse_paper = resolve_dse_paper(body.paper) if function_id == "dse_math" else None
         dse_module = resolve_dse_module(body.module) if function_id == "dse_math" else None
         dse_level = resolve_dse_level(body.level) if function_id == "dse_math" else None
+        dse_count = resolve_question_count(body.count) if function_id == "dse_math" else 1
         dse_session = None
         if function_id == "dse_math":
             validate_level_topic(dse_level, dse_topic)
@@ -426,7 +431,7 @@ def post_chat(
                 if dse_mode == MODE_PRACTICE:
                     message = DEFAULT_DSE_PRACTICE_MESSAGE
                 elif dse_mode == MODE_CREATE_AND_MARK:
-                    message = CREATE_QUESTION_USER_MESSAGE
+                    message = create_question_user_message(dse_count)
                 elif dse_mode == MODE_GUIDED_NO_ANSWER and dse_session is not None:
                     message = NEXT_HINT_USER_MESSAGE
                 elif dse_mode == MODE_GUIDED_WITH_ANSWER and stored_question:
@@ -462,6 +467,7 @@ def post_chat(
                 history=history,
                 question=prompt_question,
                 reveal_mark_scheme=reveal_scheme,
+                question_count=dse_count,
             )
             if grounding == GROUNDING_STRICT and not sources:
                 result = recorded_model(function_id, model_id)
@@ -505,17 +511,25 @@ def post_chat(
             result["mode"] = dse_mode
             reply_text = str(result.get("reply") or "")
             if dse_mode == MODE_CREATE_AND_MARK:
-                parsed = parse_generated_question(reply_text)
-                created = store_created_question(
-                    settings.data_dir,
-                    parsed=parsed,
-                    level=dse_level,
-                    topic=dse_topic,
-                    language=target_language or "en",
-                    module=dse_module,
-                )
-                result["reply"] = parsed["question"]
-                result.update(public_question_payload(created))
+                parsed_rows = parse_generated_questions(reply_text, dse_count)
+                if not parsed_rows:
+                    raise ChatError(502, "The tutor did not return a usable question.")
+                stored_rows = [
+                    store_created_question(
+                        settings.data_dir,
+                        parsed=row,
+                        level=dse_level,
+                        topic=dse_topic,
+                        language=target_language or "en",
+                        module=dse_module,
+                    )
+                    for row in parsed_rows
+                ]
+                first = stored_rows[0]
+                result["reply"] = first["question"]
+                result.update(public_question_payload(first))
+                result["question_count"] = len(stored_rows)
+                result["questions"] = [public_question_payload(row) for row in stored_rows]
                 result = scrub_hidden_fields(result, include_answer=False)
             elif dse_mode in GUIDED_MODES:
                 question_text = str((dse_session or {}).get("question") or "")
@@ -597,6 +611,7 @@ def post_dse_ask(
             level=body.level,
             session_id=body.session_id,
             attempt_text=body.attempt_text,
+            count=body.count,
         ),
         authorization,
     )
@@ -609,7 +624,7 @@ def post_dse_question(
 ) -> dict[str, object]:
     return post_chat(
         ChatIn(
-            message=CREATE_QUESTION_USER_MESSAGE,
+            message="",
             function="dse_math",
             grounding=body.grounding,
             target_language=body.target_language,
@@ -620,6 +635,7 @@ def post_dse_question(
             paper=body.paper,
             module=body.module,
             level=body.level,
+            count=body.count,
         ),
         authorization,
     )

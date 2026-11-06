@@ -65,11 +65,15 @@ def test_functions_page_contains_dse_math(tmp_path, monkeypatch):
     assert 'data-function="dse_math"' in home.text
     assert 'id="tab-dse_math"' in home.text
     assert 'id="dse-controls"' in home.text
-    assert 'id="dse-mode-practice"' in home.text
-    assert 'id="dse-mode-explain"' in home.text
+    assert 'id="dse-option-solve"' in home.text
+    assert 'id="dse-option-create"' in home.text
+    assert 'id="dse-option-explain"' in home.text
     assert 'id="dse-mode-guided_no_answer"' in home.text
     assert 'id="dse-mode-guided_with_answer"' in home.text
-    assert 'id="dse-mode-create_and_mark"' in home.text
+    assert "Hints by steps" in home.text
+    assert "Immediate answer" in home.text
+    assert 'id="dse-question-count"' in home.text
+    assert 'max="20"' in home.text
     assert 'id="dse-level"' in home.text
     assert 'value="S1"' in home.text
     assert 'value="S6"' in home.text
@@ -441,13 +445,63 @@ def test_s7_or_bad_mode_returns_400(tmp_path, monkeypatch):
     assert calculus_s1.status_code == 400
 
 
+def test_create_question_batch_up_to_twenty(tmp_path, monkeypatch):
+    _install_key(tmp_path, monkeypatch)
+    batch = (
+        '{"questions":['
+        '{"question":"Q1: solve x=1.","expected_answer":"1","mark_scheme":"A1","outline":"one"},'
+        '{"question":"Q2: solve x=2.","expected_answer":"2","mark_scheme":"A1","outline":"two"}'
+        "]}"
+    )
+    seen = _mock_chat(monkeypatch, reply=batch)
+    client = _client(monkeypatch, tmp_path)
+    created = client.post(
+        "/api/dse/question",
+        json={
+            "level": "S4",
+            "topic": "algebra",
+            "difficulty": "mid",
+            "count": 2,
+            "grounding": "mixed",
+        },
+    )
+    assert created.status_code == 200, created.text
+    payload = created.json()
+    assert payload["question_count"] == 2
+    assert len(payload["questions"]) == 2
+    assert payload["questions"][0]["question"] == "Q1: solve x=1."
+    assert payload["questions"][1]["question"] == "Q2: solve x=2."
+    assert payload["question"] == "Q1: solve x=1."
+    assert "expected_answer" not in payload
+    assert "expected_answer" not in payload["questions"][0]
+    system = seen["json"]["messages"][0]["content"]
+    assert "exactly 2 original mathematics questions" in system
+    assert "Difficulty: mid" in system
+
+    too_many = client.post(
+        "/api/dse/question",
+        json={"level": "S4", "count": 21},
+    )
+    assert too_many.status_code == 400
+    assert "1 to 20" in too_many.json()["detail"]
+
+    zero = client.post("/api/dse/question", json={"level": "S4", "count": 0})
+    assert zero.status_code == 400
+
+
 def test_page_has_three_mode_controls_and_s1_s6(tmp_path, monkeypatch):
     client = _client(monkeypatch, tmp_path)
     home = client.get("/")
     assert home.status_code == 200
+    assert 'id="dse-option-solve"' in home.text
+    assert 'id="dse-option-create"' in home.text
+    assert 'id="dse-option-explain"' in home.text
     assert 'id="dse-mode-guided_no_answer"' in home.text
     assert 'id="dse-mode-guided_with_answer"' in home.text
-    assert 'id="dse-mode-create_and_mark"' in home.text
+    assert "Hints by steps" in home.text
+    assert "Immediate answer" in home.text
+    assert 'id="dse-question-count"' in home.text
+    assert 'max="20"' in home.text
     for level in ("S1", "S2", "S3", "S4", "S5", "S6"):
         assert f'value="{level}"' in home.text
     assert 'value="S7"' not in home.text

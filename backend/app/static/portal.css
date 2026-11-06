@@ -353,6 +353,31 @@ pre.chat-reply,
   padding-top: 8px;
   border-top: 1px solid var(--line);
 }
+.dse-options .option {
+  margin-bottom: 8px;
+}
+.dse-question-list {
+  margin: 10px 0 0;
+  padding-left: 1.2rem;
+}
+.dse-question-list li {
+  margin: 0 0 8px;
+}
+.dse-question-pick {
+  display: block;
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--card);
+  cursor: pointer;
+}
+.dse-question-pick[aria-current="true"] {
+  border-color: var(--green);
+  box-shadow: 0 0 0 1px var(--green);
+}
 .dse-fail-choices {
   margin: 10px 0 0;
   padding: 10px 12px;
