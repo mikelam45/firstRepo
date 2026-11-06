@@ -74,8 +74,10 @@ def test_home_and_setup_are_distinct_html_pages(tmp_path, monkeypatch):
     assert 'id="image-person-2"' in home.text
     assert 'id="image-people-relation"' in home.text
     assert "Past projects" in home.text
-    assert "Save project" in home.text
+    assert "Add new project" in home.text
+    assert "Blank studio" in home.text
     assert 'id="image-project-select"' in home.text
+    assert 'id="image-project-add"' in home.text
     assert 'id="image-project-save"' in home.text
     assert "/api/images/projects" in home.text
     assert 'id="ref-slots"' in home.text

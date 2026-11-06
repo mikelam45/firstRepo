@@ -85,11 +85,16 @@ def test_page_markup_has_past_projects_and_save_project(tmp_path, monkeypatch):
     assert home.status_code == 200
     html = home.text
     assert "Past projects" in html
-    assert "Save project" in html
+    assert "Add new project" in html
+    assert "Blank studio" in html
+    assert "Image projects" in html
     assert 'id="image-project-select"' in html
+    assert 'id="image-project-add"' in html
     assert 'id="image-project-save"' in html
+    assert 'id="image-project-new"' in html
     assert 'id="image-project-name"' in html
     assert 'id="image-project-delete"' in html
+    assert "addNewImageProject" in html
     assert "No saved projects yet" in html
     assert "/api/images/projects" in html
     assert PAGE.is_file()
