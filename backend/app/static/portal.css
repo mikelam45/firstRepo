@@ -583,6 +583,20 @@ pre.chat-reply,
   border-radius: 8px;
   background: white;
 }
+@media (min-width: 721px) {
+  .image-studio .variance-step-row:not(.head) .field {
+    font-size: 0;
+    color: transparent;
+    line-height: 0;
+  }
+  .image-studio .variance-step-row:not(.head) select,
+  .image-studio .variance-step-row:not(.head) input[type="text"] {
+    margin-top: 0;
+    font-size: 0.92rem;
+    line-height: 1.3;
+    color: var(--ink);
+  }
+}
 @media (max-width: 720px) {
   .image-studio .variance-step-row.head { display: none; }
   .image-studio .variance-step-row {
