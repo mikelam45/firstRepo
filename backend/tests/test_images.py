@@ -484,6 +484,10 @@ def test_page_has_guided_fields_and_output_controls(tmp_path, monkeypatch):
     assert 'id="image-lighting"' in html
     assert 'id="image-notes"' in html
     assert 'id="image-person"' in html
+    assert 'id="image-person-2"' in html
+    assert "People in this image" in html
+    assert "1 person" in html
+    assert "2 persons" in html
     assert "Nationality" in html
     assert "Height" in html
     assert "Hair" in html
@@ -1151,3 +1155,136 @@ def test_generate_without_variance_steps_keeps_global_cycle(tmp_path, monkeypatc
     assert payload["images"][1]["caption"] == "1K · 1024×1024 · slight smile, walking"
     assert "Facial expression: slight smile" in seen["payloads"][1]["prompt"]
     _assert_secret_absent(response.text)
+
+
+def test_assemble_prompt_two_persons_numbered_blocks():
+    prompt = assemble_prompt(
+        {
+            "objects": "a gaiwan",
+            "person_count": 2,
+            "people_relation": "sitting across a tea table",
+            "persons": [
+                {
+                    "nationality": "Korean",
+                    "hair": "black, long, straight",
+                    "dress": "hanbok",
+                    "object_action": "pouring tea",
+                },
+                {
+                    "nationality": "Hong Kong",
+                    "hair": "short, brown",
+                    "top": "linen shirt",
+                    "props": "a folding fan",
+                },
+            ],
+            "style": "cinematic still",
+        }
+    )
+    assert prompt == (
+        "Objects: a gaiwan\n"
+        "Person 1: nationality Korean; hair black, long, straight\n"
+        "Clothing 1: dress hanbok\n"
+        "Action on objects 1: pouring tea\n"
+        "Person 2: nationality Hong Kong; hair short, brown\n"
+        "Clothing 2: top linen shirt\n"
+        "Props 2: a folding fan\n"
+        "Together: sitting across a tea table\n"
+        "Style: cinematic still"
+    )
+
+
+def test_assemble_prompt_one_person_keeps_unnumbered_labels():
+    prompt = assemble_prompt(
+        {
+            "nationality": "Korean",
+            "hair": "black, long, straight",
+            "person_count": 1,
+            "style": "cinematic still",
+        }
+    )
+    assert "Person: nationality Korean; hair black, long, straight" in prompt
+    assert "Person 1:" not in prompt
+    assert "Together:" not in prompt
+
+
+def test_generate_two_persons_reach_images_api(tmp_path, monkeypatch):
+    _install_key(tmp_path, monkeypatch)
+    seen = _mock_images(monkeypatch)
+    client = _client(monkeypatch, tmp_path)
+    response = client.post(
+        "/api/images/generate",
+        json={
+            "subject": "two friends at tea",
+            "person_count": 2,
+            "people_relation": "facing each other",
+            "persons": [
+                {
+                    "nationality": "Korean",
+                    "hair_color": "black",
+                    "hair_length": "long",
+                    "dress": "hanbok",
+                },
+                {
+                    "nationality": "Hong Kong",
+                    "hair_color": "brown",
+                    "hair_length": "short",
+                    "top": "shirt",
+                },
+            ],
+            "style": "cinematic still",
+            "width": 1024,
+            "height": 1024,
+            "n": 2,
+        },
+    )
+    assert response.status_code == 200, response.text
+    prompt = seen["payloads"][0]["prompt"]
+    assert "Person 1: nationality Korean" in prompt
+    assert "Person 2: nationality Hong Kong" in prompt
+    assert "Together: facing each other" in prompt
+    assert "Keep the same two people" in prompt
+    assert "Person: nationality" not in prompt
+    _assert_secret_absent(response.text)
+
+
+def test_generate_rejects_more_than_two_persons(tmp_path, monkeypatch):
+    _install_key(tmp_path, monkeypatch)
+    seen = _mock_images(monkeypatch)
+    client = _client(monkeypatch, tmp_path)
+    response = client.post(
+        "/api/images/generate",
+        json={
+            "prompt": "a crowd",
+            "person_count": 3,
+        },
+    )
+    assert response.status_code == 400, response.text
+    assert "person_count must be 1 or 2" in response.json()["detail"]
+    too_many = client.post(
+        "/api/images/generate",
+        json={
+            "prompt": "a crowd",
+            "persons": [
+                {"nationality": "A"},
+                {"nationality": "B"},
+                {"nationality": "C"},
+            ],
+        },
+    )
+    assert too_many.status_code == 400, too_many.text
+    assert "at most 2 persons" in too_many.json()["detail"]
+    assert seen.get("calls", 0) == 0
+
+
+def test_page_has_one_or_two_person_controls(tmp_path, monkeypatch):
+    client = _client(monkeypatch, tmp_path)
+    html = client.get("/").text
+    assert "People in this image" in html
+    assert "1 person" in html
+    assert "2 persons" in html
+    assert 'name="person-count"' in html
+    assert 'id="image-person"' in html
+    assert 'id="image-person-2"' in html
+    assert 'id="image-nationality-2"' in html
+    assert 'id="image-people-relation"' in html
+    assert "person_count" in html

@@ -221,6 +221,12 @@ class ImageGenerateIn(BaseModel):
     props: str = ""
     object_action: str = ""
     action_on_objects: str = ""
+    person_count: int | None = None
+    people_count: int | None = None
+    people_relation: str = ""
+    together: str = ""
+    persons: list[dict[str, Any]] | None = None
+    person_2: dict[str, Any] | None = None
     style: str = ""
     camera: str = ""
     shot: str = ""

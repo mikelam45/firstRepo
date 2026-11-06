@@ -116,6 +116,14 @@ IDENTITY_LOCK = (
     "Keep the same person, identity, facial structure, hair, clothing, props, "
     "and setting as the other photos in this set. Do not change who they are."
 )
+IDENTITY_LOCK_TWO = (
+    "Keep the same two people, identities, facial structure, hair, clothing, props, "
+    "and setting as the other photos in this set. Do not swap them or change who they are."
+)
+MAX_PERSONS = 2
+DEFAULT_TOGETHER = (
+    "two distinct people in the same scene, both fully visible, do not merge them"
+)
 OUTPUT_RESOLUTIONS: tuple[str, ...] = ("1K", "2K", "4K")
 DEFAULT_OUTPUT_RESOLUTION = "1K"
 OUTPUT_RESOLUTION_ALIASES: dict[str, str] = {
@@ -457,9 +465,15 @@ def _labeled_parts(pairs: list[tuple[str, str]]) -> str:
     return "; ".join(f"{label} {value}" for label, value in pairs if value)
 
 
-def person_prompt_lines(mapping: dict[str, Any] | None) -> list[str]:
-    """Stable Person / Clothing / Props / Action block. Empty fields omitted."""
-    data = mapping or {}
+def _one_person_lines(
+    data: dict[str, Any],
+    *,
+    person_label: str = "Person",
+    clothing_label: str = "Clothing",
+    props_label: str = "Props",
+    action_label: str = "Action on objects",
+) -> list[str]:
+    """One Person / Clothing / Props / Action block. Empty fields omitted."""
     values = {
         "nationality": _first_text(data, ("nationality", "ethnicity", "ethnicity_presentation")),
         "height": _person_height(data),
@@ -478,14 +492,104 @@ def person_prompt_lines(mapping: dict[str, Any] | None) -> list[str]:
     action = _strip(data.get("object_action") or data.get("action_on_objects"))
     lines: list[str] = []
     if person:
-        lines.append(f"Person: {person}")
+        lines.append(f"{person_label}: {person}")
     if clothing:
-        lines.append(f"Clothing: {clothing}")
+        lines.append(f"{clothing_label}: {clothing}")
     if props:
-        lines.append(f"Props: {props}")
+        lines.append(f"{props_label}: {props}")
     if action:
-        lines.append(f"Action on objects: {action}")
+        lines.append(f"{action_label}: {action}")
     return lines
+
+
+def _as_person_dict(value: object) -> dict[str, Any] | None:
+    if not isinstance(value, dict):
+        return None
+    return {str(key): item for key, item in value.items()}
+
+
+def resolve_person_count(mapping: dict[str, Any] | None) -> int:
+    """Return 1 or 2. Unknown values are 400."""
+    data = mapping or {}
+    raw = data.get("person_count")
+    if raw in (None, ""):
+        raw = data.get("people_count")
+    if raw not in (None, ""):
+        try:
+            count = int(raw)  # type: ignore[arg-type]
+        except (TypeError, ValueError) as exc:
+            raise ImageError(400, "person_count must be 1 or 2.") from exc
+        if count not in (1, 2):
+            raise ImageError(400, "person_count must be 1 or 2.")
+        return count
+    persons = data.get("persons")
+    if isinstance(persons, list) and len(persons) >= 2:
+        return 2
+    if _as_person_dict(data.get("person_2")):
+        return 2
+    return 1
+
+
+def resolve_person_mappings(mapping: dict[str, Any] | None) -> list[dict[str, Any]]:
+    """Up to two person dicts. Top-level guided fields are person 1."""
+    data = mapping or {}
+    persons_raw = data.get("persons")
+    collected: list[dict[str, Any]] = []
+    if isinstance(persons_raw, list):
+        if len(persons_raw) > MAX_PERSONS:
+            raise ImageError(400, "at most 2 persons are allowed.")
+        for item in persons_raw[:MAX_PERSONS]:
+            person = _as_person_dict(item)
+            if person is not None:
+                collected.append(person)
+    if not collected:
+        collected.append(data)
+        second = _as_person_dict(data.get("person_2"))
+        if second is not None:
+            collected.append(second)
+    count = resolve_person_count(data)
+    if count == 1:
+        return collected[:1] or [data]
+    while len(collected) < 2:
+        collected.append({})
+    return collected[:MAX_PERSONS]
+
+
+def person_prompt_lines(mapping: dict[str, Any] | None) -> list[str]:
+    """Stable Person / Clothing / Props / Action block. Empty fields omitted.
+
+    One person keeps the historical ``Person:`` labels. Two people become
+    ``Person 1:`` / ``Person 2:`` plus a Together line.
+    """
+    data = mapping or {}
+    people = resolve_person_mappings(data)
+    count = resolve_person_count(data)
+    if count <= 1 or len(people) <= 1:
+        return _one_person_lines(people[0] if people else data)
+    lines: list[str] = []
+    for index, person in enumerate(people[:MAX_PERSONS], start=1):
+        lines.extend(
+            _one_person_lines(
+                person,
+                person_label=f"Person {index}",
+                clothing_label=f"Clothing {index}",
+                props_label=f"Props {index}",
+                action_label=f"Action on objects {index}",
+            )
+        )
+    together = _strip(data.get("people_relation") or data.get("together")) or DEFAULT_TOGETHER
+    lines.append(f"Together: {together}")
+    return lines
+
+
+def identity_lock_text(mapping: dict[str, Any] | None = None) -> str:
+    try:
+        count = resolve_person_count(mapping or {})
+    except ImageError:
+        count = 1
+    if count >= 2:
+        return IDENTITY_LOCK_TWO
+    return IDENTITY_LOCK
 
 
 def assemble_prompt(body: dict[str, Any] | None) -> str:
@@ -911,8 +1015,14 @@ def _progress_note(notes: str, index: int, total: int) -> str:
     return f"Progress {index + 1} of {total} along: {notes}"
 
 
-def _variance_lines(index: int, total: int, spec: VarianceSpec) -> list[str]:
-    lines = [IDENTITY_LOCK, f"Photo {index + 1} of {total}."]
+def _variance_lines(
+    index: int,
+    total: int,
+    spec: VarianceSpec,
+    *,
+    identity_lock: str | None = None,
+) -> list[str]:
+    lines = [identity_lock or IDENTITY_LOCK, f"Photo {index + 1} of {total}."]
     if spec.facial_level == "off":
         lines.append(
             "Facial change: off. Keep the same facial expression, gaze, head angle, "
@@ -951,13 +1061,17 @@ def variant_prompt(
     spec: VarianceSpec | None = None,
     *,
     explicit_step: bool = False,
+    identity_lock: str | None = None,
 ) -> str:
     if total <= 1:
         return base
     chosen = spec or VarianceSpec()
     if not explicit_step and chosen.uses_legacy_suffix():
-        return f"{base}\n\n{variant_suffix(index, chosen)}"
-    extra = "\n".join(_variance_lines(index, total, chosen))
+        suffix = variant_suffix(index, chosen)
+        if identity_lock and identity_lock != IDENTITY_LOCK:
+            return f"{base}\n\n{identity_lock}\n{suffix}"
+        return f"{base}\n\n{suffix}"
+    extra = "\n".join(_variance_lines(index, total, chosen, identity_lock=identity_lock))
     return f"{base}\n\n{extra}"
 
 
@@ -1374,6 +1488,7 @@ def generate_images(
         frames = [""] * count
     variance = resolve_variance(body)
     steps = resolve_variance_steps(body, count, variance)
+    lock_text = identity_lock_text(body)
     raw_ids = body.get("reference_ids") or []
     if not isinstance(raw_ids, list):
         raise ImageError(400, "reference_ids must be a list.")
@@ -1404,11 +1519,21 @@ def generate_images(
                 frame_prompt = _frame_prompt(prompt, caption, index, len(frames))
                 if count > 1:
                     frame_prompt = variant_prompt(
-                        frame_prompt, index, count, spec, explicit_step=explicit_step
+                        frame_prompt,
+                        index,
+                        count,
+                        spec,
+                        explicit_step=explicit_step,
+                        identity_lock=lock_text,
                     )
             else:
                 frame_prompt = variant_prompt(
-                    prompt, index, count, spec, explicit_step=explicit_step
+                    prompt,
+                    index,
+                    count,
+                    spec,
+                    explicit_step=explicit_step,
+                    identity_lock=lock_text,
                 )
             frame_prompt = resolution_prompt(frame_prompt, output_resolution)
             seed = None

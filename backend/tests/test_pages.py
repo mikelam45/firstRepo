@@ -68,6 +68,11 @@ def test_home_and_setup_are_distinct_html_pages(tmp_path, monkeypatch):
     assert "4K" in home.text
     assert "2048x2048" in home.text
     assert 'id="image-panel"' in home.text
+    assert "People in this image" in home.text
+    assert "1 person" in home.text
+    assert "2 persons" in home.text
+    assert 'id="image-person-2"' in home.text
+    assert 'id="image-people-relation"' in home.text
     assert "Past projects" in home.text
     assert "Save project" in home.text
     assert 'id="image-project-select"' in home.text
