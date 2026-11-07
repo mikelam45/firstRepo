@@ -1,4 +1,4 @@
-"""HKDSE Math assistant: practice/explain chat and three guided modes.
+"""HKDSE Math assistant: three UI options mapped onto existing tutor modes.
 
 Reuses the RAG file store (collection ``dse_math``), strict/mixed grounding, and
 the OpenRouter chat helper. Photo OCR is a separate vision chat completion
@@ -48,6 +48,8 @@ ALLOWED_MODES = frozenset(
 )
 GUIDED_MODES = frozenset({MODE_GUIDED_NO_ANSWER, MODE_GUIDED_WITH_ANSWER})
 DEFAULT_MODE = MODE_PRACTICE
+MAX_QUESTION_COUNT = 20
+DEFAULT_QUESTION_COUNT = 1
 DEFAULT_DSE_LANGUAGE = TARGET_EN
 DEFAULT_DSE_PRACTICE_MESSAGE = "Generate a HKDSE Mathematics practice question."
 NEXT_HINT_USER_MESSAGE = (
@@ -60,6 +62,13 @@ SHOW_ANSWER_USER_MESSAGE = (
 CREATE_QUESTION_USER_MESSAGE = (
     "Generate one original mathematics question at the requested level and topic."
 )
+
+
+def create_question_user_message(count: int = DEFAULT_QUESTION_COUNT) -> str:
+    n = resolve_question_count(count)
+    if n <= 1:
+        return CREATE_QUESTION_USER_MESSAGE
+    return f"Generate {n} original mathematics questions at the requested level and topic."
 SESSIONS_NAME = "dse-sessions.json"
 MARK_FAIL_NEXT_OPTIONS = ["hints", "retry"]
 HIDDEN_SESSION_FIELDS = (
@@ -165,6 +174,23 @@ DSE_CREATE_QUESTION_INSTRUCTION = (
     "Reply with JSON only, no markdown fences, with keys: "
     "question, expected_answer, mark_scheme, outline."
 )
+
+
+def create_question_instruction(count: int = DEFAULT_QUESTION_COUNT) -> str:
+    n = count if isinstance(count, int) else DEFAULT_QUESTION_COUNT
+    if n <= 1:
+        return DSE_CREATE_QUESTION_INSTRUCTION
+    return (
+        "Mode is Generate + mark attempt. "
+        f"Generate exactly {n} original mathematics questions at the requested Hong Kong "
+        "secondary level and topic. Junior secondary (S1–S3) stays at that level; "
+        "S4–S6 may be HKDSE style. Calculus is only for S5–S6. "
+        "Vary the items so they are not copies of each other. "
+        "Do not include the answer, working, or hints in the question text. "
+        "Reply with JSON only, no markdown fences, as "
+        '{"questions":[{"question":"...","expected_answer":"...","mark_scheme":"...","outline":"..."}]} '
+        f"with exactly {n} items."
+    )
 DSE_MARK_INSTRUCTION = (
     "You are an HKDSE marker. Compare the student's attempt to the hidden mark "
     "scheme. Reply with JSON only, no markdown fences, with keys: "
@@ -178,6 +204,20 @@ NO_DSE_DOCUMENTS_MIXED = (
 )
 
 _JSON_FENCE = re.compile(r"^```(?:json)?\s*|\s*```$", re.IGNORECASE)
+
+
+def resolve_question_count(value: object) -> int:
+    if value is None or value == "":
+        return DEFAULT_QUESTION_COUNT
+    try:
+        count = int(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError) as exc:
+        raise ChatError(
+            400, f"count must be an integer from 1 to {MAX_QUESTION_COUNT}."
+        ) from exc
+    if count < 1 or count > MAX_QUESTION_COUNT:
+        raise ChatError(400, f"count must be an integer from 1 to {MAX_QUESTION_COUNT}.")
+    return count
 
 
 def resolve_dse_mode(value: str | None) -> str:
@@ -274,13 +314,13 @@ def _language_instructions(target_language: str) -> list[str]:
     return [TRANSLATION_ENGLISH, "Write the explanation in English."]
 
 
-def _mode_instruction(mode: str) -> str:
+def _mode_instruction(mode: str, question_count: int = DEFAULT_QUESTION_COUNT) -> str:
     if mode == MODE_GUIDED_NO_ANSWER:
         return DSE_GUIDED_NO_ANSWER_INSTRUCTION
     if mode == MODE_GUIDED_WITH_ANSWER:
         return DSE_GUIDED_WITH_ANSWER_INSTRUCTION
     if mode == MODE_CREATE_AND_MARK:
-        return DSE_CREATE_QUESTION_INSTRUCTION
+        return create_question_instruction(question_count)
     if mode == MODE_PRACTICE:
         return DSE_PRACTICE_INSTRUCTION
     return DSE_EXPLAIN_INSTRUCTION
@@ -299,13 +339,14 @@ def dse_system_prompt(
     question: str | None = None,
     has_extracts: bool = False,
     reveal_mark_scheme: str | None = None,
+    question_count: int = DEFAULT_QUESTION_COUNT,
 ) -> str:
     if mode == MODE_GUIDED_NO_ANSWER:
         parts = [DSE_TUTOR_IDENTITY]
     else:
         parts = [DSE_TUTOR_BASE]
     parts.extend(_language_instructions(target_language))
-    parts.append(_mode_instruction(mode))
+    parts.append(_mode_instruction(mode, question_count))
     if level:
         parts.append(f"School level: {level} (Hong Kong secondary).")
     if module:
@@ -363,6 +404,7 @@ def build_dse_context(
     history: list[dict[str, str]] | None = None,
     question: str | None = None,
     reveal_mark_scheme: str | None = None,
+    question_count: int = DEFAULT_QUESTION_COUNT,
 ) -> tuple[list[dict[str, str]], list[dict[str, str]]]:
     extracts = load_extracts(data_dir, collection=COLLECTION_DSE_MATH)
     system = dse_system_prompt(
@@ -377,6 +419,7 @@ def build_dse_context(
         question=question,
         has_extracts=bool(extracts),
         reveal_mark_scheme=reveal_mark_scheme,
+        question_count=question_count,
     )
     sources: list[dict[str, str]] = []
     if extracts:
@@ -473,11 +516,10 @@ def extract_json_object(text: str) -> dict[str, Any] | None:
     return None
 
 
-def parse_generated_question(text: str) -> dict[str, str]:
-    parsed = extract_json_object(text) or {}
+def _question_from_mapping(parsed: dict[str, Any], fallback: str = "") -> dict[str, str]:
     question = str(parsed.get("question") or "").strip()
     if not question:
-        question = (text or "").strip()
+        question = (fallback or "").strip()
     expected = str(
         parsed.get("expected_answer") or parsed.get("official_answer") or parsed.get("answer") or ""
     ).strip()
@@ -487,6 +529,32 @@ def parse_generated_question(text: str) -> dict[str, str]:
         "mark_scheme": str(parsed.get("mark_scheme") or "").strip(),
         "outline": str(parsed.get("outline") or "").strip(),
     }
+
+
+def parse_generated_question(text: str) -> dict[str, str]:
+    parsed = extract_json_object(text) or {}
+    items = parsed.get("questions")
+    if isinstance(items, list) and items and isinstance(items[0], dict):
+        return _question_from_mapping(items[0], text)
+    return _question_from_mapping(parsed, text)
+
+
+def parse_generated_questions(text: str, count: int = DEFAULT_QUESTION_COUNT) -> list[dict[str, str]]:
+    wanted = resolve_question_count(count)
+    parsed = extract_json_object(text) or {}
+    raw_items = parsed.get("questions")
+    rows: list[dict[str, str]] = []
+    if isinstance(raw_items, list):
+        for item in raw_items[:wanted]:
+            if isinstance(item, dict):
+                row = _question_from_mapping(item)
+                if row["question"]:
+                    rows.append(row)
+    if not rows:
+        single = parse_generated_question(text)
+        if single["question"]:
+            rows.append(single)
+    return rows[:wanted]
 
 
 def parse_mark_verdict(text: str) -> tuple[str, str]:

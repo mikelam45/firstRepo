@@ -353,6 +353,53 @@ pre.chat-reply,
   padding-top: 8px;
   border-top: 1px solid var(--line);
 }
+.dse-options {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+@media (min-width: 800px) {
+  .dse-options { grid-template-columns: 1fr 1fr 1fr; }
+}
+.dse-options .option {
+  margin: 0;
+  height: 100%;
+}
+.dse-options .option .detail {
+  display: none;
+  margin-top: 4px;
+}
+.dse-options .option:has(input:checked) .detail {
+  display: block;
+}
+#dse-solve-workspace,
+#dse-create-workspace,
+#dse-explain-workspace {
+  margin-top: 8px;
+}
+.dse-question-list {
+  margin: 10px 0 0;
+  padding-left: 1.2rem;
+}
+.dse-question-list li {
+  margin: 0 0 8px;
+}
+.dse-question-pick {
+  display: block;
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--card);
+  cursor: pointer;
+}
+.dse-question-pick[aria-current="true"] {
+  border-color: var(--green);
+  box-shadow: 0 0 0 1px var(--green);
+}
 .dse-fail-choices {
   margin: 10px 0 0;
   padding: 10px 12px;

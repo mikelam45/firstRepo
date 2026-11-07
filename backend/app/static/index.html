@@ -56,7 +56,7 @@
 
     <section class="chat" id="chat-panel" aria-labelledby="chat-title">
       <h2 id="chat-title">Chat</h2>
-      <p class="meta">
+      <p class="meta" id="chat-lede">
         Uses the saved text model. Image and video functions are not sent as chat completions.
       </p>
       <fieldset class="grounding" id="grounding-control" aria-labelledby="grounding-title">
@@ -94,7 +94,25 @@
       </fieldset>
       <fieldset class="dse" id="dse-controls" hidden>
         <legend>DSE Math assistant</legend>
-        <div class="language-row">
+        <fieldset class="grounding dse-options" id="dse-mode-control" aria-labelledby="dse-mode-title">
+          <legend id="dse-mode-title">What do you want to do?</legend>
+          <label class="option">
+            <input type="radio" name="dse-option" id="dse-option-solve" value="solve" checked>
+            <span class="option-title">1. Solve a question</span>
+            <span class="detail">Paste or photo a question, then choose hints by steps or the answer immediately.</span>
+          </label>
+          <label class="option">
+            <input type="radio" name="dse-option" id="dse-option-create" value="create">
+            <span class="option-title">2. Create and mark questions</span>
+            <span class="detail">Generate up to 20 questions, pick difficulty, then check typed or photo attempts.</span>
+          </label>
+          <label class="option">
+            <input type="radio" name="dse-option" id="dse-option-explain" value="explain">
+            <span class="option-title">3. Explain</span>
+            <span class="detail">Chat about a concept, grounded on uploaded syllabus and notes.</span>
+          </label>
+        </fieldset>
+        <div class="language-row" id="dse-language-row">
           <label class="field">Explanation language
             <select id="dse-language">
               <option value="en" selected>English</option>
@@ -102,7 +120,8 @@
               <option value="zh_hk">Traditional Chinese (繁體)</option>
             </select>
           </label>
-          <label class="field">Module
+          <label class="field" id="dse-module-field">
+            Module
             <select id="dse-module">
               <option value="" selected>Any module</option>
               <option value="compulsory">Compulsory Mathematics</option>
@@ -111,85 +130,91 @@
             </select>
           </label>
         </div>
-        <fieldset class="grounding" id="dse-mode-control" aria-labelledby="dse-mode-title">
-          <legend id="dse-mode-title">Mode</legend>
+        <div id="dse-solve-workspace">
+        <fieldset class="grounding" id="dse-solve-style" aria-labelledby="dse-solve-style-title">
+          <legend id="dse-solve-style-title">How should I reply?</legend>
           <label class="option">
-            <input type="radio" name="dse-mode" id="dse-mode-guided_no_answer" value="guided_no_answer">
-            <span class="option-title">Guided solve (no final answer yet)</span>
+            <input type="radio" name="dse-solve-style" id="dse-mode-guided_no_answer" value="hints" checked>
+            <span class="option-title">Hints by steps</span>
             <span class="detail">One hint or one step at a time. The boxed answer stays hidden until you ask.</span>
           </label>
           <label class="option">
-            <input type="radio" name="dse-mode" id="dse-mode-guided_with_answer" value="guided_with_answer">
-            <span class="option-title">Guided solve with answer</span>
+            <input type="radio" name="dse-solve-style" id="dse-mode-guided_with_answer" value="answer">
+            <span class="option-title">Immediate answer</span>
             <span class="detail">Full working plus the final answer immediately.</span>
           </label>
-          <label class="option">
-            <input type="radio" name="dse-mode" id="dse-mode-create_and_mark" value="create_and_mark">
-            <span class="option-title">Generate + mark attempt</span>
-            <span class="detail">Create a question at S1–S6, then check a typed or photo attempt.</span>
-          </label>
-          <label class="option">
-            <input type="radio" name="dse-mode" id="dse-mode-practice" value="practice" checked>
-            <span class="option-title">Practice</span>
-            <span class="detail">Generate or grade a question with steps and a mark scheme.</span>
-          </label>
-          <label class="option">
-            <input type="radio" name="dse-mode" id="dse-mode-explain" value="explain">
-            <span class="option-title">Explain</span>
-            <span class="detail">Chat grounded on uploaded syllabus and notes.</span>
-          </label>
         </fieldset>
-        <div class="language-row">
-          <label class="field">Level
-            <select id="dse-level">
-              <option value="" selected>Any level</option>
-              <option value="S1">S1</option>
-              <option value="S2">S2</option>
-              <option value="S3">S3</option>
-              <option value="S4">S4</option>
-              <option value="S5">S5</option>
-              <option value="S6">S6</option>
-            </select>
-          </label>
-          <label class="field">Topic
-            <select id="dse-topic">
-              <option value="" selected>Any topic</option>
-              <option value="number_algebra">Number &amp; Algebra</option>
-              <option value="measures_shape_space">Measures, Shape &amp; Space</option>
-              <option value="data_handling">Data Handling</option>
-              <option value="numbers">Numbers</option>
-              <option value="algebra">Algebra</option>
-              <option value="geometry">Geometry</option>
-              <option value="mensuration">Mensuration</option>
-              <option value="data">Data</option>
-              <option value="trig">Trigonometry</option>
-              <option value="functions">Functions</option>
-              <option value="calculus">Calculus (S5–S6)</option>
-            </select>
-          </label>
         </div>
-        <div class="language-row">
-          <label class="field">Difficulty
-            <select id="dse-difficulty">
-              <option value="" selected>Any difficulty</option>
-              <option value="easy">Easy</option>
-              <option value="mid">Mid</option>
-              <option value="hard">Hard</option>
-              <option value="dse_1">DSE 1</option>
-              <option value="dse_2">DSE 2</option>
-              <option value="dse_3">DSE 3</option>
-              <option value="dse_4">DSE 4</option>
-              <option value="dse_5star">DSE 5*</option>
-            </select>
-          </label>
-          <label class="field">Paper
-            <select id="dse-paper">
-              <option value="" selected>Any paper</option>
-              <option value="paper_1">Paper 1</option>
-              <option value="paper_2">Paper 2</option>
-            </select>
-          </label>
+        <div id="dse-create-workspace" hidden>
+        <div id="dse-create-filters">
+          <div class="language-row">
+            <label class="field">Level
+              <select id="dse-level">
+                <option value="" selected>Any level</option>
+                <option value="S1">S1</option>
+                <option value="S2">S2</option>
+                <option value="S3">S3</option>
+                <option value="S4">S4</option>
+                <option value="S5">S5</option>
+                <option value="S6">S6</option>
+              </select>
+            </label>
+            <label class="field">Topic
+              <select id="dse-topic">
+                <option value="" selected>Any topic</option>
+                <option value="number_algebra">Number &amp; Algebra</option>
+                <option value="measures_shape_space">Measures, Shape &amp; Space</option>
+                <option value="data_handling">Data Handling</option>
+                <option value="numbers">Numbers</option>
+                <option value="algebra">Algebra</option>
+                <option value="geometry">Geometry</option>
+                <option value="mensuration">Mensuration</option>
+                <option value="data">Data</option>
+                <option value="trig">Trigonometry</option>
+                <option value="functions">Functions</option>
+                <option value="calculus">Calculus (S5–S6)</option>
+              </select>
+            </label>
+          </div>
+          <div class="language-row">
+            <label class="field">Difficulty
+              <select id="dse-difficulty">
+                <option value="" selected>Any difficulty</option>
+                <option value="easy">Easy</option>
+                <option value="mid">Mid</option>
+                <option value="hard">Hard</option>
+                <option value="dse_1">DSE 1</option>
+                <option value="dse_2">DSE 2</option>
+                <option value="dse_3">DSE 3</option>
+                <option value="dse_4">DSE 4</option>
+                <option value="dse_5star">DSE 5*</option>
+              </select>
+            </label>
+            <label class="field">Paper
+              <select id="dse-paper">
+                <option value="" selected>Any paper</option>
+                <option value="paper_1">Paper 1</option>
+                <option value="paper_2">Paper 2</option>
+              </select>
+            </label>
+          </div>
+          <div class="language-row">
+            <label class="field">How many questions
+              <input id="dse-question-count" type="number" min="1" max="20" value="1" step="1">
+            </label>
+          </div>
         </div>
+        <div class="dse-create" id="dse-create-panel">
+          <p class="meta" id="dse-create-hint">Choose a level, difficulty if you want, and how many questions (up to 20). The mark scheme stays hidden until you pass or ask for the solution.</p>
+          <div class="savebar">
+            <button type="button" id="dse-create-question">Create questions</button>
+          </div>
+          <ol class="dse-question-list" id="dse-question-list" hidden></ol>
+        </div>
+        </div>
+        <p class="meta" id="dse-explain-workspace" hidden>
+          Ask about a concept. Answers use uploaded syllabus and notes when they are present.
+        </p>
         <div class="dse-ocr" id="dse-ocr-controls">
           <p class="meta" id="dse-ocr-hint">
             Photo of a printed question. Jpeg, png, webp, or heic. Maximum 10 MB.
@@ -207,14 +232,8 @@
             <span id="dse-ocr-state" role="status"></span>
           </div>
         </div>
-        <div class="dse-create" id="dse-create-panel" hidden>
-          <p class="meta">Create one question at the selected level and topic. The mark scheme stays hidden until you pass or ask for the solution.</p>
-          <div class="savebar">
-            <button type="button" id="dse-create-question">Create question</button>
-          </div>
-        </div>
       </fieldset>
-      <label class="field">Message
+      <label class="field" id="chat-message-field">Message
         <textarea id="chat-message" rows="4" placeholder="Ask a question"></textarea>
       </label>
       <div class="savebar">
@@ -799,10 +818,16 @@
     const TARGET_LANGUAGE_KEY = "translation-target-language";
     const DSE_LANGUAGE_KEY = "dse-math-language";
     const DSE_MODE_KEY = "dse-math-mode";
+    const DSE_OPTION_KEY = "dse-math-option";
+    const DSE_SOLVE_STYLE_KEY = "dse-math-solve-style";
+    const DSE_OPTIONS = ["solve", "create", "explain"];
+    const DSE_SOLVE_STYLES = ["hints", "answer"];
     const DSE_MODES = ["practice", "explain", "guided_no_answer", "guided_with_answer", "create_and_mark"];
     const DEFAULT_TRANSLATION_MESSAGE = "Translate the uploaded documents.";
     const DEFAULT_DSE_PRACTICE_MESSAGE = "Generate a HKDSE Mathematics practice question.";
-    const dseState = { sessionId: null, questionId: null, question: "", stepCount: 0, awaitingRetry: false };
+    const dseState = {
+      sessionId: null, questionId: null, question: "", stepCount: 0, awaitingRetry: false, questions: [],
+    };
     const RAG_ACCEPT = ".pdf,.docx,.doc,.txt,.md,.xlsx,.xls,.csv,.json";
     const TRANSLATION_ACCEPT = ".pdf,.docx,.doc,.pptx,.ppt,.xlsx,.xls,.txt,.md";
     const RAG_HINT = "Accepted: .pdf, .docx, .doc, .txt, .md, .xlsx, .xls, .csv, .json. Maximum 10 MB. .doc and .xls are stored, but text extraction needs a converted copy. Chat for RAG uses the extracted text as context.";
@@ -894,12 +919,30 @@
       if (select) select.value = loadStoredDseLanguage();
     }
 
-    function loadStoredDseMode() {
+    function optionFromLegacyMode(mode) {
+      if (mode === "explain") return "explain";
+      if (mode === "guided_no_answer" || mode === "guided_with_answer") return "solve";
+      if (mode === "create_and_mark" || mode === "practice") return "create";
+      return "";
+    }
+
+    function loadStoredDseOption() {
       try {
-        const value = localStorage.getItem(DSE_MODE_KEY);
-        if (DSE_MODES.indexOf(value) !== -1) return value;
+        const option = localStorage.getItem(DSE_OPTION_KEY);
+        if (DSE_OPTIONS.indexOf(option) !== -1) return option;
+        const legacy = optionFromLegacyMode(localStorage.getItem(DSE_MODE_KEY));
+        if (legacy) return legacy;
       } catch (error) {}
-      return "practice";
+      return "solve";
+    }
+
+    function loadStoredDseSolveStyle() {
+      try {
+        const style = localStorage.getItem(DSE_SOLVE_STYLE_KEY);
+        if (DSE_SOLVE_STYLES.indexOf(style) !== -1) return style;
+        if (localStorage.getItem(DSE_MODE_KEY) === "guided_with_answer") return "answer";
+      } catch (error) {}
+      return "hints";
     }
 
     function persistDseMode(value) {
@@ -908,16 +951,45 @@
       } catch (error) {}
     }
 
+    function persistDseOption(value) {
+      try {
+        localStorage.setItem(DSE_OPTION_KEY, value);
+      } catch (error) {}
+    }
+
+    function persistDseSolveStyle(value) {
+      try {
+        localStorage.setItem(DSE_SOLVE_STYLE_KEY, value);
+      } catch (error) {}
+    }
+
+    function selectedDseOption() {
+      const checked = document.querySelector('#dse-mode-control input[name="dse-option"]:checked');
+      const value = checked ? checked.value : "solve";
+      return DSE_OPTIONS.indexOf(value) !== -1 ? value : "solve";
+    }
+
+    function selectedDseSolveStyle() {
+      const checked = document.querySelector('#dse-solve-style input[name="dse-solve-style"]:checked');
+      const value = checked ? checked.value : "hints";
+      return DSE_SOLVE_STYLES.indexOf(value) !== -1 ? value : "hints";
+    }
+
     function selectedDseMode() {
-      const checked = document.querySelector('#dse-mode-control input[name="dse-mode"]:checked');
-      const value = checked ? checked.value : "practice";
-      return DSE_MODES.indexOf(value) !== -1 ? value : "practice";
+      const option = selectedDseOption();
+      if (option === "explain") return "explain";
+      if (option === "create") return "create_and_mark";
+      return selectedDseSolveStyle() === "answer" ? "guided_with_answer" : "guided_no_answer";
     }
 
     function applyStoredDseMode() {
-      const value = loadStoredDseMode();
-      document.querySelectorAll('#dse-mode-control input[name="dse-mode"]').forEach((input) => {
-        input.checked = input.value === value;
+      const option = loadStoredDseOption();
+      document.querySelectorAll('#dse-mode-control input[name="dse-option"]').forEach((input) => {
+        input.checked = input.value === option;
+      });
+      const style = loadStoredDseSolveStyle();
+      document.querySelectorAll('#dse-solve-style input[name="dse-solve-style"]').forEach((input) => {
+        input.checked = input.value === style;
       });
     }
 
@@ -931,9 +1003,24 @@
 
     function rememberDseSession(payload) {
       if (!payload) return;
-      if (payload.session_id) dseState.sessionId = payload.session_id;
-      if (payload.question_id) dseState.questionId = payload.question_id;
-      if (payload.question) dseState.question = payload.question;
+      if (Array.isArray(payload.questions) && payload.questions.length) {
+        dseState.questions = payload.questions;
+        const first = payload.questions[0] || {};
+        dseState.sessionId = first.session_id || payload.session_id || null;
+        dseState.questionId = first.question_id || payload.question_id || null;
+        dseState.question = first.question || payload.question || "";
+      } else {
+        if (payload.session_id) dseState.sessionId = payload.session_id;
+        if (payload.question_id) dseState.questionId = payload.question_id;
+        if (payload.question) dseState.question = payload.question;
+        if (payload.session_id && payload.question) {
+          dseState.questions = [{
+            session_id: payload.session_id,
+            question_id: payload.question_id || payload.session_id,
+            question: payload.question,
+          }];
+        }
+      }
       if (typeof payload.step_count === "number") dseState.stepCount = payload.step_count;
     }
 
@@ -942,11 +1029,84 @@
       if (box) box.hidden = !visible;
     }
 
+    function selectedDseQuestionCount() {
+      const raw = Number(selectedDseSelect("dse-question-count") || "1");
+      if (!Number.isFinite(raw) || raw < 1) return 1;
+      return Math.min(20, Math.floor(raw));
+    }
+
+    function renderDseQuestionList() {
+      const list = document.getElementById("dse-question-list");
+      if (!list) return;
+      const rows = dseState.questions || [];
+      list.replaceChildren();
+      if (rows.length < 1) {
+        list.hidden = true;
+        return;
+      }
+      list.hidden = false;
+      rows.forEach((row, index) => {
+        const item = document.createElement("li");
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "dse-question-pick";
+        if (row.session_id === dseState.sessionId) button.setAttribute("aria-current", "true");
+        button.textContent = (index + 1) + ". " + String(row.question || "Question").slice(0, 160);
+        button.addEventListener("click", () => {
+          dseState.sessionId = row.session_id;
+          dseState.questionId = row.question_id || row.session_id;
+          dseState.question = row.question || "";
+          renderDseQuestionList();
+          const status = document.getElementById("chat-state");
+          status.className = "";
+          status.textContent = "Selected question " + (index + 1) + ". Type or photo-upload an attempt, then Check.";
+        });
+        item.appendChild(button);
+        list.appendChild(item);
+      });
+    }
+
+    function syncChatChrome() {
+      const title = document.getElementById("chat-title");
+      const lede = document.getElementById("chat-lede");
+      const DEFAULT_LEDE = "Uses the saved text model. Image and video functions are not sent as chat completions.";
+      if (!title || !lede) return;
+      if (state.functionId === "dse_math") {
+        const option = selectedDseOption();
+        if (option === "solve") {
+          title.textContent = "1. Solve a question";
+          lede.textContent = "Paste or photo a question, then choose hints by steps or the answer immediately.";
+        } else if (option === "create") {
+          title.textContent = "2. Create and mark questions";
+          lede.textContent = "Generate up to 20 questions, pick difficulty, then check typed or photo attempts.";
+        } else {
+          title.textContent = "3. Explain";
+          lede.textContent = "Chat about a concept, grounded on uploaded syllabus and notes.";
+        }
+        return;
+      }
+      if (state.functionId === "translation") {
+        title.textContent = "Translation";
+        lede.textContent = DEFAULT_LEDE;
+        return;
+      }
+      title.textContent = "Chat";
+      lede.textContent = DEFAULT_LEDE;
+    }
+
     function syncDseModeUi() {
+      const option = selectedDseOption();
       const mode = selectedDseMode();
-      const create = mode === "create_and_mark";
+      const create = option === "create";
+      const solve = option === "solve";
+      const explain = option === "explain";
       const guidedNo = mode === "guided_no_answer";
-      const createPanel = document.getElementById("dse-create-panel");
+      const hasQuestions = create && (dseState.questions || []).length > 0;
+      const solveWorkspace = document.getElementById("dse-solve-workspace");
+      const createWorkspace = document.getElementById("dse-create-workspace");
+      const explainWorkspace = document.getElementById("dse-explain-workspace");
+      const moduleField = document.getElementById("dse-module-field");
+      const ocr = document.getElementById("dse-ocr-controls");
       const check = document.getElementById("dse-check");
       const nextHint = document.getElementById("dse-next-hint");
       const showAnswer = document.getElementById("dse-show-answer");
@@ -955,9 +1115,17 @@
       const ocrRead = document.getElementById("dse-ocr-read");
       const ocrHint = document.getElementById("dse-ocr-hint");
       const ocrThumb = document.getElementById("dse-ocr-thumb");
-      if (createPanel) createPanel.hidden = !create;
-      if (check) check.hidden = !create;
+      const messageField = document.getElementById("chat-message-field");
+      const grounding = document.getElementById("grounding-control");
+      const upload = document.getElementById("rag-upload");
+      if (solveWorkspace) solveWorkspace.hidden = !solve;
+      if (createWorkspace) createWorkspace.hidden = !create;
+      if (explainWorkspace) explainWorkspace.hidden = !explain;
+      if (moduleField) moduleField.hidden = solve;
+      if (ocr) ocr.hidden = !(solve || hasQuestions);
+      if (check) check.hidden = !hasQuestions;
       if (send) send.hidden = create;
+      if (messageField) messageField.hidden = create && !hasQuestions;
       if (nextHint) nextHint.hidden = !(guidedNo && dseState.sessionId);
       if (showAnswer) showAnswer.hidden = !(guidedNo && dseState.stepCount >= 1);
       if (ocrLabel) ocrLabel.textContent = create ? "Answer photo" : "Question photo";
@@ -968,11 +1136,22 @@
           : "Photo of a printed question. Jpeg, png, webp, or heic. Maximum 10 MB. This is not a syllabus upload.";
       }
       if (ocrThumb) ocrThumb.alt = create ? "Answer photo preview" : "Question photo preview";
-      if (!create) setDseFailChoices(false);
+      if (!create) {
+        setDseFailChoices(false);
+      } else {
+        renderDseQuestionList();
+      }
+      if (state.functionId === "dse_math") {
+        if (upload) upload.hidden = solve;
+        if (grounding) grounding.hidden = solve;
+      }
       const messageBox = document.getElementById("chat-message");
       if (messageBox && state.functionId === "dse_math") {
-        messageBox.placeholder = dsePlaceholder(mode);
+        messageBox.placeholder = hasQuestions
+          ? "Type your attempt for the selected question"
+          : dsePlaceholder(mode);
       }
+      syncChatChrome();
     }
 
     function selectedDseSelect(id) {
@@ -1061,8 +1240,10 @@
       }
       const text = isTextFunction(functionId);
       const isImage = functionId === "image_gen";
-      const showUpload = functionId === "rag_qa" || functionId === "translation" || functionId === "dse_math";
-      const showGrounding = functionId === "rag_qa" || functionId === "dse_math";
+      const showUpload = functionId === "rag_qa" || functionId === "translation"
+        || (functionId === "dse_math" && selectedDseOption() !== "solve");
+      const showGrounding = functionId === "rag_qa"
+        || (functionId === "dse_math" && selectedDseOption() !== "solve");
       document.getElementById("rag-upload").hidden = !showUpload;
       document.getElementById("grounding-control").hidden = !showGrounding;
       document.getElementById("translation-languages").hidden = functionId !== "translation";
@@ -1073,7 +1254,9 @@
       document.getElementById("chat-send").textContent = functionId === "translation" ? "Translate" : "Send";
       if (functionId !== "dse_math") {
         document.getElementById("chat-send").hidden = false;
-        ["dse-check", "dse-next-hint", "dse-show-answer", "dse-fail-choices", "dse-create-panel"].forEach((id) => {
+        const messageField = document.getElementById("chat-message-field");
+        if (messageField) messageField.hidden = false;
+        ["dse-check", "dse-next-hint", "dse-show-answer", "dse-fail-choices"].forEach((id) => {
           const node = document.getElementById(id);
           if (node) node.hidden = true;
         });
@@ -1131,6 +1314,7 @@
           status.textContent = "Could not list generated images.";
         });
       }
+      syncChatChrome();
     }
 
     function renderFiles() {
@@ -1395,13 +1579,29 @@
       persistDseLanguage(selectedDseLanguage());
     });
 
-    document.querySelectorAll('#dse-mode-control input[name="dse-mode"]').forEach((input) => {
+    document.querySelectorAll('#dse-mode-control input[name="dse-option"]').forEach((input) => {
       input.addEventListener("change", () => {
+        persistDseOption(selectedDseOption());
         persistDseMode(selectedDseMode());
         setDseFailChoices(false);
         syncDseModeUi();
       });
     });
+    document.querySelectorAll('#dse-solve-style input[name="dse-solve-style"]').forEach((input) => {
+      input.addEventListener("change", () => {
+        persistDseSolveStyle(selectedDseSolveStyle());
+        persistDseMode(selectedDseMode());
+        syncDseModeUi();
+      });
+    });
+    const dseCountInput = document.getElementById("dse-question-count");
+    if (dseCountInput) {
+      const clampDseCount = () => {
+        dseCountInput.value = String(selectedDseQuestionCount());
+      };
+      dseCountInput.addEventListener("change", clampDseCount);
+      dseCountInput.addEventListener("blur", clampDseCount);
+    }
 
     let dseOcrPreviewUrl = null;
 
@@ -1490,8 +1690,6 @@
       if (!message) {
         if (state.functionId === "translation" && state.files.length) {
           message = DEFAULT_TRANSLATION_MESSAGE;
-        } else if (state.functionId === "dse_math" && selectedDseMode() === "practice") {
-          message = DEFAULT_DSE_PRACTICE_MESSAGE;
         } else if (state.functionId === "dse_math" && selectedDseMode() === "guided_no_answer" && dseState.sessionId) {
           message = "Next hint";
         } else if (state.functionId === "dse_math" && selectedDseMode() === "guided_with_answer" && dseState.sessionId) {
@@ -1535,6 +1733,8 @@
         if (dseState.sessionId) body.session_id = dseState.sessionId;
         persistDseLanguage(body.target_language);
         persistDseMode(body.mode);
+        persistDseOption(selectedDseOption());
+        persistDseSolveStyle(selectedDseSolveStyle());
         persistGrounding(selectedGrounding());
       }
       if (state.functionId === "translation") {
@@ -1595,10 +1795,20 @@
     });
 
     function setDseModeValue(mode) {
-      document.querySelectorAll('#dse-mode-control input[name="dse-mode"]').forEach((input) => {
-        input.checked = input.value === mode;
+      let option = "solve";
+      let style = "hints";
+      if (mode === "explain") option = "explain";
+      else if (mode === "create_and_mark" || mode === "practice") option = "create";
+      else if (mode === "guided_with_answer") style = "answer";
+      document.querySelectorAll('#dse-mode-control input[name="dse-option"]').forEach((input) => {
+        input.checked = input.value === option;
+      });
+      document.querySelectorAll('#dse-solve-style input[name="dse-solve-style"]').forEach((input) => {
+        input.checked = input.value === style;
       });
       persistDseMode(mode);
+      persistDseOption(option);
+      persistDseSolveStyle(style);
       syncDseModeUi();
     }
 
@@ -1645,9 +1855,9 @@
       }
       button.disabled = true;
       status.className = "";
-      status.textContent = "Creating question…";
+      status.textContent = selectedDseQuestionCount() > 1 ? "Creating questions…" : "Creating question…";
       setDseFailChoices(false);
-      const body = Object.assign(dseCommonBody(), { level: level });
+      const body = Object.assign(dseCommonBody(), { level: level, count: selectedDseQuestionCount() });
       try {
         const response = await fetch("/api/dse/question", {
           method: "POST",
@@ -1664,11 +1874,20 @@
         rememberDseSession(payload);
         dseState.stepCount = 0;
         renderDseModelLine(payload);
-        appendChatMessage("assistant", payload.question || payload.reply, payload.sources, payload.grounding);
+        const created = Array.isArray(payload.questions) && payload.questions.length
+          ? payload.questions
+          : [{ question: payload.question || payload.reply }];
+        created.forEach((row, index) => {
+          const label = created.length > 1 ? ("Question " + (index + 1) + "\n") : "";
+          appendChatMessage("assistant", label + (row.question || ""), index === 0 ? payload.sources : [], payload.grounding);
+        });
         document.getElementById("chat-message").value = "";
         syncDseModeUi();
         status.className = "";
-        status.textContent = "Question ready. Type or photo-upload an attempt, then Check.";
+        const n = created.length;
+        status.textContent = n === 1
+          ? "Question ready. Type or photo-upload an attempt, then Check."
+          : n + " questions ready. Pick one below, then type or photo-upload an attempt and Check.";
       } catch (error) {
         status.className = "error";
         status.textContent = "Create failed.";
