@@ -40,6 +40,10 @@ from .dse import (
     build_dse_context,
     build_mark_context,
     create_question_user_message,
+    ensure_explain_figures,
+    ensure_solve_figures,
+    explain_figures_for_topics,
+    session_has_figure,
     explain_topics_catalog,
     explain_user_message,
     is_next_hint_message,
@@ -566,6 +570,13 @@ def post_chat(
                 question_text = str((dse_session or {}).get("question") or "")
                 if not question_text and not is_next_hint_message(message):
                     question_text = message
+                reply_text = ensure_solve_figures(
+                    reply_text,
+                    topic=dse_topic,
+                    question=question_text or message,
+                    already_has_figure=session_has_figure(dse_session),
+                )
+                result["reply"] = reply_text
                 guided = record_guided_turn(
                     settings.data_dir,
                     session=dse_session,
@@ -581,6 +592,15 @@ def post_chat(
                 result["question_id"] = guided.get("question_id") or guided["id"]
                 result["step_count"] = guided.get("step_count") or 0
                 result = scrub_hidden_fields(result, include_answer=False)
+            elif dse_mode == MODE_EXPLAIN:
+                result["reply"] = ensure_explain_figures(reply_text, dse_topics or [])
+                result["figures"] = explain_figures_for_topics(dse_topics or [])
+            else:
+                result["reply"] = ensure_solve_figures(
+                    reply_text,
+                    topic=dse_topic,
+                    question=message,
+                )
             if dse_level:
                 result["level"] = dse_level
             if dse_topic:
