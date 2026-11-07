@@ -11,8 +11,10 @@ from app.images import (
     OPENROUTER_IMAGE_TIMEOUT_SECONDS,
     OPENROUTER_IMAGES_TIMEOUT_SECONDS,
     OPENROUTER_IMAGES_URL,
+    BATCH_CONSISTENCY_SEED,
     ImageError,
     assemble_prompt,
+    consistency_lock_text,
     pixels_for,
     resolve_output_resolution,
     resolve_variance,
@@ -1330,3 +1332,62 @@ def test_page_has_one_or_two_person_controls(tmp_path, monkeypatch):
     assert 'id="image-nationality-2"' in html
     assert 'id="image-people-relation"' in html
     assert "person_count" in html
+    assert 'id="image-consistency"' in html
+    assert 'id="image-maintain-background"' in html
+    assert 'id="image-maintain-dressing"' in html
+    assert 'id="image-maintain-face"' in html
+    assert "Maintain 100% across photos" in html
+
+
+def test_consistency_lock_text_and_generate_maintain_flags(tmp_path, monkeypatch):
+    mild = consistency_lock_text({})
+    assert "Keep the same person" in mild
+    assert "Maintain the face at 100%" not in mild
+    locked = consistency_lock_text(
+        {
+            "maintain_face": True,
+            "maintain_dressing": True,
+            "maintain_background": True,
+        }
+    )
+    assert "Maintain the face at 100%" in locked
+    assert "Maintain dressing at 100%" in locked
+    assert "Maintain the background at 100%" in locked
+    two = consistency_lock_text({"person_count": 2, "maintain_face": True})
+    assert "Maintain both faces at 100%" in two
+
+    _install_key(tmp_path, monkeypatch)
+    seen = _mock_images(monkeypatch)
+    client = _client(monkeypatch, tmp_path)
+    response = client.post(
+        "/api/images/generate",
+        json={
+            "prompt": "a portrait of a tea master",
+            "n": 3,
+            "facial_variance": "strong",
+            "motion_variance": "medium",
+            "maintain_face": True,
+            "maintain_dressing": True,
+            "maintain_background": True,
+            "width": 1024,
+            "height": 1024,
+        },
+    )
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["maintain_face"] is True
+    assert payload["maintain_dressing"] is True
+    assert payload["maintain_background"] is True
+    assert payload["facial_variance"] == "off"
+    assert payload["motion_variance"] == "medium"
+    seeds = {row.get("seed") for row in seen["payloads"]}
+    assert seeds == {BATCH_CONSISTENCY_SEED}
+    for outbound in seen["payloads"]:
+        prompt = outbound["prompt"]
+        assert "Maintain the face at 100%" in prompt
+        assert "Maintain dressing at 100%" in prompt
+        assert "Maintain the background at 100%" in prompt
+        assert "Facial change: off" in prompt
+        assert "Facial change (strong)" not in prompt
+        assert "Motion change (medium)" in prompt
+    _assert_secret_absent(response.text)

@@ -120,6 +120,25 @@ IDENTITY_LOCK_TWO = (
     "Keep the same two people, identities, facial structure, hair, clothing, props, "
     "and setting as the other photos in this set. Do not swap them or change who they are."
 )
+MAINTAIN_FACE_TEXT = (
+    "Maintain the face at 100% across these photos: the same person, the same "
+    "facial structure, likeness, skin, hair, and expression. Do not change identity "
+    "or restyle the face."
+)
+MAINTAIN_FACE_TEXT_TWO = (
+    "Maintain both faces at 100% across these photos: the same two people, the same "
+    "facial structure, likeness, skin, hair, and expressions. Do not swap them or "
+    "change who they are."
+)
+MAINTAIN_DRESSING_TEXT = (
+    "Maintain dressing at 100%: the same outfit, garments, colors, fabrics, shoes, "
+    "and worn accessories on every photo. Do not change clothes."
+)
+MAINTAIN_BACKGROUND_TEXT = (
+    "Maintain the background at 100%: the same setting, scenery, architecture, "
+    "environment props, and scene lighting. Do not relocate or restyle the background."
+)
+BATCH_CONSISTENCY_SEED = 4242
 MAX_PERSONS = 2
 DEFAULT_TOGETHER = (
     "two distinct people in the same scene, both fully visible, do not merge them"
@@ -592,6 +611,90 @@ def identity_lock_text(mapping: dict[str, Any] | None = None) -> str:
     if count >= 2:
         return IDENTITY_LOCK_TWO
     return IDENTITY_LOCK
+
+
+def _resolve_bool(value: object, default: bool) -> bool:
+    if value is None or value == "":
+        return default
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    text = str(value).strip().lower()
+    if text in {"1", "true", "yes", "on"}:
+        return True
+    if text in {"0", "false", "no", "off"}:
+        return False
+    return default
+
+
+def resolve_maintain_locks(mapping: dict[str, Any] | None = None) -> dict[str, bool]:
+    """100% consistency flags for multi-photo batches. Omitted keys default off."""
+    data = mapping or {}
+    background = data.get("maintain_background")
+    if background in (None, ""):
+        background = data.get("lock_background")
+    dressing = data.get("maintain_dressing")
+    if dressing in (None, ""):
+        dressing = data.get("lock_dressing")
+        if dressing in (None, ""):
+            dressing = data.get("lock_clothing")
+    face = data.get("maintain_face")
+    if face in (None, ""):
+        face = data.get("lock_face")
+    return {
+        "background": _resolve_bool(background, False),
+        "dressing": _resolve_bool(dressing, False),
+        "face": _resolve_bool(face, False),
+    }
+
+
+def consistency_lock_text(mapping: dict[str, Any] | None = None) -> str:
+    data = mapping or {}
+    locks = resolve_maintain_locks(data)
+    try:
+        people = resolve_person_count(data)
+    except ImageError:
+        people = 1
+    parts: list[str] = []
+    if locks["face"]:
+        parts.append(MAINTAIN_FACE_TEXT_TWO if people >= 2 else MAINTAIN_FACE_TEXT)
+    else:
+        parts.append(identity_lock_text(data))
+    if locks["dressing"]:
+        parts.append(MAINTAIN_DRESSING_TEXT)
+    if locks["background"]:
+        parts.append(MAINTAIN_BACKGROUND_TEXT)
+    return " ".join(parts)
+
+
+def apply_maintain_to_variance(
+    variance: VarianceSpec,
+    steps: list[VarianceStep] | None,
+    locks: dict[str, bool],
+) -> tuple[VarianceSpec, list[VarianceStep] | None]:
+    if not locks.get("face"):
+        return variance, steps
+    locked = VarianceSpec(
+        facial_level="off",
+        motion_level=variance.motion_level,
+        facial_notes="",
+        motion_notes=variance.motion_notes,
+        facial_cycle=variance.facial_cycle,
+        motion_cycle=variance.motion_cycle,
+    )
+    locked_steps = None
+    if steps is not None:
+        locked_steps = [
+            VarianceStep(
+                facial_level="off",
+                motion_level=step.motion_level,
+                facial_note="",
+                motion_note=step.motion_note,
+            )
+            for step in steps
+        ]
+    return locked, locked_steps
 
 
 def assemble_prompt(body: dict[str, Any] | None) -> str:
@@ -1269,6 +1372,9 @@ def public_job(job: dict[str, Any]) -> dict[str, Any]:
         "motion_variance": job.get("motion_variance") or DEFAULT_VARIANCE_LEVEL,
         "facial_variance_notes": job.get("facial_variance_notes") or "",
         "motion_variance_notes": job.get("motion_variance_notes") or "",
+        "maintain_background": _resolve_bool(job.get("maintain_background"), False),
+        "maintain_dressing": _resolve_bool(job.get("maintain_dressing"), False),
+        "maintain_face": _resolve_bool(job.get("maintain_face"), False),
         "variance_steps": job.get("variance_steps"),
         "n": int(job.get("n") or len(images) or DEFAULT_IMAGE_COUNT),
         "prices": list(job.get("prices") or []),
@@ -1490,7 +1596,9 @@ def generate_images(
         frames = [""] * count
     variance = resolve_variance(body)
     steps = resolve_variance_steps(body, count, variance)
-    lock_text = identity_lock_text(body)
+    locks = resolve_maintain_locks(body)
+    variance, steps = apply_maintain_to_variance(variance, steps, locks)
+    lock_text = consistency_lock_text(body)
     raw_ids = body.get("reference_ids") or []
     if not isinstance(raw_ids, list):
         raise ImageError(400, "reference_ids must be a list.")
@@ -1539,7 +1647,9 @@ def generate_images(
                 )
             frame_prompt = resolution_prompt(frame_prompt, output_resolution)
             seed = None
-            if count > 1 and spec.facial_level == "off" and spec.motion_level == "off":
+            if count > 1 and (locks["background"] or locks["dressing"] or locks["face"]):
+                seed = BATCH_CONSISTENCY_SEED
+            elif count > 1 and spec.facial_level == "off" and spec.motion_level == "off":
                 seed = 1000 + index
             raw, media_type = _post_openrouter_image(
                 api_key=api_key,
@@ -1612,6 +1722,9 @@ def generate_images(
         "motion_variance": variance.motion_level,
         "facial_variance_notes": variance.facial_notes,
         "motion_variance_notes": variance.motion_notes,
+        "maintain_background": locks["background"],
+        "maintain_dressing": locks["dressing"],
+        "maintain_face": locks["face"],
         "variance_steps": [step.as_public() for step in steps] if steps else None,
         "n": count,
         "prices": meta["prices"],
