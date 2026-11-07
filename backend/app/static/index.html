@@ -212,9 +212,30 @@
           <ol class="dse-question-list" id="dse-question-list" hidden></ol>
         </div>
         </div>
-        <p class="meta" id="dse-explain-workspace" hidden>
-          Ask about a concept. Answers use uploaded syllabus and notes when they are present.
-        </p>
+        <div id="dse-explain-workspace" hidden>
+          <p class="meta">
+            Choose S1–S6, then pick one or more Education Bureau learning units to explain.
+            Junior secondary (S1–S3) shares the Key Stage 3 units; S4–S6 uses the Compulsory Part and Extended Part.
+            Answers use uploaded syllabus and notes when they are present.
+          </p>
+          <p class="meta">
+            Source:
+            <a id="dse-explain-source" href="https://www.edb.gov.hk/en/curriculum-development/kla/ma/curr/index2.html" target="_blank" rel="noopener noreferrer">EDB Mathematics curriculum documents</a>
+          </p>
+          <label class="field">Level
+            <select id="dse-explain-level">
+              <option value="S1" selected>S1</option>
+              <option value="S2">S2</option>
+              <option value="S3">S3</option>
+              <option value="S4">S4</option>
+              <option value="S5">S5</option>
+              <option value="S6">S6</option>
+            </select>
+          </label>
+          <p class="meta" id="dse-explain-level-hint">Junior Secondary (S1–S3) learning units. Schools decide the year; the explanation stays at S1.</p>
+          <div class="dse-explain-topic-scroll" id="dse-explain-topic-scroll" role="group" aria-label="Topics to explain"></div>
+          <p class="meta" id="dse-explain-picked">No topics selected. Pick one or more, then Send.</p>
+        </div>
         <div class="dse-ocr" id="dse-ocr-controls">
           <p class="meta" id="dse-ocr-hint">
             Photo of a printed question. Jpeg, png, webp, or heic. Maximum 10 MB.
@@ -843,6 +864,8 @@
       explain: emptyDseBucket(),
     };
     let dseState = dseBuckets.solve;
+    let dseExplainCurriculum = null;
+    const MAX_EXPLAIN_TOPICS = 8;
     const RAG_ACCEPT = ".pdf,.docx,.doc,.txt,.md,.xlsx,.xls,.csv,.json";
     const TRANSLATION_ACCEPT = ".pdf,.docx,.doc,.pptx,.ppt,.xlsx,.xls,.txt,.md";
     const RAG_HINT = "Accepted: .pdf, .docx, .doc, .txt, .md, .xlsx, .xls, .csv, .json. Maximum 10 MB. .doc and .xls are stored, but text extraction needs a converted copy. Chat for RAG uses the extracted text as context.";
@@ -1013,7 +1036,7 @@
       if (mode === "guided_with_answer") return "Paste a question for a full worked solution";
       if (mode === "create_and_mark") return "Type your attempt after a question is created";
       if (mode === "practice") return "Paste a question to grade, or ask to generate one";
-      return "Ask about a concept or uploaded syllabus notes";
+      return "Pick topics above, or type a follow-up question";
     }
 
     function rememberDseSession(payload) {
@@ -1163,7 +1186,7 @@
           lede.textContent = "Generate up to 20 questions, pick difficulty, then check typed or photo attempts.";
         } else {
           title.textContent = "3. Explain";
-          lede.textContent = "Chat about a concept, grounded on uploaded syllabus and notes.";
+            lede.textContent = "Choose S1–S6, pick EDB learning units, then send to explain them.";
         }
         return;
       }
@@ -1174,6 +1197,137 @@
       }
       title.textContent = "Chat";
       lede.textContent = DEFAULT_LEDE;
+    }
+
+    function selectedExplainLevel() {
+      return selectedDseSelect("dse-explain-level") || "S1";
+    }
+
+    function selectedExplainTopicIds() {
+      return Array.from(document.querySelectorAll('input[name="dse-explain-topic"]:checked'))
+        .map((node) => node.value);
+    }
+
+    function selectedExplainTopicLabels() {
+      return Array.from(document.querySelectorAll('input[name="dse-explain-topic"]:checked')).map((node) => {
+        const title = node.parentElement && node.parentElement.querySelector(".option-title");
+        const level = selectedExplainLevel();
+        const name = title ? title.textContent : node.value;
+        return level + " " + name;
+      });
+    }
+
+    function syncDseExplainPicked() {
+      const boxes = document.querySelectorAll('input[name="dse-explain-topic"]:checked');
+      if (boxes.length > MAX_EXPLAIN_TOPICS) {
+        boxes[boxes.length - 1].checked = false;
+      }
+      const labels = selectedExplainTopicLabels();
+      const status = document.getElementById("dse-explain-picked");
+      if (!status) return;
+      if (!labels.length) {
+        status.textContent = "No topics selected. Pick one or more, then Send.";
+        return;
+      }
+      status.textContent = "Selected: " + labels.join("; ") + ".";
+    }
+
+    function renderDseExplainTopics() {
+      const root = document.getElementById("dse-explain-topic-scroll");
+      const hint = document.getElementById("dse-explain-level-hint");
+      const source = document.getElementById("dse-explain-source");
+      if (!root) return;
+      const catalog = dseExplainCurriculum;
+      if (!catalog || !catalog.topics) {
+        root.textContent = "Loading EDB learning units…";
+        return;
+      }
+      if (source && catalog.source && catalog.source.href) {
+        source.href = catalog.source.href;
+        source.textContent = catalog.source.label || source.textContent;
+      }
+      const level = selectedExplainLevel();
+      const junior = level === "S1" || level === "S2" || level === "S3";
+      if (hint) {
+        hint.textContent = junior
+          ? "Junior Secondary (S1–S3) EDB learning units. Schools decide the year; the explanation stays at " + level + "."
+          : "Senior Secondary (S4–S6) Compulsory Part and Extended Part (M1 / M2). The explanation stays at " + level + ".";
+      }
+      const picked = new Set(selectedExplainTopicIds());
+      const module = selectedDseSelect("dse-module");
+      const rows = (catalog.topics[level] || []).filter((row) => {
+        if (junior) return row.strand !== "m1" && row.strand !== "m2";
+        if (module === "compulsory") return row.strand !== "m1" && row.strand !== "m2";
+        if (module === "m1") return row.strand !== "m2";
+        if (module === "m2") return row.strand !== "m1";
+        return true;
+      });
+      const groups = [];
+      const seen = {};
+      rows.forEach((row) => {
+        const strand = row.strand || "further";
+        if (!seen[strand]) {
+          seen[strand] = [];
+          groups.push(strand);
+        }
+        seen[strand].push(row);
+      });
+      root.replaceChildren();
+      if (!rows.length) {
+        const empty = document.createElement("p");
+        empty.className = "meta";
+        empty.textContent = "No learning units for this level.";
+        root.appendChild(empty);
+        syncDseExplainPicked();
+        return;
+      }
+      groups.forEach((strand) => {
+        const heading = document.createElement("h3");
+        heading.className = "dse-explain-strand";
+        heading.textContent = (catalog.strands && catalog.strands[strand]) || strand;
+        root.appendChild(heading);
+        const list = document.createElement("div");
+        list.className = "dse-explain-topic-picks";
+        seen[strand].forEach((row) => {
+          const label = document.createElement("label");
+          label.className = "option";
+          const input = document.createElement("input");
+          input.type = "checkbox";
+          input.name = "dse-explain-topic";
+          input.value = row.id;
+          input.checked = picked.has(row.id);
+          input.addEventListener("change", syncDseExplainPicked);
+          const title = document.createElement("span");
+          title.className = "option-title";
+          title.textContent = row.label;
+          label.appendChild(input);
+          label.appendChild(title);
+          list.appendChild(label);
+        });
+        root.appendChild(list);
+      });
+      syncDseExplainPicked();
+    }
+
+    function loadDseExplainTopics() {
+      if (dseExplainCurriculum) {
+        renderDseExplainTopics();
+        return Promise.resolve(dseExplainCurriculum);
+      }
+      return fetch("/api/dse/topics")
+        .then((response) => {
+          if (!response.ok) throw new Error("topics");
+          return response.json();
+        })
+        .then((payload) => {
+          dseExplainCurriculum = payload;
+          renderDseExplainTopics();
+          return payload;
+        })
+        .catch(() => {
+          const root = document.getElementById("dse-explain-topic-scroll");
+          if (root) root.textContent = "Could not load EDB learning units.";
+        });
     }
 
     function syncDseModeUi() {
@@ -1233,6 +1387,9 @@
         messageBox.placeholder = hasQuestions
           ? "Type your attempt for the selected question"
           : dsePlaceholder(mode);
+      }
+      if (explain && state.functionId === "dse_math") {
+        loadDseExplainTopics();
       }
       syncChatChrome();
       syncChatLogs();
@@ -1676,6 +1833,16 @@
     });
     const chatClear = document.getElementById("chat-clear");
     if (chatClear) chatClear.addEventListener("click", clearActiveDseResponses);
+    const explainLevel = document.getElementById("dse-explain-level");
+    if (explainLevel) {
+      explainLevel.addEventListener("change", renderDseExplainTopics);
+    }
+    const moduleSelect = document.getElementById("dse-module");
+    if (moduleSelect) {
+      moduleSelect.addEventListener("change", () => {
+        if (selectedDseOption() === "explain") renderDseExplainTopics();
+      });
+    }
     document.querySelectorAll('#dse-solve-style input[name="dse-solve-style"]').forEach((input) => {
       input.addEventListener("change", () => {
         persistDseSolveStyle(selectedDseSolveStyle());
@@ -1779,13 +1946,17 @@
       if (!message) {
         if (state.functionId === "translation" && state.files.length) {
           message = DEFAULT_TRANSLATION_MESSAGE;
+        } else if (state.functionId === "dse_math" && selectedDseOption() === "explain" && selectedExplainTopicIds().length) {
+          message = "Explain these topics: " + selectedExplainTopicLabels().join("; ") + ".";
         } else if (state.functionId === "dse_math" && selectedDseMode() === "guided_no_answer" && dseState.sessionId) {
           message = "Next hint";
         } else if (state.functionId === "dse_math" && selectedDseMode() === "guided_with_answer" && dseState.sessionId) {
           message = "Show the full working and the final answer for this question.";
         } else {
           status.className = "error";
-          status.textContent = state.functionId === "translation"
+          status.textContent = state.functionId === "dse_math" && selectedDseOption() === "explain"
+            ? "Pick a topic to explain, or type a question."
+            : state.functionId === "translation"
             ? "Enter text to translate or upload a document."
             : "Enter a message.";
           return;
@@ -1809,16 +1980,31 @@
         body.target_language = selectedDseLanguage();
         body.mode = selectedDseMode();
         body.dse_mode = body.mode;
-        const topic = selectedDseSelect("dse-topic");
-        const difficulty = selectedDseSelect("dse-difficulty");
-        const paper = selectedDseSelect("dse-paper");
+        const option = selectedDseOption();
         const module = selectedDseSelect("dse-module");
-        const level = selectedDseSelect("dse-level");
-        if (topic) body.topic = topic;
-        if (difficulty) body.difficulty = difficulty;
-        if (paper) body.paper = paper;
         if (module) body.module = module;
-        if (level) body.level = level;
+        if (option === "explain") {
+          const level = selectedExplainLevel();
+          const topics = selectedExplainTopicIds();
+          if (level) body.level = level;
+          if (topics.length) {
+            body.topics = topics;
+            const focus = "Explain these topics: " + selectedExplainTopicLabels().join("; ") + ".";
+            if (message.indexOf(focus) === -1) {
+              message = message ? message + "\n\n" + focus : focus;
+            }
+            body.message = message;
+          }
+        } else {
+          const topic = selectedDseSelect("dse-topic");
+          const difficulty = selectedDseSelect("dse-difficulty");
+          const paper = selectedDseSelect("dse-paper");
+          const level = selectedDseSelect("dse-level");
+          if (topic) body.topic = topic;
+          if (difficulty) body.difficulty = difficulty;
+          if (paper) body.paper = paper;
+          if (level) body.level = level;
+        }
         if (dseState.sessionId) body.session_id = dseState.sessionId;
         persistDseLanguage(body.target_language);
         persistDseMode(body.mode);
