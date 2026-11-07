@@ -123,6 +123,14 @@ def test_page_has_five_reference_slots(tmp_path, monkeypatch):
     assert "Attributes of objects" in html
     assert "Assembled prompt" in html
     assert "Nationality" in html
+    assert "Sex" in html
+    assert 'id="image-sex"' in html
+    assert 'id="image-sex-2"' in html
+    assert 'value="female"' in html
+    assert 'value="male"' in html
+    assert "Body figure" in html
+    assert "curvy" in html
+    assert "muscular" in html
     assert "Height" in html
     assert "Hair" in html
     assert "Eyes" in html
@@ -431,6 +439,7 @@ def test_generate_person_nationality_and_hair_reach_images_api(tmp_path, monkeyp
             "objects": "a teacup",
             "object_attributes": "cracked celadon",
             "nationality": "Korean",
+            "sex": "female",
             "person_height": "tall",
             "height_cm": "175",
             "body": "athletic",
@@ -453,8 +462,9 @@ def test_generate_person_nationality_and_hair_reach_images_api(tmp_path, monkeyp
     assert seen["url"] == OPENROUTER_IMAGES_URL
     assert "nationality Korean" in prompt
     assert "hair black, long, straight" in prompt
-    assert "Person: nationality Korean;" in prompt
+    assert "Person: sex female; nationality Korean;" in prompt
     assert "height tall, 175 cm" in prompt
+    assert "body figure athletic" in prompt
     assert "Clothing: dress hanbok" in prompt
     assert "Props: a folding fan" in prompt
     assert "Action on objects: holding a cup" in prompt
@@ -489,6 +499,14 @@ def test_page_has_guided_fields_and_output_controls(tmp_path, monkeypatch):
     assert "1 person" in html
     assert "2 persons" in html
     assert "Nationality" in html
+    assert "Sex" in html
+    assert 'id="image-sex"' in html
+    assert 'id="image-sex-2"' in html
+    assert 'value="female"' in html
+    assert 'value="male"' in html
+    assert "Body figure" in html
+    assert "curvy" in html
+    assert "muscular" in html
     assert "Height" in html
     assert "Hair" in html
     assert "Eyes" in html
@@ -1159,6 +1177,25 @@ def test_generate_without_variance_steps_keeps_global_cycle(tmp_path, monkeypatc
     _assert_secret_absent(response.text)
 
 
+def test_assemble_prompt_sex_and_body_figure():
+    prompt = assemble_prompt(
+        {
+            "sex": "male",
+            "body_figure": "muscular",
+            "style": "cinematic still",
+        }
+    )
+    assert "Person: sex male; body figure muscular" in prompt
+    via_aliases = assemble_prompt(
+        {
+            "gender": "female",
+            "body": "curvy",
+            "style": "cinematic still",
+        }
+    )
+    assert "Person: sex female; body figure curvy" in via_aliases
+
+
 def test_assemble_prompt_two_persons_numbered_blocks():
     prompt = assemble_prompt(
         {
@@ -1167,12 +1204,15 @@ def test_assemble_prompt_two_persons_numbered_blocks():
             "people_relation": "sitting across a tea table",
             "persons": [
                 {
+                    "sex": "female",
                     "nationality": "Korean",
                     "hair": "black, long, straight",
                     "dress": "hanbok",
                     "object_action": "pouring tea",
                 },
                 {
+                    "sex": "male",
+                    "body_figure": "slim",
                     "nationality": "Hong Kong",
                     "hair": "short, brown",
                     "top": "linen shirt",
@@ -1184,10 +1224,10 @@ def test_assemble_prompt_two_persons_numbered_blocks():
     )
     assert prompt == (
         "Objects: a gaiwan\n"
-        "Person 1: nationality Korean; hair black, long, straight\n"
+        "Person 1: sex female; nationality Korean; hair black, long, straight\n"
         "Clothing 1: dress hanbok\n"
         "Action on objects 1: pouring tea\n"
-        "Person 2: nationality Hong Kong; hair short, brown\n"
+        "Person 2: sex male; nationality Hong Kong; body figure slim; hair short, brown\n"
         "Clothing 2: top linen shirt\n"
         "Props 2: a folding fan\n"
         "Together: sitting across a tea table\n"

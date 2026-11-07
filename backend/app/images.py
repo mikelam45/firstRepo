@@ -176,9 +176,10 @@ PROMPT_FIELDS: tuple[tuple[str, str], ...] = (
 )
 PERSON_SLOT_BEFORE = "style"
 PERSON_PARTS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("sex", ("sex", "gender")),
     ("nationality", ("nationality", "ethnicity", "ethnicity_presentation")),
     ("height", ("person_height", "stature")),
-    ("body", ("body", "body_type")),
+    ("body figure", ("body_figure", "body", "body_type")),
     ("hair", ("hair",)),
     ("eyes", ("eyes",)),
     ("nose", ("nose",)),
@@ -475,9 +476,10 @@ def _one_person_lines(
 ) -> list[str]:
     """One Person / Clothing / Props / Action block. Empty fields omitted."""
     values = {
+        "sex": _first_text(data, ("sex", "gender")),
         "nationality": _first_text(data, ("nationality", "ethnicity", "ethnicity_presentation")),
         "height": _person_height(data),
-        "body": _first_text(data, ("body", "body_type")),
+        "body figure": _first_text(data, ("body_figure", "body", "body_type")),
         "hair": _person_hair(data),
         "eyes": _person_eyes(data),
         "nose": _person_nose(data),

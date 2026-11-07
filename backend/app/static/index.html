@@ -375,6 +375,31 @@
             </label>
           </div>
           <div class="image-row">
+            <label class="field">Sex
+              <select id="image-sex">
+                <option value="" selected>Not specified</option>
+                <option value="female">female</option>
+                <option value="male">male</option>
+              </select>
+            </label>
+            <label class="field">Body figure
+              <select id="image-body">
+                <option value="" selected>Not specified</option>
+                <option value="slim">slim</option>
+                <option value="thin">thin</option>
+                <option value="average">average</option>
+                <option value="athletic">athletic</option>
+                <option value="muscular">muscular</option>
+                <option value="curvy">curvy</option>
+                <option value="hourglass">hourglass</option>
+                <option value="pear-shaped">pear-shaped</option>
+                <option value="stocky">stocky</option>
+                <option value="plus-size">plus-size</option>
+                <option value="fat">fat</option>
+              </select>
+            </label>
+          </div>
+          <div class="image-row">
             <label class="field">Height
               <select id="image-person-height">
                 <option value="" selected>Not specified</option>
@@ -385,15 +410,6 @@
             </label>
             <label class="field">Height (cm)
               <input id="image-height-cm" type="text" inputmode="numeric" autocomplete="off" placeholder="e.g. 175">
-            </label>
-            <label class="field">Body
-              <select id="image-body">
-                <option value="" selected>Not specified</option>
-                <option value="fat">fat</option>
-                <option value="thin">thin</option>
-                <option value="athletic">athletic</option>
-                <option value="average">average</option>
-              </select>
             </label>
           </div>
           <div class="image-row">
@@ -510,6 +526,31 @@
             </label>
           </div>
           <div class="image-row">
+            <label class="field">Sex
+              <select id="image-sex-2">
+                <option value="" selected>Not specified</option>
+                <option value="female">female</option>
+                <option value="male">male</option>
+              </select>
+            </label>
+            <label class="field">Body figure
+              <select id="image-body-2">
+                <option value="" selected>Not specified</option>
+                <option value="slim">slim</option>
+                <option value="thin">thin</option>
+                <option value="average">average</option>
+                <option value="athletic">athletic</option>
+                <option value="muscular">muscular</option>
+                <option value="curvy">curvy</option>
+                <option value="hourglass">hourglass</option>
+                <option value="pear-shaped">pear-shaped</option>
+                <option value="stocky">stocky</option>
+                <option value="plus-size">plus-size</option>
+                <option value="fat">fat</option>
+              </select>
+            </label>
+          </div>
+          <div class="image-row">
             <label class="field">Height
               <select id="image-person-height-2">
                 <option value="" selected>Not specified</option>
@@ -520,15 +561,6 @@
             </label>
             <label class="field">Height (cm)
               <input id="image-height-cm-2" type="text" inputmode="numeric" autocomplete="off" placeholder="e.g. 175">
-            </label>
-            <label class="field">Body
-              <select id="image-body-2">
-                <option value="" selected>Not specified</option>
-                <option value="fat">fat</option>
-                <option value="thin">thin</option>
-                <option value="athletic">athletic</option>
-                <option value="average">average</option>
-              </select>
             </label>
           </div>
           <div class="image-row">
@@ -2361,7 +2393,7 @@
     }
 
     const PERSON_INPUT_IDS = [
-      "image-nationality", "image-nationality-other",
+      "image-nationality", "image-nationality-other", "image-sex",
       "image-person-height", "image-height-cm", "image-body",
       "image-hair-color", "image-hair-length", "image-hair-style",
       "image-eyes-size", "image-eyes-color", "image-nose-size", "image-nose-shape",
@@ -2438,9 +2470,10 @@
 
     function personPromptLinesAt(index, labels) {
       const person = joinLabeled([
+        ["sex", personField("image-sex", index)],
         ["nationality", personNationality(index)],
         ["height", personHeight(index)],
-        ["body", personField("image-body", index)],
+        ["body figure", personField("image-body", index)],
         ["hair", personHair(index)],
         ["eyes", personEyes(index)],
         ["nose", personNose(index)],
@@ -2497,10 +2530,14 @@
         nationality: personNationality(index),
         nationality_select: personField("image-nationality", index),
         nationality_other: personField("image-nationality-other", index),
+        sex: personField("image-sex", index),
+        gender: personField("image-sex", index),
         person_height: personHeight(index),
         person_height_select: personField("image-person-height", index),
         height_cm: personField("image-height-cm", index),
         body: personField("image-body", index),
+        body_figure: personField("image-body", index),
+        body_type: personField("image-body", index),
         hair: personHair(index),
         hair_color: personField("image-hair-color", index),
         hair_length: personField("image-hair-length", index),
@@ -2991,12 +3028,13 @@
     function applyPersonDetail(data, index) {
       const suffix = personIdSuffix(index);
       applyNationality(data, index);
+      setFieldValue("image-sex" + suffix, data.sex || data.gender || "");
       const heightSelect = data.person_height_select
         || (data.person_height === "short" || data.person_height === "average" || data.person_height === "tall"
           ? data.person_height : "");
       setFieldValue("image-person-height" + suffix, heightSelect);
       setFieldValue("image-height-cm" + suffix, data.height_cm || "");
-      setFieldValue("image-body" + suffix, data.body || data.body_type || "");
+      setFieldValue("image-body" + suffix, data.body_figure || data.body || data.body_type || "");
       setFieldValue("image-hair-color" + suffix, data.hair_color || "");
       setFieldValue("image-hair-length" + suffix, data.hair_length || "");
       setFieldValue("image-hair-style" + suffix, data.hair_style || "");

@@ -16,7 +16,9 @@ PROMPT_DETAIL = {
     "nationality_other": "Hong Kong",
     "person_height_select": "average",
     "height_cm": "165",
+    "sex": "female",
     "body": "athletic",
+    "body_figure": "athletic",
     "hair_color": "black",
     "hair_length": "long",
     "hair_style": "ponytail",
@@ -148,6 +150,8 @@ def test_create_list_get_restores_prompt_detail(tmp_path, monkeypatch):
     assert restored["setting"] == PROMPT_DETAIL["setting"]
     assert restored["background_attributes"] == PROMPT_DETAIL["background_attributes"]
     assert restored["object_action"] == "holding a cup"
+    assert restored["sex"] == "female"
+    assert restored["body_figure"] == "athletic"
     assert restored["output_resolution"] == "2K"
     assert restored["count_mode"] == "3"
     assert restored["facial_variance"] == "subtle"
@@ -171,12 +175,15 @@ def test_save_restores_two_person_prompt_detail(tmp_path, monkeypatch):
                 "people_relation": "sitting across a table",
                 "persons": [
                     {
+                        "sex": "female",
                         "nationality": "Korean",
                         "nationality_select": "East Asian",
                         "hair_color": "black",
                         "dress": "hanbok",
                     },
                     {
+                        "sex": "male",
+                        "body_figure": "slim",
                         "nationality": "Hong Kong",
                         "hair_color": "brown",
                         "top": "linen shirt",
@@ -190,7 +197,10 @@ def test_save_restores_two_person_prompt_detail(tmp_path, monkeypatch):
     assert detail["person_count"] == 2
     assert detail["people_relation"] == "sitting across a table"
     assert detail["persons"][0]["dress"] == "hanbok"
+    assert detail["persons"][0]["sex"] == "female"
     assert detail["persons"][1]["top"] == "linen shirt"
+    assert detail["persons"][1]["sex"] == "male"
+    assert detail["persons"][1]["body_figure"] == "slim"
     fetched = client.get(f"/api/images/projects/{created.json()['id']}")
     restored = fetched.json()["prompt_detail"]
     assert restored["person_count"] == 2
