@@ -17,6 +17,13 @@ from typing import Any
 
 from .chat import ChatError
 from .chat_format import clip_scenario, parse_figure_spec
+from .dse_figures import (
+    ensure_created_figure,
+    ensure_explain_figures,
+    ensure_solve_figures,
+    explain_figures_for_topics,
+    session_has_figure,
+)
 from .rag import (
     COLLECTION_DSE_MATH,
     FORMAT_REPLY_INSTRUCTION,
@@ -267,38 +274,50 @@ DSE_WORKING_AND_FINAL = (
     "in a Markdown table. "
 )
 DSE_TUTOR_BASE = DSE_TUTOR_IDENTITY + " " + DSE_WORKING_AND_FINAL
+DSE_SOLVE_FIGURE_INSTRUCTION = (
+    "You MUST include one labelled ```figure of the given question. "
+    "Draw given lengths, angles, and points only. "
+    "Later hints may refer to that same diagram instead of redrawing it. "
+    "Use the figure fence contract (geometry, coordinate, number_line, or chart). "
+    "Give clickable ids on corresponding parts."
+)
 DSE_PRACTICE_INSTRUCTION = (
     "Mode is Practice. If the student pastes a question, solve or grade it. "
     "If they ask to generate a question, write one HKDSE-style question that "
     "matches the selected module, topic, difficulty, and paper, then give the "
-    "worked solution. Always show steps before the final answer."
+    "worked solution. Always show steps before the final answer. "
+    + DSE_SOLVE_FIGURE_INSTRUCTION
 )
 DSE_FIGURE_INSTRUCTION = (
-    "Use diagrams and figures, not only prose. Invent a short teaching scenario "
-    "a Hong Kong secondary student would recognise (for example MTR fares, a wet "
-    "market, sports day, a shopping receipt, a floor plan, or a slope on a hill) "
-    "and keep the mathematics at the stated level. "
-    "When a sketch, geometric figure, number line, coordinate graph, or statistical "
-    "chart helps, emit one fenced JSON block:\n"
+    "You MUST include at least one labelled diagram for every topic. Never reply "
+    "in prose only. Invent a short teaching scenario a Hong Kong secondary student "
+    "would recognise (for example MTR fares, a wet market, sports day, a shopping "
+    "receipt, a pizza slice, a window, a floor plan, or a slope on a hill). "
+    "For each topic emit one fenced JSON block the page can draw:\n"
     "```figure\n"
     '{"type":"geometry|coordinate|number_line|chart","title":"...","caption":"...",'
-    '"elements":[{"kind":"polygon","points":[[20,80],[80,80],[50,20]],"labels":["A","B","C"]},'
-    '{"kind":"segment","from":[20,80],"to":[80,80],"label":"6 cm"}]}\n'
+    '"interactive":true,'
+    '"elements":[{"kind":"polygon","points":[[20,80],[80,80],[50,20]],"labels":["A","B","C"],"id":"tri"},'
+    '{"kind":"segment","from":[20,80],"to":[80,80],"label":"6 cm","id":"ab"}],'
+    '"actions":[{"id":"sss","label":"SSS","highlight":["ab"],"caption":"..."}]}\n'
     "```\n"
-    "geometry uses a 0–100 canvas, x right, y down. coordinate uses data units and "
-    'optional "axes":{"xmin":-2,"xmax":6,"ymin":-2,"ymax":6} with y up. '
+    "geometry uses a 0–100 canvas, x right, y down. Also allowed: circle, arc, "
+    "sector (cx, cy, r, start, end in degrees, 0 at +x, clockwise), angle, point, "
+    "label. coordinate uses data units and optional "
+    '"axes":{"xmin":-2,"xmax":6,"ymin":-2,"ymax":6} with y up. '
     "number_line uses min, max, marks, and points. chart uses labels and series "
     "(bar, line, or pie). "
-    "Label given lengths and angles. Do not draw the hidden answer, the completed "
-    "construction, or worked numbers that give the result away."
+    "Give elements an id so the student can click corresponding parts. "
+    "Label given lengths and angles. Do not draw the hidden answer."
 )
 DSE_EXPLAIN_INSTRUCTION = (
     "Mode is Explain. Teach the selected school-level topics step by step, "
     "grounded on uploaded syllabus and notes when they are present. Cite those "
     "files. For each topic give: a short real-life scenario, the idea, a labelled "
-    "diagram or figure in a ```figure fence, the method, one worked example, and "
-    "common mistakes. Stay at the stated form (S1–S6); do not jump ahead unless "
-    "asked. Show working; mark the final answer when you reach one. "
+    "interactive diagram in a ```figure fence (required, never skip), the method, "
+    "one worked example that refers to the diagram, and common mistakes. "
+    "Stay at the stated form (S1–S6); do not jump ahead unless asked. "
+    "Show working; mark the final answer when you reach one. "
     + DSE_FIGURE_INSTRUCTION
 )
 DSE_GUIDED_NO_ANSWER_INSTRUCTION = (
@@ -310,27 +329,34 @@ DSE_GUIDED_NO_ANSWER_INSTRUCTION = (
     "switches to guided_with_answer. "
     "Do not write 'Final answer:'. Do not put the complete solution in the first "
     "replies. Ask what the student has already tried. "
-    "If they share working, comment on that step only."
+    "If they share working, comment on that step only. "
+    "On the first reply, draw a labelled ```figure of the given question. "
+    "Do not mark the unknown, the completed construction, or the final answer on "
+    "the figure. "
+    + DSE_SOLVE_FIGURE_INSTRUCTION
 )
 DSE_GUIDED_WITH_ANSWER_INSTRUCTION = (
     "Mode is Guided solve with answer. "
     "Give numbered step-by-step working and include the final answer immediately, "
     "marked clearly on its own line as 'Final answer: …', plus full working. "
     "When a mark scheme helps, use HKDSE M-marks (method) and A-marks (accuracy) "
-    "in a Markdown table."
+    "in a Markdown table. "
+    "Start with a labelled ```figure of the given question, then refer to it in "
+    "the working. "
+    + DSE_SOLVE_FIGURE_INSTRUCTION
 )
 DSE_CREATE_JSON_KEYS = (
     "question, scenario, figure, expected_answer, mark_scheme, outline"
 )
 DSE_CREATE_FIGURE_JSON = (
-    "figure is a JSON object or null. Use the same contract as a ```figure fence: "
+    "figure is required. Never set it to null. Use the same contract as a ```figure fence: "
     '{"type":"geometry|coordinate|number_line|chart","title":"...","caption":"...",'
+    '"interactive":true,'
     '"elements":[{"kind":"polygon","points":[[20,80],[80,80],[50,20]],'
-    '"labels":["A","B","C"]}]}. '
-    "geometry uses a 0–100 canvas, x right, y down. Include a diagram whenever the "
-    "question has a triangle, circle, graph, chart, number line, 3-D figure, or "
-    "measurement. If the item is pure algebra with no geometric meaning, set "
-    "figure to null. The figure must show given information only, never the answer. "
+    '"labels":["A","B","C"],"id":"tri"}]}. '
+    "geometry uses a 0–100 canvas, x right, y down. Also allowed: circle, arc, sector, "
+    "angle, point, label. For algebra use a number_line or coordinate axes. For data "
+    "use a chart. The figure must show given information only, never the answer. "
     "scenario is one or two sentences of teaching context, not the solution."
 )
 DSE_CREATE_QUESTION_INSTRUCTION = (
@@ -518,7 +544,7 @@ def explain_user_message(topic_ids: list[str], extra: str = "") -> str:
     return (
         head
         + " Teach each one at that school level with a real-life scenario, "
-        "a labelled diagram or figure, and a worked example."
+        "a required labelled interactive diagram, and a worked example that uses the diagram."
     )
 
 
@@ -886,7 +912,7 @@ def store_created_question(
         "language": language,
         "question": parsed["question"],
         "scenario": clip_scenario(parsed.get("scenario")),
-        "figure": parse_figure_spec(parsed.get("figure")),
+        "figure": ensure_created_figure(parsed.get("figure"), topic=topic),
         "expected_answer": parsed.get("expected_answer") or "",
         "mark_scheme": parsed.get("mark_scheme") or "",
         "outline": parsed.get("outline") or "",

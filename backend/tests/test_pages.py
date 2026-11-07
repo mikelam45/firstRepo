@@ -135,7 +135,7 @@ def test_home_and_setup_are_distinct_html_pages(tmp_path, monkeypatch):
     assert "addExplainTopicFromSelect" in home.text
     assert "formatCreatedQuestionText" in home.text
     assert "teaching scenario" in home.text
-    assert "labelled diagrams" in home.text
+    assert "labelled diagram you can click" in home.text
     assert "/api/dse/topics" in home.text
     assert "edb.gov.hk/en/curriculum-development/kla/ma/curr/index2.html" in home.text
     assert 'id="chat-lede"' in home.text
@@ -147,6 +147,8 @@ def test_home_and_setup_are_distinct_html_pages(tmp_path, monkeypatch):
     assert "Clear responses" in home.text
     assert 'id="dse-mode-guided_no_answer"' in home.text
     assert 'id="dse-mode-guided_with_answer"' in home.text
+    assert "The tutor draws a diagram" in home.text
+    assert "labelled diagram of the question" in home.text
     assert 'id="dse-question-count"' in home.text
     assert 'value="S1"' in home.text
     assert 'value="S6"' in home.text

@@ -138,6 +138,19 @@ def test_parse_figure_spec_accepts_geometry_and_rejects_junk():
     assert line["type"] == "number_line"
     assert line["points"][0]["label"] == "P"
 
+    origin = parse_figure_spec(
+        {
+            "type": "number_line",
+            "min": -4,
+            "max": 8,
+            "marks": [-4, 0, 4, 8],
+            "points": [{"value": 0, "label": "0"}],
+        }
+    )
+    assert origin is not None
+    assert origin["points"][0]["value"] == 0
+    assert origin["points"][0]["label"] == "0"
+
     chart = parse_figure_spec(
         '{"type":"chart","labels":["A","B"],"series":[{"name":"n","values":[1,2]}]}'
     )
@@ -146,6 +159,38 @@ def test_parse_figure_spec_accepts_geometry_and_rejects_junk():
     assert parse_figure_spec("not json") is None
     assert parse_figure_spec('{"type":"geometry","elements":[]}') is None
     assert parse_figure_spec({"type": "geometry", "elements": [{"kind": "script"}]}) is None
+
+    sector = parse_figure_spec(
+        {
+            "type": "geometry",
+            "interactive": True,
+            "title": "Sector",
+            "elements": [
+                {
+                    "kind": "sector",
+                    "cx": 50,
+                    "cy": 50,
+                    "r": 20,
+                    "start": -30,
+                    "end": 30,
+                    "id": "slice",
+                }
+            ],
+            "actions": [
+                {
+                    "id": "arc",
+                    "label": "Arc length",
+                    "highlight": ["slice"],
+                    "caption": "ell = (theta/360) 2 pi r",
+                }
+            ],
+        }
+    )
+    assert sector is not None
+    assert sector["interactive"] is True
+    assert sector["elements"][0]["kind"] == "sector"
+    assert sector["elements"][0]["id"] == "slice"
+    assert sector["actions"][0]["label"] == "Arc length"
 
 
 def test_functions_page_includes_table_chart_renderer(tmp_path, monkeypatch):
@@ -167,6 +212,8 @@ def test_functions_page_includes_table_chart_renderer(tmp_path, monkeypatch):
     assert "renderAssistantReply" in script.text
     assert "drawChartSvg" in script.text
     assert "drawFigureSvg" in script.text
+    assert "chat-figure-hit" in script.text
+    assert "chat-figure-actions" in script.text
     assert "```figure" in script.text or "figure" in script.text
     assert "createElementNS" in script.text
     assert ".innerHTML" not in script.text

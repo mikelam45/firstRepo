@@ -89,6 +89,23 @@
     return String(value == null ? "" : value).trim().slice(0, MAX_LABEL_CHARS);
   }
 
+  var MAX_CAPTION_CHARS = 180;
+
+  function clipCaption(value) {
+    return String(value == null ? "" : value).trim().slice(0, MAX_CAPTION_CHARS);
+  }
+
+  function withPart(item, row) {
+    if (!item || !row) return item;
+    var id = clipLabel(row.id || row.part);
+    if (id) item.id = id;
+    var match = clipLabel(row.match);
+    if (match) item.match = match;
+    var cap = clipCaption(row.caption || row.hint);
+    if (cap) item.caption = cap;
+    return item;
+  }
+
   function parsePoint(value) {
     if (Array.isArray(value) && value.length >= 2) {
       var x = finiteNumber(value[0]);
@@ -123,7 +140,7 @@
       item.x = x;
       item.y = y;
       item.label = clipLabel(row.label);
-      return item;
+      return withPart(item, row);
     }
     if (kind === "segment" || kind === "arrow") {
       var start = parsePoint(row.from || row.start);
@@ -132,7 +149,7 @@
       item.from = start;
       item.to = end;
       item.label = clipLabel(row.label);
-      return item;
+      return withPart(item, row);
     }
     if (kind === "polygon") {
       if (!Array.isArray(row.points) || row.points.length < 3) return null;
@@ -152,7 +169,7 @@
       item.points = points;
       item.labels = labels;
       item.fill = row.fill !== false;
-      return item;
+      return withPart(item, row);
     }
     if (kind === "circle") {
       var cx = finiteNumber(row.cx);
@@ -168,7 +185,28 @@
       item.cy = cy;
       item.r = radius;
       item.label = clipLabel(row.label);
-      return item;
+      return withPart(item, row);
+    }
+    if (kind === "arc" || kind === "sector") {
+      var acx = finiteNumber(row.cx);
+      var acy = finiteNumber(row.cy);
+      var ar = finiteNumber(row.r != null ? row.r : row.radius);
+      var aStart = finiteNumber(row.start != null ? row.start : row.start_deg);
+      var aEnd = finiteNumber(row.end != null ? row.end : row.end_deg);
+      if (acx == null || acy == null || ar == null || ar <= 0 || aStart == null || aEnd == null) {
+        var aCentre = parsePoint(row.center || row.centre || row.at);
+        if (!aCentre || ar == null || ar <= 0 || aStart == null || aEnd == null) return null;
+        acx = aCentre[0];
+        acy = aCentre[1];
+      }
+      item.cx = acx;
+      item.cy = acy;
+      item.r = ar;
+      item.start = aStart;
+      item.end = aEnd;
+      item.label = clipLabel(row.label);
+      if (kind === "sector") item.fill = row.fill !== false;
+      return withPart(item, row);
     }
     if (kind === "angle") {
       var vertex = parsePoint(row.at || row.vertex);
@@ -180,7 +218,7 @@
       item.to = toPt;
       item.label = clipLabel(row.label);
       item.right = !!(row.right || row.right_angle);
-      return item;
+      return withPart(item, row);
     }
     if (kind === "label") {
       var lx = finiteNumber(row.x);
@@ -196,7 +234,7 @@
       item.x = lx;
       item.y = ly;
       item.text = text;
-      return item;
+      return withPart(item, row);
     }
     return null;
   }
@@ -218,7 +256,7 @@
       return null;
     }
     var title = clipLabel(data.title);
-    var caption = clipLabel(data.caption);
+    var caption = clipCaption(data.caption);
     if (type === "chart") {
       var payload = {};
       Object.keys(data).forEach(function (key) { payload[key] = data[key]; });
@@ -283,6 +321,37 @@
         ymax: Math.max(ymin, ymax),
       };
     }
+    var hint = clipCaption(data.hint);
+    if (hint) spec.hint = hint;
+    var actions = [];
+    if (Array.isArray(data.actions)) {
+      for (var a = 0; a < data.actions.length && actions.length < 8; a += 1) {
+        var act = data.actions[a];
+        if (!act || typeof act !== "object") continue;
+        var actLabel = clipLabel(act.label || act.id);
+        if (!actLabel) continue;
+        var highlight = [];
+        var parts = act.highlight || act.parts;
+        if (Array.isArray(parts)) {
+          for (var h = 0; h < parts.length && highlight.length < 16; h += 1) {
+            var token = clipLabel(parts[h]);
+            if (token) highlight.push(token);
+          }
+        }
+        actions.push({
+          id: clipLabel(act.id || actLabel),
+          label: actLabel,
+          highlight: highlight,
+          caption: clipCaption(act.caption),
+        });
+      }
+    }
+    if (actions.length) spec.actions = actions;
+    var hasIds = false;
+    for (var ei = 0; ei < elements.length; ei += 1) {
+      if (elements[ei].id) { hasIds = true; break; }
+    }
+    if (data.interactive || actions.length || hasIds) spec.interactive = true;
     return spec;
   }
 
@@ -774,6 +843,20 @@
     return { x: (a.x + b.x) / 2 + -n.y * amount, y: (a.y + b.y) / 2 + n.x * amount };
   }
 
+  function polarPx(centre, radius, deg) {
+    var rad = (Number(deg) * Math.PI) / 180;
+    return { x: centre.x + radius * Math.cos(rad), y: centre.y + radius * Math.sin(rad) };
+  }
+
+  function markHit(node, el) {
+    if (!node || !el || !el.id) return node;
+    node.setAttribute("data-part", el.id);
+    node.classList.add("chat-figure-hit");
+    if (el.match) node.setAttribute("data-match", el.match);
+    if (el.caption) node.setAttribute("data-caption", el.caption);
+    return node;
+  }
+
   function drawNumberLine(spec) {
     var width = 560;
     var height = spec.title ? 140 : 110;
@@ -868,22 +951,28 @@
       if (el.kind === "polygon") {
         var mapped = el.points.map(function (pt) { return mapPointToPx(pt, bounds); });
         var pts = mapped.map(function (pt) { return pt.x + "," + pt.y; }).join(" ");
-        svg.appendChild(svgEl("polygon", {
+        svg.appendChild(markHit(svgEl("polygon", {
           points: pts,
           fill: el.fill ? "var(--green-bg)" : "none",
           stroke: "var(--ink)",
           "stroke-width": "2",
-        }));
+        }), el));
         mapped.forEach(function (pt, index) {
           placeLabel(pt, el.labels && el.labels[index], 6, -6);
         });
       } else if (el.kind === "segment" || el.kind === "arrow") {
         var a = mapPointToPx(el.from, bounds);
         var b = mapPointToPx(el.to, bounds);
-        svg.appendChild(svgEl("line", {
+        if (el.id) {
+          svg.appendChild(markHit(svgEl("line", {
+            x1: a.x, y1: a.y, x2: b.x, y2: b.y,
+            stroke: "transparent", "stroke-width": "14",
+          }), el));
+        }
+        svg.appendChild(markHit(svgEl("line", {
           x1: a.x, y1: a.y, x2: b.x, y2: b.y,
           stroke: "var(--ink)", "stroke-width": "2",
-        }));
+        }), el));
         if (el.kind === "arrow") {
           var dir = unitVec(a, b);
           var leftA = { x: b.x - dir.x * 10 + -dir.y * 5, y: b.y - dir.y * 10 + dir.x * 5 };
@@ -903,14 +992,40 @@
         var c = mapPointToPx([el.cx, el.cy], bounds);
         var rim = mapPointToPx([el.cx + el.r, el.cy], bounds);
         var rpx = Math.abs(rim.x - c.x);
-        svg.appendChild(svgEl("circle", {
+        svg.appendChild(markHit(svgEl("circle", {
           cx: c.x, cy: c.y, r: Math.max(4, rpx),
           fill: "none", stroke: "var(--ink)", "stroke-width": "2",
-        }));
+        }), el));
         placeLabel(c, el.label, 8, -8);
+      } else if (el.kind === "sector" || el.kind === "arc") {
+        var sc = mapPointToPx([el.cx, el.cy], bounds);
+        var srpx = Math.abs(mapPointToPx([el.cx + el.r, el.cy], bounds).x - sc.x);
+        srpx = Math.max(4, srpx);
+        var sStart = polarPx(sc, srpx, el.start);
+        var sEnd = polarPx(sc, srpx, el.end);
+        var delta = ((Number(el.end) - Number(el.start)) % 360 + 360) % 360;
+        var large = delta > 180 ? 1 : 0;
+        if (el.kind === "sector") {
+          svg.appendChild(markHit(svgEl("path", {
+            d: "M " + sc.x + " " + sc.y + " L " + sStart.x + " " + sStart.y
+              + " A " + srpx + " " + srpx + " 0 " + large + " 1 " + sEnd.x + " " + sEnd.y + " Z",
+            fill: el.fill !== false ? "var(--green-bg)" : "none",
+            stroke: "var(--ink)",
+            "stroke-width": "2",
+          }), el));
+        } else {
+          svg.appendChild(markHit(svgEl("path", {
+            d: "M " + sStart.x + " " + sStart.y + " A " + srpx + " " + srpx + " 0 " + large
+              + " 1 " + sEnd.x + " " + sEnd.y,
+            fill: "none",
+            stroke: "var(--green)",
+            "stroke-width": "4",
+          }), el));
+        }
+        if (el.label) placeLabel(sc, el.label, 8, -8);
       } else if (el.kind === "point") {
         var p = mapPointToPx([el.x, el.y], bounds);
-        svg.appendChild(svgEl("circle", { cx: p.x, cy: p.y, r: 4, fill: "var(--ink)" }));
+        svg.appendChild(markHit(svgEl("circle", { cx: p.x, cy: p.y, r: 6, fill: "var(--ink)" }), el));
         placeLabel(p, el.label, 8, -8);
       } else if (el.kind === "label") {
         placeLabel(mapPointToPx([el.x, el.y], bounds), el.text, 0, 0);
@@ -925,10 +1040,10 @@
           var p1 = { x: vertex.x + u.x * s, y: vertex.y + u.y * s };
           var p3 = { x: vertex.x + v.x * s, y: vertex.y + v.y * s };
           var p2 = { x: p1.x + v.x * s, y: p1.y + v.y * s };
-          svg.appendChild(svgEl("polyline", {
+          svg.appendChild(markHit(svgEl("polyline", {
             points: p1.x + "," + p1.y + " " + p2.x + "," + p2.y + " " + p3.x + "," + p3.y,
             fill: "none", stroke: "var(--ink)", "stroke-width": "1.5",
-          }));
+          }), el));
         } else {
           var radius = 18;
           var a1 = Math.atan2(u.y, u.x);
@@ -938,13 +1053,13 @@
           if (sweep < -Math.PI) sweep += 2 * Math.PI;
           var end = { x: vertex.x + Math.cos(a1 + sweep) * radius, y: vertex.y + Math.sin(a1 + sweep) * radius };
           var start = { x: vertex.x + Math.cos(a1) * radius, y: vertex.y + Math.sin(a1) * radius };
-          svg.appendChild(svgEl("path", {
+          svg.appendChild(markHit(svgEl("path", {
             d: "M " + start.x + " " + start.y + " A " + radius + " " + radius + " 0 0 "
               + (sweep > 0 ? "1" : "0") + " " + end.x + " " + end.y,
             fill: "none",
             stroke: "var(--ink)",
             "stroke-width": "1.5",
-          }));
+          }), el));
         }
         if (el.label) {
           var bis = { x: u.x + v.x, y: u.y + v.y };
@@ -962,26 +1077,77 @@
     return svg;
   }
 
-  function wrapFigure(svg, caption) {
+  function wrapFigure(svg, spec) {
     if (!svg) return null;
+    var caption = spec && spec.caption ? spec.caption : "";
     var figure = document.createElement("figure");
     figure.className = "chat-figure";
     figure.appendChild(svg);
-    if (caption) {
-      var cap = document.createElement("figcaption");
-      cap.textContent = caption;
-      figure.appendChild(cap);
+    var cap = document.createElement("figcaption");
+    cap.textContent = caption || (spec && spec.hint) || "Click a part of the diagram.";
+    figure.appendChild(cap);
+    return attachFigureInteractivity(figure, spec || {});
+  }
+
+  function attachFigureInteractivity(figureEl, spec) {
+    var hits = figureEl.querySelectorAll("[data-part]");
+    var actions = spec.actions || [];
+    if (!hits.length && !actions.length) return figureEl;
+    figureEl.classList.add("chat-figure-interactive");
+    var cap = figureEl.querySelector("figcaption");
+    function highlight(ids) {
+      var wanted = {};
+      (ids || []).forEach(function (id) { wanted[id] = true; });
+      figureEl.querySelectorAll("[data-part]").forEach(function (node) {
+        var id = node.getAttribute("data-part");
+        var match = node.getAttribute("data-match");
+        var on = !!(wanted[id] || (match && wanted[match]));
+        node.classList.toggle("is-active", on);
+      });
     }
-    return figure;
+    figureEl.addEventListener("click", function (event) {
+      var hit = event.target.closest("[data-part]");
+      if (!hit || !figureEl.contains(hit)) return;
+      var id = hit.getAttribute("data-part");
+      var match = hit.getAttribute("data-match");
+      var ids = [id];
+      if (match) ids.push(match);
+      highlight(ids);
+      if (cap) {
+        cap.textContent = hit.getAttribute("data-caption") || ("Selected " + id + ".");
+      }
+    });
+    if (actions.length) {
+      var bar = document.createElement("div");
+      bar.className = "chat-figure-actions";
+      actions.forEach(function (action) {
+        var btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "secondary";
+        btn.textContent = action.label;
+        btn.addEventListener("click", function () {
+          highlight(action.highlight || []);
+          if (cap) cap.textContent = action.caption || action.label;
+          bar.querySelectorAll("button").forEach(function (node) {
+            node.removeAttribute("aria-pressed");
+          });
+          btn.setAttribute("aria-pressed", "true");
+        });
+        bar.appendChild(btn);
+      });
+      if (cap && cap.parentNode) cap.parentNode.insertBefore(bar, cap);
+      else figureEl.appendChild(bar);
+    }
+    return figureEl;
   }
 
   function drawFigureSvg(spec) {
     if (!spec) return null;
     if (spec.type === "chart" || spec.type === "bar" || spec.type === "line" || spec.type === "pie") {
-      return wrapFigure(drawChartSvg(spec), spec.caption);
+      return wrapFigure(drawChartSvg(spec), spec);
     }
-    if (spec.type === "number_line") return wrapFigure(drawNumberLine(spec), spec.caption);
-    return wrapFigure(drawGeometryFigure(spec), spec.caption);
+    if (spec.type === "number_line") return wrapFigure(drawNumberLine(spec), spec);
+    return wrapFigure(drawGeometryFigure(spec), spec);
   }
 
   function fallbackPre(text) {

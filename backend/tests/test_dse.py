@@ -86,13 +86,14 @@ def test_functions_page_contains_dse_math(tmp_path, monkeypatch):
     assert "addExplainTopicFromSelect" in home.text
     assert "formatCreatedQuestionText" in home.text
     assert "teaching scenario" in home.text
-    assert "labelled diagrams" in home.text
+    assert "labelled diagram you can click" in home.text
     assert "/api/dse/topics" in home.text
     assert "edb.gov.hk/en/curriculum-development/kla/ma/curr/index2.html" in home.text
     assert 'id="dse-mode-guided_no_answer"' in home.text
     assert 'id="dse-mode-guided_with_answer"' in home.text
     assert "Hints by steps" in home.text
     assert "Immediate answer" in home.text
+    assert "labelled diagram of the question" in home.text
     assert 'id="dse-question-count"' in home.text
     assert 'max="20"' in home.text
     assert "syncChatChrome" in home.text
@@ -250,7 +251,8 @@ def test_dse_ask_wraps_the_same_chat_helper(tmp_path, monkeypatch):
     payload = response.json()
     assert payload["function"] == "dse_math"
     assert payload["mode"] == "explain"
-    assert payload["reply"] == "dedicated ask"
+    assert payload["reply"].startswith("dedicated ask")
+    assert "```figure" in payload["reply"]
     assert payload["sources"][0]["name"] == "notes.txt"
 
 
@@ -356,10 +358,14 @@ def test_guided_no_answer_system_prompt_forbids_final_answer(tmp_path, monkeypat
     assert "Do not write 'Final answer:'." in system
     assert "Socratic" in system
     assert "Ask what the student has already tried" in system
+    assert "```figure" in system
+    assert "You MUST include one labelled" in system
     payload = response.json()
     assert payload["mode"] == "guided_no_answer"
     assert payload["session_id"]
     assert "expected_answer" not in payload
+    assert "```figure" in payload["reply"]
+    assert "What have you tried with the quadratic?" in payload["reply"]
 
 
 def test_guided_with_answer_includes_final_answer_instruction(tmp_path, monkeypatch):
@@ -379,8 +385,12 @@ def test_guided_with_answer_includes_final_answer_instruction(tmp_path, monkeypa
     system = seen["json"]["messages"][0]["content"]
     assert "include the final answer immediately" in system
     assert "Final answer:" in system
-    assert response.json()["mode"] == "guided_with_answer"
-    assert response.json()["session_id"]
+    assert "```figure" in system
+    payload = response.json()
+    assert payload["mode"] == "guided_with_answer"
+    assert payload["session_id"]
+    assert "```figure" in payload["reply"]
+    assert "x = 2 or x = 3" in payload["reply"]
 
 
 def test_create_question_returns_session_id_and_mark_fail_hides_official_answer(
@@ -404,7 +414,9 @@ def test_create_question_returns_session_id_and_mark_fail_hides_official_answer(
     assert payload["session_id"]
     assert payload["question_id"]
     assert payload["question"] == "Solve 2x + 1 = 5."
-    assert payload["reply"] == "Solve 2x + 1 = 5."
+    assert "Solve 2x + 1 = 5." in payload["reply"]
+    assert "```figure" in payload["reply"]
+    assert payload.get("figure")
     assert payload["mode"] == "create_and_mark"
     assert payload["level"] == "S3"
     assert "expected_answer" not in payload
@@ -418,7 +430,9 @@ def test_create_question_returns_session_id_and_mark_fail_hides_official_answer(
     assert "figure" in create_system
     assert "繁體" in create_system
     assert payload.get("scenario") == ""
-    assert "figure" not in payload or payload.get("figure") in (None, {})
+    assert payload.get("figure")
+    assert payload["figure"]["type"] in {"geometry", "coordinate", "number_line", "chart", "bar"}
+    assert "```figure" in payload["display"]
 
     marked = client.post(
         "/api/dse/mark",
@@ -592,6 +606,7 @@ def test_page_has_three_mode_controls_and_s1_s6(tmp_path, monkeypatch):
     assert 'id="dse-mode-guided_with_answer"' in home.text
     assert "Hints by steps" in home.text
     assert "Immediate answer" in home.text
+    assert "labelled diagram of the question" in home.text
     assert 'id="dse-question-count"' in home.text
     assert 'max="20"' in home.text
     for level in ("S1", "S2", "S3", "S4", "S5", "S6"):
@@ -650,12 +665,16 @@ def test_dse_explain_uses_selected_edb_topics(tmp_path, monkeypatch):
     assert "EDB Mathematics learning units" in system
     assert "S1–S3 8. Linear equations in one unknown" in user
     assert "real-life scenario" in user
-    assert "labelled diagram" in user
+    assert "labelled interactive diagram" in user
     assert "```figure" in system
+    assert "You MUST include at least one labelled diagram" in system
     assert "teaching scenario" in system
     payload = empty.json()
     assert payload["topics"] == ["ks3_08_linear_eq_one", "ks3_25_pythagoras"]
     assert payload["level"] == "S2"
+    assert "```figure" in payload["reply"]
+    assert payload["reply"].count("```figure") >= 2
+    assert len(payload.get("figures") or []) == 2
 
     bad = client.post(
         "/api/dse/ask",
@@ -663,3 +682,67 @@ def test_dse_explain_uses_selected_edb_topics(tmp_path, monkeypatch):
     )
     assert bad.status_code == 400
     assert "S1–S6" in bad.json()["detail"] or "catalog" in bad.json()["detail"]
+
+
+def test_solve_figure_follows_question_not_topic():
+    from app.dse_figures import default_solve_figure, ensure_solve_figures, session_has_figure
+
+    triangle = default_solve_figure(
+        topic="algebra",
+        question="Prove triangles ABC and DEF are congruent.",
+    )
+    assert triangle["type"] == "geometry"
+    assert "Triangle" in triangle["title"]
+
+    sector = default_solve_figure(
+        question="Find the arc length of a sector of radius 7 cm."
+    )
+    assert sector["type"] == "geometry"
+    assert {el.get("kind") for el in sector["elements"]} & {"sector", "arc"}
+
+    injected = ensure_solve_figures("Look at the given sides.", question="triangle ABC")
+    assert "Look at the given sides." in injected
+    assert injected.count("```figure") == 1
+
+    later = ensure_solve_figures("Now mark the equal angles.", already_has_figure=True)
+    assert "```figure" not in later
+
+    session = {"messages": [{"role": "assistant", "content": injected}]}
+    assert session_has_figure(session) is True
+    assert session_has_figure({"messages": [{"role": "user", "content": "hi"}]}) is False
+
+
+def test_guided_later_hint_does_not_duplicate_figure(tmp_path, monkeypatch):
+    _install_key(tmp_path, monkeypatch)
+    seen = _mock_chat(
+        monkeypatch,
+        replies=["What equal sides are given?", "Now look at the included angle."],
+    )
+    client = _client(monkeypatch, tmp_path)
+    first = client.post(
+        "/api/dse/ask",
+        json={
+            "message": "In triangle ABC, AB = AC. Prove it is isosceles.",
+            "mode": "guided_no_answer",
+            "grounding": "mixed",
+        },
+    )
+    assert first.status_code == 200
+    first_reply = first.json()["reply"]
+    assert first_reply.count("```figure") == 1
+    assert "Triangle ABC" in first_reply
+    session_id = first.json()["session_id"]
+
+    second = client.post(
+        "/api/dse/ask",
+        json={
+            "message": "next hint",
+            "mode": "guided_no_answer",
+            "session_id": session_id,
+            "grounding": "mixed",
+        },
+    )
+    assert second.status_code == 200
+    assert "```figure" not in second.json()["reply"]
+    assert "included angle" in second.json()["reply"]
+    assert seen["calls"] == 2

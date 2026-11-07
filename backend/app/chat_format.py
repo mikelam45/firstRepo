@@ -15,10 +15,23 @@ SAFE_HREF_RE = re.compile(r"^(https?://|/api/rag/)", re.IGNORECASE)
 MAX_FIGURE_ELEMENTS = 48
 MAX_POLYGON_POINTS = 16
 MAX_LABEL_CHARS = 48
+MAX_CAPTION_CHARS = 180
 MAX_SCENARIO_CHARS = 600
 ALLOWED_FIGURE_TYPES = frozenset({"geometry", "coordinate", "number_line", "chart"})
 ALLOWED_FIGURE_KINDS = frozenset(
-    {"point", "segment", "line", "polygon", "circle", "angle", "label", "text", "arrow"}
+    {
+        "point",
+        "segment",
+        "line",
+        "polygon",
+        "circle",
+        "angle",
+        "label",
+        "text",
+        "arrow",
+        "arc",
+        "sector",
+    }
 )
 
 
@@ -107,6 +120,23 @@ def _clip_label(value: Any) -> str:
     return str(value or "").strip()[:MAX_LABEL_CHARS]
 
 
+def _clip_caption(value: Any) -> str:
+    return str(value or "").strip()[:MAX_CAPTION_CHARS]
+
+
+def _attach_part(item: dict[str, Any], row: dict[str, Any]) -> dict[str, Any]:
+    part = _clip_label(row.get("id") or row.get("part"))
+    if part:
+        item["id"] = part
+    match = _clip_label(row.get("match"))
+    if match:
+        item["match"] = match
+    caption = _clip_caption(row.get("caption") or row.get("hint"))
+    if caption:
+        item["caption"] = caption
+    return item
+
+
 def _point(value: Any) -> list[float] | None:
     if isinstance(value, (list, tuple)) and len(value) >= 2:
         x = _finite_number(value[0])
@@ -145,7 +175,7 @@ def _parse_figure_element(row: Any) -> dict[str, Any] | None:
         item["x"] = x
         item["y"] = y
         item["label"] = _clip_label(row.get("label"))
-        return item
+        return _attach_part(item, row)
     if kind in {"segment", "arrow"}:
         start = _point(row.get("from") or row.get("start"))
         end = _point(row.get("to") or row.get("end"))
@@ -154,7 +184,7 @@ def _parse_figure_element(row: Any) -> dict[str, Any] | None:
         item["from"] = start
         item["to"] = end
         item["label"] = _clip_label(row.get("label"))
-        return item
+        return _attach_part(item, row)
     if kind == "polygon":
         raw_points = row.get("points")
         if not isinstance(raw_points, list) or len(raw_points) < 3:
@@ -176,7 +206,7 @@ def _parse_figure_element(row: Any) -> dict[str, Any] | None:
         item["points"] = points
         item["labels"] = labels
         item["fill"] = bool(row.get("fill", True))
-        return item
+        return _attach_part(item, row)
     if kind == "circle":
         cx = _finite_number(row.get("cx"))
         cy = _finite_number(row.get("cy"))
@@ -190,7 +220,27 @@ def _parse_figure_element(row: Any) -> dict[str, Any] | None:
         item["cy"] = cy
         item["r"] = radius
         item["label"] = _clip_label(row.get("label"))
-        return item
+        return _attach_part(item, row)
+    if kind == "arc" or kind == "sector":
+        cx = _finite_number(row.get("cx"))
+        cy = _finite_number(row.get("cy"))
+        radius = _finite_number(row.get("r") or row.get("radius"))
+        start = _finite_number(row.get("start") if row.get("start") is not None else row.get("start_deg"))
+        end = _finite_number(row.get("end") if row.get("end") is not None else row.get("end_deg"))
+        if cx is None or cy is None or radius is None or radius <= 0 or start is None or end is None:
+            centre = _point(row.get("center") or row.get("centre") or row.get("at"))
+            if centre is None or radius is None or radius <= 0 or start is None or end is None:
+                return None
+            cx, cy = centre
+        item["cx"] = cx
+        item["cy"] = cy
+        item["r"] = radius
+        item["start"] = start
+        item["end"] = end
+        item["label"] = _clip_label(row.get("label"))
+        if kind == "sector":
+            item["fill"] = bool(row.get("fill", True))
+        return _attach_part(item, row)
     if kind == "angle":
         at = _point(row.get("at") or row.get("vertex"))
         start = _point(row.get("from") or row.get("start"))
@@ -202,7 +252,7 @@ def _parse_figure_element(row: Any) -> dict[str, Any] | None:
         item["to"] = end
         item["label"] = _clip_label(row.get("label"))
         item["right"] = bool(row.get("right") or row.get("right_angle"))
-        return item
+        return _attach_part(item, row)
     if kind == "label":
         x = _finite_number(row.get("x"))
         y = _finite_number(row.get("y"))
@@ -217,7 +267,7 @@ def _parse_figure_element(row: Any) -> dict[str, Any] | None:
         item["x"] = x
         item["y"] = y
         item["text"] = text
-        return item
+        return _attach_part(item, row)
     return None
 
 
@@ -240,7 +290,10 @@ def _parse_number_line(data: dict[str, Any], title: str, caption: str) -> dict[s
     if isinstance(raw_points, list):
         for row in raw_points[:16]:
             if isinstance(row, dict):
-                value = _finite_number(row.get("value") or row.get("x"))
+                if row.get("value") is not None:
+                    value = _finite_number(row.get("value"))
+                else:
+                    value = _finite_number(row.get("x"))
                 if value is None:
                     continue
                 points.append({"value": value, "label": _clip_label(row.get("label"))})
@@ -293,7 +346,7 @@ def parse_figure_spec(body: Any) -> dict[str, Any] | None:
     if figure_type not in ALLOWED_FIGURE_TYPES:
         return None
     title = _clip_label(data.get("title"))
-    caption = _clip_label(data.get("caption"))
+    caption = _clip_caption(data.get("caption"))
     if figure_type == "chart":
         payload = dict(data)
         if str(payload.get("type") or "").lower() == "chart":
@@ -323,7 +376,43 @@ def parse_figure_spec(body: Any) -> dict[str, Any] | None:
     axes = _parse_axes(data)
     if axes:
         spec["axes"] = axes
+    hint = _clip_caption(data.get("hint"))
+    if hint:
+        spec["hint"] = hint
+    actions = _parse_actions(data.get("actions"))
+    if actions:
+        spec["actions"] = actions
+    if data.get("interactive") or actions or any(el.get("id") for el in elements):
+        spec["interactive"] = True
     return spec
+
+
+def _parse_actions(raw: Any) -> list[dict[str, Any]]:
+    if not isinstance(raw, list):
+        return []
+    out: list[dict[str, Any]] = []
+    for row in raw[:8]:
+        if not isinstance(row, dict):
+            continue
+        label = _clip_label(row.get("label") or row.get("id"))
+        if not label:
+            continue
+        highlight: list[str] = []
+        parts = row.get("highlight") or row.get("parts")
+        if isinstance(parts, list):
+            for item in parts[:16]:
+                token = _clip_label(item)
+                if token:
+                    highlight.append(token)
+        out.append(
+            {
+                "id": _clip_label(row.get("id") or label),
+                "label": label,
+                "highlight": highlight,
+                "caption": _clip_caption(row.get("caption")),
+            }
+        )
+    return out
 
 
 def clip_scenario(value: Any) -> str:
