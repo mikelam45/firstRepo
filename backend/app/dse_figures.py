@@ -319,7 +319,6 @@ TRIANGLE_FIGURE: dict[str, Any] = {
             "at": [82, 82],
             "from": [18, 82],
             "to": [48, 18],
-            "right": True,
             "id": "angle-b",
             "caption": "Angle at B.",
         },
