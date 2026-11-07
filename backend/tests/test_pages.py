@@ -122,6 +122,10 @@ def test_home_and_setup_are_distinct_html_pages(tmp_path, monkeypatch):
     assert 'id="dse-solve-workspace"' in home.text
     assert 'id="dse-create-workspace"' in home.text
     assert 'id="dse-explain-workspace"' in home.text
+    assert 'id="dse-explain-level"' in home.text
+    assert 'id="dse-explain-topic-scroll"' in home.text
+    assert "/api/dse/topics" in home.text
+    assert "edb.gov.hk/en/curriculum-development/kla/ma/curr/index2.html" in home.text
     assert 'id="chat-lede"' in home.text
     assert "syncChatChrome" in home.text
     assert 'id="dse-log-solve"' in home.text

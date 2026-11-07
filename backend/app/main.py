@@ -30,6 +30,7 @@ from .dse import (
     DEFAULT_DSE_PRACTICE_MESSAGE,
     GUIDED_MODES,
     MODE_CREATE_AND_MARK,
+    MODE_EXPLAIN,
     MODE_GUIDED_NO_ANSWER,
     MODE_GUIDED_WITH_ANSWER,
     MODE_PRACTICE,
@@ -39,6 +40,8 @@ from .dse import (
     build_dse_context,
     build_mark_context,
     create_question_user_message,
+    explain_topics_catalog,
+    explain_user_message,
     is_next_hint_message,
     parse_generated_questions,
     parse_mark_verdict,
@@ -51,6 +54,7 @@ from .dse import (
     resolve_dse_module,
     resolve_dse_paper,
     resolve_dse_topic,
+    resolve_explain_topics,
     resolve_question_count,
     resolve_request_mode,
     scrub_hidden_fields,
@@ -149,6 +153,7 @@ class ChatIn(BaseModel):
     paper: str | None = None
     module: str | None = None
     level: str | None = None
+    topics: list[str] | None = None
     session_id: str | None = None
     attempt_text: str | None = None
     count: int | None = None
@@ -165,6 +170,7 @@ class DseAskIn(BaseModel):
     paper: str | None = None
     module: str | None = None
     level: str | None = None
+    topics: list[str] | None = None
     session_id: str | None = None
     attempt_text: str | None = None
     count: int | None = None
@@ -402,6 +408,9 @@ def post_chat(
         dse_paper = resolve_dse_paper(body.paper) if function_id == "dse_math" else None
         dse_module = resolve_dse_module(body.module) if function_id == "dse_math" else None
         dse_level = resolve_dse_level(body.level) if function_id == "dse_math" else None
+        dse_topics = (
+            resolve_explain_topics(body.topics) if function_id == "dse_math" else []
+        )
         dse_count = resolve_question_count(body.count) if function_id == "dse_math" else 1
         dse_session = None
         if function_id == "dse_math":
@@ -432,6 +441,8 @@ def post_chat(
                     message = DEFAULT_DSE_PRACTICE_MESSAGE
                 elif dse_mode == MODE_CREATE_AND_MARK:
                     message = create_question_user_message(dse_count)
+                elif dse_mode == MODE_EXPLAIN and dse_topics:
+                    message = explain_user_message(dse_topics)
                 elif dse_mode == MODE_GUIDED_NO_ANSWER and dse_session is not None:
                     message = NEXT_HINT_USER_MESSAGE
                 elif dse_mode == MODE_GUIDED_WITH_ANSWER and stored_question:
@@ -464,6 +475,7 @@ def post_chat(
                 paper=dse_paper,
                 module=dse_module or (dse_session or {}).get("module"),
                 level=dse_level or (dse_session or {}).get("level"),
+                topics=dse_topics or None,
                 history=history,
                 question=prompt_question,
                 reveal_mark_scheme=reveal_scheme,
@@ -554,6 +566,8 @@ def post_chat(
                 result["level"] = dse_level
             if dse_topic:
                 result["topic"] = dse_topic
+            if dse_topics:
+                result["topics"] = dse_topics
         if sources is not None:
             result["sources"] = order_sources(sources, str(result.get("reply") or ""))
         if function_id == "translation":
@@ -609,6 +623,7 @@ def post_dse_ask(
             paper=body.paper,
             module=body.module,
             level=body.level,
+            topics=body.topics,
             session_id=body.session_id,
             attempt_text=body.attempt_text,
             count=body.count,
@@ -1043,6 +1058,11 @@ def post_translation_file(
         )
     except RagError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+
+
+@app.get("/api/dse/topics")
+def get_dse_topics() -> dict[str, object]:
+    return explain_topics_catalog()
 
 
 @app.get("/api/dse/files")

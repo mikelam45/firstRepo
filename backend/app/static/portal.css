@@ -389,6 +389,37 @@ pre.chat-reply,
 #dse-explain-workspace {
   margin-top: 8px;
 }
+.dse-explain-topic-scroll {
+  max-height: 320px;
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 0 10px 8px;
+  background: white;
+  margin-top: 8px;
+}
+.dse-explain-strand {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  margin: 0;
+  padding: 8px 0 6px;
+  background: white;
+  font-size: 0.92rem;
+}
+.dse-explain-topic-picks {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 6px;
+  margin: 0 0 12px;
+}
+@media (min-width: 700px) {
+  .dse-explain-topic-picks { grid-template-columns: 1fr 1fr; }
+}
+.dse-explain-topic-picks label.option {
+  margin: 0;
+  padding: 8px 10px;
+}
 .dse-question-list {
   margin: 10px 0 0;
   padding-left: 1.2rem;

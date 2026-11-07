@@ -78,6 +78,10 @@ def test_functions_page_contains_dse_math(tmp_path, monkeypatch):
     assert "Clear responses" in home.text
     assert "clearActiveDseResponses" in home.text
     assert "dseBuckets" in home.text
+    assert 'id="dse-explain-level"' in home.text
+    assert 'id="dse-explain-topic-scroll"' in home.text
+    assert "/api/dse/topics" in home.text
+    assert "edb.gov.hk/en/curriculum-development/kla/ma/curr/index2.html" in home.text
     assert 'id="dse-mode-guided_no_answer"' in home.text
     assert 'id="dse-mode-guided_with_answer"' in home.text
     assert "Hints by steps" in home.text
@@ -510,6 +514,10 @@ def test_page_has_three_mode_controls_and_s1_s6(tmp_path, monkeypatch):
     assert 'id="dse-solve-workspace"' in home.text
     assert 'id="dse-create-workspace"' in home.text
     assert 'id="dse-explain-workspace"' in home.text
+    assert 'id="dse-explain-level"' in home.text
+    assert 'id="dse-explain-topic-scroll"' in home.text
+    assert "/api/dse/topics" in home.text
+    assert "edb.gov.hk/en/curriculum-development/kla/ma/curr/index2.html" in home.text
     assert 'id="dse-log-solve"' in home.text
     assert 'id="dse-log-create"' in home.text
     assert 'id="dse-log-explain"' in home.text
@@ -526,3 +534,63 @@ def test_page_has_three_mode_controls_and_s1_s6(tmp_path, monkeypatch):
     assert 'value="S7"' not in home.text
     assert "/api/dse/question" in home.text
     assert "/api/dse/mark" in home.text
+
+
+def test_dse_explain_topics_catalog_is_edb_s1_to_s6(tmp_path, monkeypatch):
+    client = _client(monkeypatch, tmp_path)
+    response = client.get("/api/dse/topics")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["levels"] == ["S1", "S2", "S3", "S4", "S5", "S6"]
+    assert payload["source"]["href"].endswith("/ma/curr/index2.html")
+    s1_ids = [row["id"] for row in payload["topics"]["S1"]]
+    s3_ids = [row["id"] for row in payload["topics"]["S3"]]
+    s4_ids = [row["id"] for row in payload["topics"]["S4"]]
+    assert s1_ids == s3_ids
+    assert "ks3_01_basic_computation" in s1_ids
+    assert "ks3_25_pythagoras" in s1_ids
+    assert "ks3_32_inquiry" in s1_ids
+    assert len(s1_ids) == 32
+    assert "cp_01_quadratic_equations" in s4_ids
+    assert "cp_11_basic_circles" in s4_ids
+    assert "m1_01_binomial_expansion" in s4_ids
+    assert "m2_02_mathematical_induction" in s4_ids
+    assert "m2_16_scalar_vector_product" in s4_ids
+    labels = {row["id"]: row["label"] for row in payload["topics"]["S4"]}
+    assert labels["cp_07_sequences"] == (
+        "7. Arithmetic and geometric sequences and their summations"
+    )
+
+
+def test_dse_explain_uses_selected_edb_topics(tmp_path, monkeypatch):
+    _install_key(tmp_path, monkeypatch)
+    seen = _mock_chat(monkeypatch, reply="topic explanation")
+    client = _client(monkeypatch, tmp_path)
+    empty = client.post(
+        "/api/chat",
+        json={
+            "function": "dse_math",
+            "mode": "explain",
+            "level": "S2",
+            "topics": ["ks3_08_linear_eq_one", "ks3_25_pythagoras"],
+        },
+    )
+    assert empty.status_code == 200
+    assert seen["calls"] == 1
+    system = seen["json"]["messages"][0]["content"]
+    user = seen["json"]["messages"][1]["content"]
+    assert "School level: S2" in system
+    assert "Linear equations in one unknown" in system
+    assert "Pythagoras" in system
+    assert "EDB Mathematics learning units" in system
+    assert "S1–S3 8. Linear equations in one unknown" in user
+    payload = empty.json()
+    assert payload["topics"] == ["ks3_08_linear_eq_one", "ks3_25_pythagoras"]
+    assert payload["level"] == "S2"
+
+    bad = client.post(
+        "/api/dse/ask",
+        json={"mode": "explain", "topics": ["not_a_unit"]},
+    )
+    assert bad.status_code == 400
+    assert "S1–S6" in bad.json()["detail"] or "catalog" in bad.json()["detail"]
