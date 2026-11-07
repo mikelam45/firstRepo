@@ -1,3 +1,5 @@
+import json
+
 from fastapi.testclient import TestClient
 
 from app.catalog import DEFAULT_SELECTION
@@ -82,6 +84,9 @@ def test_functions_page_contains_dse_math(tmp_path, monkeypatch):
     assert 'id="dse-explain-topic"' in home.text
     assert 'id="dse-explain-picked-list"' in home.text
     assert "addExplainTopicFromSelect" in home.text
+    assert "formatCreatedQuestionText" in home.text
+    assert "teaching scenario" in home.text
+    assert "labelled diagrams" in home.text
     assert "/api/dse/topics" in home.text
     assert "edb.gov.hk/en/curriculum-development/kla/ma/curr/index2.html" in home.text
     assert 'id="dse-mode-guided_no_answer"' in home.text
@@ -409,7 +414,11 @@ def test_create_question_returns_session_id_and_mark_fail_hides_official_answer(
     session_id = payload["session_id"]
     create_system = seen["jsons"][0]["messages"][0]["content"]
     assert "Generate exactly ONE original mathematics question" in create_system
+    assert "teaching scenario" in create_system
+    assert "figure" in create_system
     assert "繁體" in create_system
+    assert payload.get("scenario") == ""
+    assert "figure" not in payload or payload.get("figure") in (None, {})
 
     marked = client.post(
         "/api/dse/mark",
@@ -427,6 +436,58 @@ def test_create_question_returns_session_id_and_mark_fail_hides_official_answer(
     assert fail["verdict"] == "wrong"
     mark_system = seen["jsons"][1]["messages"][0]["content"]
     assert "Do not restate the official answer" in mark_system
+
+
+def test_create_question_returns_scenario_and_figure(tmp_path, monkeypatch):
+    _install_key(tmp_path, monkeypatch)
+    created_reply = json.dumps(
+        {
+            "question": "Find the area of triangle ABC.",
+            "scenario": "A sports-day banner is cut as triangle ABC.",
+            "figure": {
+                "type": "geometry",
+                "title": "Triangle ABC",
+                "caption": "Not to scale",
+                "elements": [
+                    {
+                        "kind": "polygon",
+                        "points": [[20, 80], [80, 80], [50, 20]],
+                        "labels": ["A", "B", "C"],
+                    },
+                    {
+                        "kind": "segment",
+                        "from": [20, 80],
+                        "to": [80, 80],
+                        "label": "6 cm",
+                    },
+                ],
+            },
+            "expected_answer": "12 cm^2",
+            "mark_scheme": "M1 area formula; A1 12",
+            "outline": "base times height over 2",
+        }
+    )
+    seen = _mock_chat(monkeypatch, reply=created_reply)
+    client = _client(monkeypatch, tmp_path)
+    created = client.post(
+        "/api/dse/question",
+        json={"level": "S2", "topic": "geometry", "grounding": "mixed"},
+    )
+    assert created.status_code == 200, created.text
+    payload = created.json()
+    assert payload["question"] == "Find the area of triangle ABC."
+    assert payload["scenario"] == "A sports-day banner is cut as triangle ABC."
+    assert payload["figure"]["type"] == "geometry"
+    assert payload["figure"]["elements"][0]["labels"] == ["A", "B", "C"]
+    assert "```figure" in payload["display"]
+    assert "**Scenario.**" in payload["display"]
+    assert "12 cm^2" not in payload["display"]
+    assert "expected_answer" not in payload
+    assert "12 cm^2" not in payload["reply"]
+    assert payload["reply"] == payload["display"]
+    system = seen["json"]["messages"][0]["content"]
+    assert "scenario" in system
+    assert "figure" in system
 
 
 def test_s7_or_bad_mode_returns_400(tmp_path, monkeypatch):
@@ -588,6 +649,10 @@ def test_dse_explain_uses_selected_edb_topics(tmp_path, monkeypatch):
     assert "Pythagoras" in system
     assert "EDB Mathematics learning units" in system
     assert "S1–S3 8. Linear equations in one unknown" in user
+    assert "real-life scenario" in user
+    assert "labelled diagram" in user
+    assert "```figure" in system
+    assert "teaching scenario" in system
     payload = empty.json()
     assert payload["topics"] == ["ks3_08_linear_eq_one", "ks3_25_pythagoras"]
     assert payload["level"] == "S2"

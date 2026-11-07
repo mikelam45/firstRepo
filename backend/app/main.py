@@ -336,12 +336,20 @@ def setup_page() -> FileResponse:
 
 @app.get("/static/portal.css")
 def portal_css() -> FileResponse:
-    return FileResponse(PORTAL_CSS, media_type="text/css")
+    return FileResponse(
+        PORTAL_CSS,
+        media_type="text/css",
+        headers={"Cache-Control": "no-store"},
+    )
 
 
 @app.get("/static/chat_format.js")
 def chat_format_js() -> FileResponse:
-    return FileResponse(CHAT_FORMAT_JS, media_type="application/javascript")
+    return FileResponse(
+        CHAT_FORMAT_JS,
+        media_type="application/javascript",
+        headers={"Cache-Control": "no-store"},
+    )
 
 
 @app.get("/api/models")
@@ -548,8 +556,9 @@ def post_chat(
                     for row in parsed_rows
                 ]
                 first = stored_rows[0]
-                result["reply"] = first["question"]
-                result.update(public_question_payload(first))
+                public_first = public_question_payload(first)
+                result.update(public_first)
+                result["reply"] = str(public_first.get("display") or first["question"])
                 result["question_count"] = len(stored_rows)
                 result["questions"] = [public_question_payload(row) for row in stored_rows]
                 result = scrub_hidden_fields(result, include_answer=False)

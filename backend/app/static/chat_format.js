@@ -4,7 +4,10 @@
 
   var SVG_NS = "http://www.w3.org/2000/svg";
   var SERIES_COLORS = ["var(--green)", "var(--amber)", "var(--rust)", "var(--ink)", "var(--muted)"];
-  var CHART_FENCE_RE = /```chart[^\n]*\n([\s\S]*?)```/g;
+  var MEDIA_FENCE_RE = /```(chart|figure)[^\n]*\n([\s\S]*?)```/g;
+  var MAX_FIGURE_ELEMENTS = 48;
+  var MAX_POLYGON_POINTS = 16;
+  var MAX_LABEL_CHARS = 48;
   var HEADING_RE = /^(#{1,3})\s+(.+)$/;
   var UL_RE = /^\s*[-*+]\s+(.+)$/;
   var OL_RE = /^\s*\d+\.\s+(.+)$/;
@@ -73,7 +76,214 @@
       title: data.title == null ? "" : String(data.title),
       labels: labels,
       series: series,
+      caption: data.caption == null ? "" : String(data.caption).slice(0, MAX_LABEL_CHARS),
     };
+  }
+
+  function finiteNumber(value) {
+    var number = typeof value === "number" ? value : Number(value);
+    return isFinite(number) ? number : null;
+  }
+
+  function clipLabel(value) {
+    return String(value == null ? "" : value).trim().slice(0, MAX_LABEL_CHARS);
+  }
+
+  function parsePoint(value) {
+    if (Array.isArray(value) && value.length >= 2) {
+      var x = finiteNumber(value[0]);
+      var y = finiteNumber(value[1]);
+      if (x == null || y == null) return null;
+      return [x, y];
+    }
+    if (value && typeof value === "object") {
+      var px = finiteNumber(value.x);
+      var py = finiteNumber(value.y);
+      if (px == null || py == null) return null;
+      return [px, py];
+    }
+    return null;
+  }
+
+  function parseFigureElement(row) {
+    if (!row || typeof row !== "object" || Array.isArray(row)) return null;
+    var kind = String(row.kind || row.type || "").trim().toLowerCase();
+    if (kind === "text") kind = "label";
+    if (kind === "line") kind = "segment";
+    var item = { kind: kind };
+    if (kind === "point") {
+      var x = finiteNumber(row.x);
+      var y = finiteNumber(row.y);
+      if (x == null || y == null) {
+        var at = parsePoint(row.at || row.point);
+        if (!at) return null;
+        x = at[0];
+        y = at[1];
+      }
+      item.x = x;
+      item.y = y;
+      item.label = clipLabel(row.label);
+      return item;
+    }
+    if (kind === "segment" || kind === "arrow") {
+      var start = parsePoint(row.from || row.start);
+      var end = parsePoint(row.to || row.end);
+      if (!start || !end) return null;
+      item.from = start;
+      item.to = end;
+      item.label = clipLabel(row.label);
+      return item;
+    }
+    if (kind === "polygon") {
+      if (!Array.isArray(row.points) || row.points.length < 3) return null;
+      var points = [];
+      for (var i = 0; i < row.points.length && points.length < MAX_POLYGON_POINTS; i += 1) {
+        var point = parsePoint(row.points[i]);
+        if (!point) return null;
+        points.push(point);
+      }
+      if (points.length < 3) return null;
+      var labels = [];
+      if (Array.isArray(row.labels)) {
+        for (var L = 0; L < row.labels.length && L < points.length; L += 1) {
+          labels.push(clipLabel(row.labels[L]));
+        }
+      }
+      item.points = points;
+      item.labels = labels;
+      item.fill = row.fill !== false;
+      return item;
+    }
+    if (kind === "circle") {
+      var cx = finiteNumber(row.cx);
+      var cy = finiteNumber(row.cy);
+      var radius = finiteNumber(row.r != null ? row.r : row.radius);
+      if (cx == null || cy == null || radius == null || radius <= 0) {
+        var centre = parsePoint(row.center || row.centre || row.at);
+        if (!centre || radius == null || radius <= 0) return null;
+        cx = centre[0];
+        cy = centre[1];
+      }
+      item.cx = cx;
+      item.cy = cy;
+      item.r = radius;
+      item.label = clipLabel(row.label);
+      return item;
+    }
+    if (kind === "angle") {
+      var vertex = parsePoint(row.at || row.vertex);
+      var fromPt = parsePoint(row.from || row.start);
+      var toPt = parsePoint(row.to || row.end);
+      if (!vertex || !fromPt || !toPt) return null;
+      item.at = vertex;
+      item.from = fromPt;
+      item.to = toPt;
+      item.label = clipLabel(row.label);
+      item.right = !!(row.right || row.right_angle);
+      return item;
+    }
+    if (kind === "label") {
+      var lx = finiteNumber(row.x);
+      var ly = finiteNumber(row.y);
+      if (lx == null || ly == null) {
+        var loc = parsePoint(row.at);
+        if (!loc) return null;
+        lx = loc[0];
+        ly = loc[1];
+      }
+      var text = clipLabel(row.text || row.label);
+      if (!text) return null;
+      item.x = lx;
+      item.y = ly;
+      item.text = text;
+      return item;
+    }
+    return null;
+  }
+
+  function parseFigureSpec(body) {
+    var data = body;
+    if (typeof body === "string") {
+      var text = String(body || "").trim();
+      if (!text) return null;
+      try {
+        data = JSON.parse(text);
+      } catch (error) {
+        return null;
+      }
+    }
+    if (!data || typeof data !== "object" || Array.isArray(data)) return null;
+    var type = data.type == null || data.type === "" ? "geometry" : String(data.type).toLowerCase();
+    if (type !== "geometry" && type !== "coordinate" && type !== "number_line" && type !== "chart") {
+      return null;
+    }
+    var title = clipLabel(data.title);
+    var caption = clipLabel(data.caption);
+    if (type === "chart") {
+      var payload = {};
+      Object.keys(data).forEach(function (key) { payload[key] = data[key]; });
+      if (String(payload.type || "").toLowerCase() === "chart") payload.type = "bar";
+      var chart = parseChartFence(JSON.stringify(payload));
+      if (!chart) return null;
+      chart.caption = caption;
+      return chart;
+    }
+    if (type === "number_line") {
+      var low = finiteNumber(data.min);
+      var high = finiteNumber(data.max);
+      if (low == null || high == null || low === high) return null;
+      if (low > high) {
+        var swap = low;
+        low = high;
+        high = swap;
+      }
+      var marks = [];
+      var marksRaw = data.marks || data.ticks;
+      if (Array.isArray(marksRaw)) {
+        for (var m = 0; m < marksRaw.length && marks.length < 24; m += 1) {
+          var mark = finiteNumber(marksRaw[m]);
+          if (mark != null) marks.push(mark);
+        }
+      }
+      var linePoints = [];
+      if (Array.isArray(data.points)) {
+        for (var p = 0; p < data.points.length && linePoints.length < 16; p += 1) {
+          var row = data.points[p];
+          if (row && typeof row === "object" && !Array.isArray(row)) {
+            var value = finiteNumber(row.value != null ? row.value : row.x);
+            if (value == null) continue;
+            linePoints.push({ value: value, label: clipLabel(row.label) });
+          } else {
+            var raw = finiteNumber(row);
+            if (raw != null) linePoints.push({ value: raw, label: "" });
+          }
+        }
+      }
+      return { type: type, title: title, caption: caption, min: low, max: high, marks: marks, points: linePoints };
+    }
+    var elements = [];
+    if (Array.isArray(data.elements)) {
+      for (var e = 0; e < data.elements.length && elements.length < MAX_FIGURE_ELEMENTS; e += 1) {
+        var item = parseFigureElement(data.elements[e]);
+        if (item) elements.push(item);
+      }
+    }
+    if (!elements.length) return null;
+    var spec = { type: type, title: title, caption: caption, elements: elements };
+    var axesSrc = data.axes && typeof data.axes === "object" ? data.axes : data;
+    var xmin = finiteNumber(axesSrc.xmin);
+    var xmax = finiteNumber(axesSrc.xmax);
+    var ymin = finiteNumber(axesSrc.ymin);
+    var ymax = finiteNumber(axesSrc.ymax);
+    if (xmin != null && xmax != null && ymin != null && ymax != null && xmin !== xmax && ymin !== ymax) {
+      spec.axes = {
+        xmin: Math.min(xmin, xmax),
+        xmax: Math.max(xmin, xmax),
+        ymin: Math.min(ymin, ymax),
+        ymax: Math.max(ymin, ymax),
+      };
+    }
+    return spec;
   }
 
   function isTableSeparator(line) {
@@ -171,17 +381,17 @@
     return table;
   }
 
-  function splitChartFences(text) {
+  function splitMediaFences(text) {
     var src = String(text || "");
     var parts = [];
     var last = 0;
     var match;
-    CHART_FENCE_RE.lastIndex = 0;
-    while ((match = CHART_FENCE_RE.exec(src))) {
+    MEDIA_FENCE_RE.lastIndex = 0;
+    while ((match = MEDIA_FENCE_RE.exec(src))) {
       if (match.index > last) {
         parts.push({ kind: "md", text: src.slice(last, match.index) });
       }
-      parts.push({ kind: "chart", text: match[1], raw: match[0] });
+      parts.push({ kind: match[1], text: match[2], raw: match[0] });
       last = match.index + match[0].length;
     }
     if (last < src.length) {
@@ -484,6 +694,296 @@
     return drawAxisChart(spec);
   }
 
+  function mapBounds(spec, width, height, pad) {
+    var yUp = spec.type === "coordinate";
+    var xmin = 0;
+    var xmax = 100;
+    var ymin = 0;
+    var ymax = 100;
+    if (spec.axes) {
+      xmin = spec.axes.xmin;
+      xmax = spec.axes.xmax;
+      ymin = spec.axes.ymin;
+      ymax = spec.axes.ymax;
+    } else if (spec.type === "coordinate") {
+      var xs = [];
+      var ys = [];
+      (spec.elements || []).forEach(function (el) {
+        if (el.kind === "point" || el.kind === "label") {
+          xs.push(el.x); ys.push(el.y);
+        } else if (el.kind === "circle") {
+          xs.push(el.cx - el.r, el.cx + el.r);
+          ys.push(el.cy - el.r, el.cy + el.r);
+        } else if (el.kind === "segment" || el.kind === "arrow") {
+          xs.push(el.from[0], el.to[0]);
+          ys.push(el.from[1], el.to[1]);
+        } else if (el.kind === "polygon") {
+          el.points.forEach(function (pt) { xs.push(pt[0]); ys.push(pt[1]); });
+        } else if (el.kind === "angle") {
+          xs.push(el.at[0], el.from[0], el.to[0]);
+          ys.push(el.at[1], el.from[1], el.to[1]);
+        }
+      });
+      if (xs.length && ys.length) {
+        xmin = Math.min.apply(null, xs);
+        xmax = Math.max.apply(null, xs);
+        ymin = Math.min.apply(null, ys);
+        ymax = Math.max.apply(null, ys);
+        if (xmin === xmax) xmax = xmin + 1;
+        if (ymin === ymax) ymax = ymin + 1;
+        var padX = (xmax - xmin) * 0.12 || 1;
+        var padY = (ymax - ymin) * 0.12 || 1;
+        xmin -= padX; xmax += padX; ymin -= padY; ymax += padY;
+      }
+    }
+    return {
+      xmin: xmin,
+      xmax: xmax,
+      ymin: ymin,
+      ymax: ymax,
+      left: pad.left,
+      top: pad.top,
+      width: width - pad.left - pad.right,
+      height: height - pad.top - pad.bottom,
+      yUp: yUp,
+    };
+  }
+
+  function mapPointToPx(point, bounds) {
+    var xRange = bounds.xmax - bounds.xmin || 1;
+    var yRange = bounds.ymax - bounds.ymin || 1;
+    var x = bounds.left + ((point[0] - bounds.xmin) / xRange) * bounds.width;
+    var y;
+    if (bounds.yUp) {
+      y = bounds.top + bounds.height - ((point[1] - bounds.ymin) / yRange) * bounds.height;
+    } else {
+      y = bounds.top + ((point[1] - bounds.ymin) / yRange) * bounds.height;
+    }
+    return { x: x, y: y };
+  }
+
+  function unitVec(from, to) {
+    var dx = to.x - from.x;
+    var dy = to.y - from.y;
+    var len = Math.hypot(dx, dy) || 1;
+    return { x: dx / len, y: dy / len };
+  }
+
+  function offsetPoint(a, b, amount) {
+    var n = unitVec(a, b);
+    return { x: (a.x + b.x) / 2 + -n.y * amount, y: (a.y + b.y) / 2 + n.x * amount };
+  }
+
+  function drawNumberLine(spec) {
+    var width = 560;
+    var height = spec.title ? 140 : 110;
+    var pad = { left: 36, right: 36, top: spec.title ? 40 : 28, bottom: 36 };
+    var svg = svgEl("svg", {
+      class: "chat-chart chat-figure-svg",
+      viewBox: "0 0 " + width + " " + height,
+      role: "img",
+      "aria-label": spec.title || spec.caption || "number line",
+    });
+    svg.appendChild(svgEl("rect", { width: width, height: height, fill: "var(--card)", rx: 8 }));
+    if (spec.title) {
+      svg.appendChild(svgText({
+        x: width / 2, y: 22, "text-anchor": "middle", fill: "var(--ink)",
+        "font-size": "14", "font-weight": "650",
+      }, spec.title));
+    }
+    var y = pad.top + 28;
+    var x0 = pad.left;
+    var x1 = width - pad.right;
+    svg.appendChild(svgEl("line", { x1: x0, y1: y, x2: x1, y2: y, stroke: "var(--ink)", "stroke-width": "2" }));
+    svg.appendChild(svgEl("polygon", {
+      points: (x1) + "," + y + " " + (x1 - 8) + "," + (y - 5) + " " + (x1 - 8) + "," + (y + 5),
+      fill: "var(--ink)",
+    }));
+    function xOf(value) {
+      return x0 + ((value - spec.min) / (spec.max - spec.min || 1)) * (x1 - x0 - 10);
+    }
+    var marks = spec.marks && spec.marks.length ? spec.marks : [spec.min, spec.max];
+    marks.forEach(function (mark) {
+      var x = xOf(mark);
+      svg.appendChild(svgEl("line", { x1: x, y1: y - 8, x2: x, y2: y + 8, stroke: "var(--ink)" }));
+      svg.appendChild(svgText({
+        x: x, y: y + 22, "text-anchor": "middle", fill: "var(--muted)", "font-size": "11",
+      }, formatTick(mark)));
+    });
+    (spec.points || []).forEach(function (row) {
+      var x = xOf(row.value);
+      svg.appendChild(svgEl("circle", { cx: x, cy: y, r: 5, fill: "var(--green)" }));
+      if (row.label) {
+        svg.appendChild(svgText({
+          x: x, y: y - 12, "text-anchor": "middle", fill: "var(--ink)", "font-size": "12",
+        }, row.label));
+      }
+    });
+    return svg;
+  }
+
+  function drawGeometryFigure(spec) {
+    var width = 560;
+    var height = 320;
+    var pad = { top: spec.title ? 44 : 24, right: 24, bottom: 24, left: 24 };
+    var bounds = mapBounds(spec, width, height, pad);
+    var svg = svgEl("svg", {
+      class: "chat-chart chat-figure-svg",
+      viewBox: "0 0 " + width + " " + height,
+      role: "img",
+      "aria-label": spec.title || spec.caption || spec.type + " figure",
+    });
+    svg.appendChild(svgEl("rect", { width: width, height: height, fill: "var(--card)", rx: 8 }));
+    if (spec.title) {
+      svg.appendChild(svgText({
+        x: width / 2, y: 22, "text-anchor": "middle", fill: "var(--ink)",
+        "font-size": "14", "font-weight": "650",
+      }, spec.title));
+    }
+    if (spec.type === "coordinate") {
+      var origin = mapPointToPx([0, 0], bounds);
+      var left = mapPointToPx([bounds.xmin, 0], bounds);
+      var right = mapPointToPx([bounds.xmax, 0], bounds);
+      var bottom = mapPointToPx([0, bounds.ymin], bounds);
+      var top = mapPointToPx([0, bounds.ymax], bounds);
+      svg.appendChild(svgEl("line", {
+        x1: left.x, y1: origin.y, x2: right.x, y2: origin.y,
+        stroke: "var(--ink)", "stroke-width": "1.5",
+      }));
+      svg.appendChild(svgEl("line", {
+        x1: origin.x, y1: bottom.y, x2: origin.x, y2: top.y,
+        stroke: "var(--ink)", "stroke-width": "1.5",
+      }));
+    }
+    function placeLabel(pt, text, dx, dy) {
+      if (!text) return;
+      svg.appendChild(svgText({
+        x: pt.x + (dx || 6),
+        y: pt.y + (dy || -6),
+        fill: "var(--ink)",
+        "font-size": "12",
+      }, text));
+    }
+    (spec.elements || []).forEach(function (el) {
+      if (el.kind === "polygon") {
+        var mapped = el.points.map(function (pt) { return mapPointToPx(pt, bounds); });
+        var pts = mapped.map(function (pt) { return pt.x + "," + pt.y; }).join(" ");
+        svg.appendChild(svgEl("polygon", {
+          points: pts,
+          fill: el.fill ? "var(--green-bg)" : "none",
+          stroke: "var(--ink)",
+          "stroke-width": "2",
+        }));
+        mapped.forEach(function (pt, index) {
+          placeLabel(pt, el.labels && el.labels[index], 6, -6);
+        });
+      } else if (el.kind === "segment" || el.kind === "arrow") {
+        var a = mapPointToPx(el.from, bounds);
+        var b = mapPointToPx(el.to, bounds);
+        svg.appendChild(svgEl("line", {
+          x1: a.x, y1: a.y, x2: b.x, y2: b.y,
+          stroke: "var(--ink)", "stroke-width": "2",
+        }));
+        if (el.kind === "arrow") {
+          var dir = unitVec(a, b);
+          var leftA = { x: b.x - dir.x * 10 + -dir.y * 5, y: b.y - dir.y * 10 + dir.x * 5 };
+          var rightA = { x: b.x - dir.x * 10 - -dir.y * 5, y: b.y - dir.y * 10 - dir.x * 5 };
+          svg.appendChild(svgEl("polygon", {
+            points: b.x + "," + b.y + " " + leftA.x + "," + leftA.y + " " + rightA.x + "," + rightA.y,
+            fill: "var(--ink)",
+          }));
+        }
+        if (el.label) {
+          var mid = offsetPoint(a, b, 10);
+          svg.appendChild(svgText({
+            x: mid.x, y: mid.y, "text-anchor": "middle", fill: "var(--ink)", "font-size": "12",
+          }, el.label));
+        }
+      } else if (el.kind === "circle") {
+        var c = mapPointToPx([el.cx, el.cy], bounds);
+        var rim = mapPointToPx([el.cx + el.r, el.cy], bounds);
+        var rpx = Math.abs(rim.x - c.x);
+        svg.appendChild(svgEl("circle", {
+          cx: c.x, cy: c.y, r: Math.max(4, rpx),
+          fill: "none", stroke: "var(--ink)", "stroke-width": "2",
+        }));
+        placeLabel(c, el.label, 8, -8);
+      } else if (el.kind === "point") {
+        var p = mapPointToPx([el.x, el.y], bounds);
+        svg.appendChild(svgEl("circle", { cx: p.x, cy: p.y, r: 4, fill: "var(--ink)" }));
+        placeLabel(p, el.label, 8, -8);
+      } else if (el.kind === "label") {
+        placeLabel(mapPointToPx([el.x, el.y], bounds), el.text, 0, 0);
+      } else if (el.kind === "angle") {
+        var vertex = mapPointToPx(el.at, bounds);
+        var fromPt = mapPointToPx(el.from, bounds);
+        var toPt = mapPointToPx(el.to, bounds);
+        var u = unitVec(vertex, fromPt);
+        var v = unitVec(vertex, toPt);
+        if (el.right) {
+          var s = 12;
+          var p1 = { x: vertex.x + u.x * s, y: vertex.y + u.y * s };
+          var p3 = { x: vertex.x + v.x * s, y: vertex.y + v.y * s };
+          var p2 = { x: p1.x + v.x * s, y: p1.y + v.y * s };
+          svg.appendChild(svgEl("polyline", {
+            points: p1.x + "," + p1.y + " " + p2.x + "," + p2.y + " " + p3.x + "," + p3.y,
+            fill: "none", stroke: "var(--ink)", "stroke-width": "1.5",
+          }));
+        } else {
+          var radius = 18;
+          var a1 = Math.atan2(u.y, u.x);
+          var a2 = Math.atan2(v.y, v.x);
+          var sweep = a2 - a1;
+          if (sweep > Math.PI) sweep -= 2 * Math.PI;
+          if (sweep < -Math.PI) sweep += 2 * Math.PI;
+          var end = { x: vertex.x + Math.cos(a1 + sweep) * radius, y: vertex.y + Math.sin(a1 + sweep) * radius };
+          var start = { x: vertex.x + Math.cos(a1) * radius, y: vertex.y + Math.sin(a1) * radius };
+          svg.appendChild(svgEl("path", {
+            d: "M " + start.x + " " + start.y + " A " + radius + " " + radius + " 0 0 "
+              + (sweep > 0 ? "1" : "0") + " " + end.x + " " + end.y,
+            fill: "none",
+            stroke: "var(--ink)",
+            "stroke-width": "1.5",
+          }));
+        }
+        if (el.label) {
+          var bis = { x: u.x + v.x, y: u.y + v.y };
+          var bl = Math.hypot(bis.x, bis.y) || 1;
+          svg.appendChild(svgText({
+            x: vertex.x + (bis.x / bl) * 28,
+            y: vertex.y + (bis.y / bl) * 28,
+            "text-anchor": "middle",
+            fill: "var(--ink)",
+            "font-size": "12",
+          }, el.label));
+        }
+      }
+    });
+    return svg;
+  }
+
+  function wrapFigure(svg, caption) {
+    if (!svg) return null;
+    var figure = document.createElement("figure");
+    figure.className = "chat-figure";
+    figure.appendChild(svg);
+    if (caption) {
+      var cap = document.createElement("figcaption");
+      cap.textContent = caption;
+      figure.appendChild(cap);
+    }
+    return figure;
+  }
+
+  function drawFigureSvg(spec) {
+    if (!spec) return null;
+    if (spec.type === "chart" || spec.type === "bar" || spec.type === "line" || spec.type === "pie") {
+      return wrapFigure(drawChartSvg(spec), spec.caption);
+    }
+    if (spec.type === "number_line") return wrapFigure(drawNumberLine(spec), spec.caption);
+    return wrapFigure(drawGeometryFigure(spec), spec.caption);
+  }
+
   function fallbackPre(text) {
     var pre = document.createElement("pre");
     pre.className = "chat-chart-fallback";
@@ -588,7 +1088,7 @@
   function renderAssistantReply(text) {
     var container = document.createElement("div");
     container.className = "chat-reply";
-    var parts = splitChartFences(text);
+    var parts = splitMediaFences(text);
     if (!parts.length) {
       appendMarkdownBlocks(container, "");
       return container;
@@ -599,6 +1099,10 @@
         var spec = parseChartFence(part.text);
         var chart = spec ? drawChartSvg(spec) : null;
         container.appendChild(chart || fallbackPre(part.raw || part.text));
+      } else if (part.kind === "figure") {
+        var figureSpec = parseFigureSpec(part.text);
+        var drawn = figureSpec ? drawFigureSvg(figureSpec) : null;
+        container.appendChild(drawn || fallbackPre(part.raw || part.text));
       } else {
         appendMarkdownBlocks(container, part.text);
       }
@@ -608,7 +1112,9 @@
 
   global.escapeHtml = escapeHtml;
   global.parseChartFence = parseChartFence;
+  global.parseFigureSpec = parseFigureSpec;
   global.markdownTableToHtml = markdownTableToHtml;
   global.renderAssistantReply = renderAssistantReply;
   global.drawChartSvg = drawChartSvg;
+  global.drawFigureSvg = drawFigureSvg;
 })(typeof window !== "undefined" ? window : this);

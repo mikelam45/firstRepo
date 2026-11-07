@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from .chat import ChatError
+from .chat_format import clip_scenario, parse_figure_spec
 from .rag import (
     COLLECTION_DSE_MATH,
     FORMAT_REPLY_INSTRUCTION,
@@ -272,12 +273,33 @@ DSE_PRACTICE_INSTRUCTION = (
     "matches the selected module, topic, difficulty, and paper, then give the "
     "worked solution. Always show steps before the final answer."
 )
+DSE_FIGURE_INSTRUCTION = (
+    "Use diagrams and figures, not only prose. Invent a short teaching scenario "
+    "a Hong Kong secondary student would recognise (for example MTR fares, a wet "
+    "market, sports day, a shopping receipt, a floor plan, or a slope on a hill) "
+    "and keep the mathematics at the stated level. "
+    "When a sketch, geometric figure, number line, coordinate graph, or statistical "
+    "chart helps, emit one fenced JSON block:\n"
+    "```figure\n"
+    '{"type":"geometry|coordinate|number_line|chart","title":"...","caption":"...",'
+    '"elements":[{"kind":"polygon","points":[[20,80],[80,80],[50,20]],"labels":["A","B","C"]},'
+    '{"kind":"segment","from":[20,80],"to":[80,80],"label":"6 cm"}]}\n'
+    "```\n"
+    "geometry uses a 0–100 canvas, x right, y down. coordinate uses data units and "
+    'optional "axes":{"xmin":-2,"xmax":6,"ymin":-2,"ymax":6} with y up. '
+    "number_line uses min, max, marks, and points. chart uses labels and series "
+    "(bar, line, or pie). "
+    "Label given lengths and angles. Do not draw the hidden answer, the completed "
+    "construction, or worked numbers that give the result away."
+)
 DSE_EXPLAIN_INSTRUCTION = (
     "Mode is Explain. Teach the selected school-level topics step by step, "
     "grounded on uploaded syllabus and notes when they are present. Cite those "
-    "files. For each topic give the idea, the method, one worked example, and "
+    "files. For each topic give: a short real-life scenario, the idea, a labelled "
+    "diagram or figure in a ```figure fence, the method, one worked example, and "
     "common mistakes. Stay at the stated form (S1–S6); do not jump ahead unless "
-    "asked. Show working; mark the final answer when you reach one."
+    "asked. Show working; mark the final answer when you reach one. "
+    + DSE_FIGURE_INSTRUCTION
 )
 DSE_GUIDED_NO_ANSWER_INSTRUCTION = (
     "Mode is Guided solve (no final answer yet). "
@@ -297,14 +319,31 @@ DSE_GUIDED_WITH_ANSWER_INSTRUCTION = (
     "When a mark scheme helps, use HKDSE M-marks (method) and A-marks (accuracy) "
     "in a Markdown table."
 )
+DSE_CREATE_JSON_KEYS = (
+    "question, scenario, figure, expected_answer, mark_scheme, outline"
+)
+DSE_CREATE_FIGURE_JSON = (
+    "figure is a JSON object or null. Use the same contract as a ```figure fence: "
+    '{"type":"geometry|coordinate|number_line|chart","title":"...","caption":"...",'
+    '"elements":[{"kind":"polygon","points":[[20,80],[80,80],[50,20]],'
+    '"labels":["A","B","C"]}]}. '
+    "geometry uses a 0–100 canvas, x right, y down. Include a diagram whenever the "
+    "question has a triangle, circle, graph, chart, number line, 3-D figure, or "
+    "measurement. If the item is pure algebra with no geometric meaning, set "
+    "figure to null. The figure must show given information only, never the answer. "
+    "scenario is one or two sentences of teaching context, not the solution."
+)
 DSE_CREATE_QUESTION_INSTRUCTION = (
     "Mode is Generate + mark attempt. "
     "Generate exactly ONE original mathematics question at the requested Hong Kong "
     "secondary level and topic. Junior secondary (S1–S3) stays at that level; "
     "S4–S6 may be HKDSE style. Calculus is only for S5–S6. "
-    "Do not include the answer, working, or hints in the question text. "
+    "Wrap the item in a short teaching scenario a student can picture. "
+    "Do not include the answer, working, or hints in the question text or figure. "
     "Reply with JSON only, no markdown fences, with keys: "
-    "question, expected_answer, mark_scheme, outline."
+    + DSE_CREATE_JSON_KEYS
+    + ". "
+    + DSE_CREATE_FIGURE_JSON
 )
 
 
@@ -318,10 +357,13 @@ def create_question_instruction(count: int = DEFAULT_QUESTION_COUNT) -> str:
         "secondary level and topic. Junior secondary (S1–S3) stays at that level; "
         "S4–S6 may be HKDSE style. Calculus is only for S5–S6. "
         "Vary the items so they are not copies of each other. "
-        "Do not include the answer, working, or hints in the question text. "
+        "Wrap each item in a short teaching scenario a student can picture. "
+        "Do not include the answer, working, or hints in the question text or figure. "
         "Reply with JSON only, no markdown fences, as "
-        '{"questions":[{"question":"...","expected_answer":"...","mark_scheme":"...","outline":"..."}]} '
-        f"with exactly {n} items."
+        '{"questions":[{"question":"...","scenario":"...","figure":{},'
+        '"expected_answer":"...","mark_scheme":"...","outline":"..."}]} '
+        f"with exactly {n} items. "
+        + DSE_CREATE_FIGURE_JSON
     )
 DSE_MARK_INSTRUCTION = (
     "You are an HKDSE marker. Compare the student's attempt to the hidden mark "
@@ -473,7 +515,11 @@ def explain_user_message(topic_ids: list[str], extra: str = "") -> str:
     extra = extra.strip()
     if extra:
         return extra + "\n\n" + head
-    return head + " Teach each one at that school level with a worked example."
+    return (
+        head
+        + " Teach each one at that school level with a real-life scenario, "
+        "a labelled diagram or figure, and a worked example."
+    )
 
 
 def resolve_dse_difficulty(value: str | None) -> str | None:
@@ -742,22 +788,40 @@ def extract_json_object(text: str) -> dict[str, Any] | None:
     return None
 
 
-def _question_from_mapping(parsed: dict[str, Any], fallback: str = "") -> dict[str, str]:
+def _question_from_mapping(parsed: dict[str, Any], fallback: str = "") -> dict[str, Any]:
     question = str(parsed.get("question") or "").strip()
     if not question:
         question = (fallback or "").strip()
     expected = str(
         parsed.get("expected_answer") or parsed.get("official_answer") or parsed.get("answer") or ""
     ).strip()
+    figure = parse_figure_spec(parsed.get("figure"))
     return {
         "question": question,
+        "scenario": clip_scenario(parsed.get("scenario")),
+        "figure": figure,
         "expected_answer": expected,
         "mark_scheme": str(parsed.get("mark_scheme") or "").strip(),
         "outline": str(parsed.get("outline") or "").strip(),
     }
 
 
-def parse_generated_question(text: str) -> dict[str, str]:
+def student_question_text(parsed: dict[str, Any]) -> str:
+    parts: list[str] = []
+    scenario = clip_scenario(parsed.get("scenario"))
+    if scenario:
+        parts.append("**Scenario.** " + scenario)
+    figure = parsed.get("figure")
+    spec = parse_figure_spec(figure) if figure else None
+    if spec:
+        parts.append("```figure\n" + json.dumps(spec, ensure_ascii=False) + "\n```")
+    question = str(parsed.get("question") or "").strip()
+    if question:
+        parts.append(question)
+    return "\n\n".join(parts)
+
+
+def parse_generated_question(text: str) -> dict[str, Any]:
     parsed = extract_json_object(text) or {}
     items = parsed.get("questions")
     if isinstance(items, list) and items and isinstance(items[0], dict):
@@ -765,7 +829,7 @@ def parse_generated_question(text: str) -> dict[str, str]:
     return _question_from_mapping(parsed, text)
 
 
-def parse_generated_questions(text: str, count: int = DEFAULT_QUESTION_COUNT) -> list[dict[str, str]]:
+def parse_generated_questions(text: str, count: int = DEFAULT_QUESTION_COUNT) -> list[dict[str, Any]]:
     wanted = resolve_question_count(count)
     parsed = extract_json_object(text) or {}
     raw_items = parsed.get("questions")
@@ -805,7 +869,7 @@ def parse_mark_verdict(text: str) -> tuple[str, str]:
 def store_created_question(
     data_dir: Path,
     *,
-    parsed: dict[str, str],
+    parsed: dict[str, Any],
     level: str | None,
     topic: str | None,
     language: str,
@@ -821,6 +885,8 @@ def store_created_question(
         "module": module,
         "language": language,
         "question": parsed["question"],
+        "scenario": clip_scenario(parsed.get("scenario")),
+        "figure": parse_figure_spec(parsed.get("figure")),
         "expected_answer": parsed.get("expected_answer") or "",
         "mark_scheme": parsed.get("mark_scheme") or "",
         "outline": parsed.get("outline") or "",
@@ -879,14 +945,20 @@ def record_guided_turn(
 
 
 def public_question_payload(session: dict[str, Any]) -> dict[str, Any]:
-    return {
+    figure = parse_figure_spec(session.get("figure"))
+    payload: dict[str, Any] = {
         "session_id": session["id"],
         "question_id": session.get("question_id") or session["id"],
         "question": session.get("question") or "",
+        "scenario": clip_scenario(session.get("scenario")),
         "level": session.get("level"),
         "topic": session.get("topic"),
         "mode": session.get("mode") or MODE_CREATE_AND_MARK,
+        "display": student_question_text(session),
     }
+    if figure:
+        payload["figure"] = figure
+    return payload
 
 
 def public_mark_payload(

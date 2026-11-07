@@ -1,6 +1,11 @@
 from fastapi.testclient import TestClient
 
-from app.chat_format import escape_html, markdown_table_to_html, parse_chart_fence
+from app.chat_format import (
+    escape_html,
+    markdown_table_to_html,
+    parse_chart_fence,
+    parse_figure_spec,
+)
 from app.catalog import DEFAULT_SELECTION
 from app.main import CHAT_FORMAT_JS, PAGE, app
 from app.rag import FORMAT_REPLY_INSTRUCTION, MIXED_SYSTEM, STRICT_SYSTEM
@@ -105,6 +110,44 @@ def test_format_instruction_avoids_only_and_documents_the_chart_fence():
     assert "ONLY" not in MIXED_SYSTEM
 
 
+def test_parse_figure_spec_accepts_geometry_and_rejects_junk():
+    spec = parse_figure_spec(
+        '{"type":"geometry","title":"Triangle ABC","caption":"Not to scale",'
+        '"elements":[{"kind":"polygon","points":[[20,80],[80,80],[50,20]],'
+        '"labels":["A","B","C"]},{"kind":"segment","from":[20,80],"to":[80,80],'
+        '"label":"6 cm"}]}'
+    )
+    assert spec is not None
+    assert spec["type"] == "geometry"
+    assert spec["title"] == "Triangle ABC"
+    assert spec["caption"] == "Not to scale"
+    assert spec["elements"][0]["kind"] == "polygon"
+    assert spec["elements"][0]["points"][2] == [50.0, 20.0]
+    assert spec["elements"][1]["label"] == "6 cm"
+
+    line = parse_figure_spec(
+        {
+            "type": "number_line",
+            "min": 0,
+            "max": 10,
+            "marks": [0, 5, 10],
+            "points": [{"value": 3.5, "label": "P"}],
+        }
+    )
+    assert line is not None
+    assert line["type"] == "number_line"
+    assert line["points"][0]["label"] == "P"
+
+    chart = parse_figure_spec(
+        '{"type":"chart","labels":["A","B"],"series":[{"name":"n","values":[1,2]}]}'
+    )
+    assert chart is not None
+    assert chart["type"] == "bar"
+    assert parse_figure_spec("not json") is None
+    assert parse_figure_spec('{"type":"geometry","elements":[]}') is None
+    assert parse_figure_spec({"type": "geometry", "elements": [{"kind": "script"}]}) is None
+
+
 def test_functions_page_includes_table_chart_renderer(tmp_path, monkeypatch):
     client = _client(monkeypatch, tmp_path)
     home = client.get("/")
@@ -114,13 +157,17 @@ def test_functions_page_includes_table_chart_renderer(tmp_path, monkeypatch):
     assert home.status_code == 200
     assert script.status_code == 200
     assert "javascript" in script.headers["content-type"]
-    assert 'src="/static/chat_format.js"' in home.text
+    assert 'src="/static/chat_format.js' in home.text
     assert "parseChartFence" in home.text
     assert "parseChartFence" in script.text
+    assert "parseFigureSpec" in home.text
+    assert "parseFigureSpec" in script.text
     assert "markdownTableToHtml" in script.text
     assert "escapeHtml" in script.text
     assert "renderAssistantReply" in script.text
     assert "drawChartSvg" in script.text
+    assert "drawFigureSvg" in script.text
+    assert "```figure" in script.text or "figure" in script.text
     assert "createElementNS" in script.text
     assert ".innerHTML" not in script.text
     assert "body.innerHTML" not in home.text
