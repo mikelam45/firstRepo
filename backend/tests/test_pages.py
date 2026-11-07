@@ -72,6 +72,9 @@ def test_home_and_setup_are_distinct_html_pages(tmp_path, monkeypatch):
     assert "1 person" in home.text
     assert "2 persons" in home.text
     assert 'id="image-person-2"' in home.text
+    assert 'id="image-sex"' in home.text
+    assert 'id="image-sex-2"' in home.text
+    assert "Body figure" in home.text
     assert 'id="image-people-relation"' in home.text
     assert "Past projects" in home.text
     assert "Add new project" in home.text
