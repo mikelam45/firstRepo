@@ -124,6 +124,11 @@ def test_home_and_setup_are_distinct_html_pages(tmp_path, monkeypatch):
     assert 'id="dse-explain-workspace"' in home.text
     assert 'id="chat-lede"' in home.text
     assert "syncChatChrome" in home.text
+    assert 'id="dse-log-solve"' in home.text
+    assert 'id="dse-log-create"' in home.text
+    assert 'id="dse-log-explain"' in home.text
+    assert 'id="chat-clear"' in home.text
+    assert "Clear responses" in home.text
     assert 'id="dse-mode-guided_no_answer"' in home.text
     assert 'id="dse-mode-guided_with_answer"' in home.text
     assert 'id="dse-question-count"' in home.text

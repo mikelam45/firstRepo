@@ -71,6 +71,13 @@ def test_functions_page_contains_dse_math(tmp_path, monkeypatch):
     assert 'id="dse-solve-workspace"' in home.text
     assert 'id="dse-create-workspace"' in home.text
     assert 'id="dse-explain-workspace"' in home.text
+    assert 'id="dse-log-solve"' in home.text
+    assert 'id="dse-log-create"' in home.text
+    assert 'id="dse-log-explain"' in home.text
+    assert 'id="chat-clear"' in home.text
+    assert "Clear responses" in home.text
+    assert "clearActiveDseResponses" in home.text
+    assert "dseBuckets" in home.text
     assert 'id="dse-mode-guided_no_answer"' in home.text
     assert 'id="dse-mode-guided_with_answer"' in home.text
     assert "Hints by steps" in home.text
@@ -503,6 +510,11 @@ def test_page_has_three_mode_controls_and_s1_s6(tmp_path, monkeypatch):
     assert 'id="dse-solve-workspace"' in home.text
     assert 'id="dse-create-workspace"' in home.text
     assert 'id="dse-explain-workspace"' in home.text
+    assert 'id="dse-log-solve"' in home.text
+    assert 'id="dse-log-create"' in home.text
+    assert 'id="dse-log-explain"' in home.text
+    assert 'id="chat-clear"' in home.text
+    assert "Clear responses" in home.text
     assert 'id="dse-mode-guided_no_answer"' in home.text
     assert 'id="dse-mode-guided_with_answer"' in home.text
     assert "Hints by steps" in home.text
