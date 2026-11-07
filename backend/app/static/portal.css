@@ -283,6 +283,17 @@ pre.chat-reply,
 .file-list .name:hover { text-decoration: underline; }
 .model-line a { color: var(--green); }
 .chat-log { margin-top: 14px; }
+.chat-log-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+  margin-top: 14px;
+}
+.chat-log-toolbar .meta {
+  margin: 0;
+}
 .chat-message { margin: 0 0 14px; }
 .chat-role {
   font-family: "Avenir Next", "Segoe UI", sans-serif;

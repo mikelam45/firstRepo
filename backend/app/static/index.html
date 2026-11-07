@@ -250,7 +250,14 @@
           <button type="button" class="secondary" id="dse-fail-retry">Re-upload / retype a new attempt</button>
         </div>
       </div>
+      <div class="chat-log-toolbar" id="chat-log-toolbar" hidden>
+        <p class="meta" id="chat-log-caption">Responses</p>
+        <button type="button" class="secondary" id="chat-clear">Clear responses</button>
+      </div>
       <div id="chat-log" class="chat-log" hidden></div>
+      <div id="dse-log-solve" class="chat-log" hidden aria-label="Solve responses"></div>
+      <div id="dse-log-create" class="chat-log" hidden aria-label="Create and mark responses"></div>
+      <div id="dse-log-explain" class="chat-log" hidden aria-label="Explain responses"></div>
     </section>
 
     <section class="chat image-studio" id="image-panel" hidden aria-labelledby="image-title">
@@ -825,9 +832,17 @@
     const DSE_MODES = ["practice", "explain", "guided_no_answer", "guided_with_answer", "create_and_mark"];
     const DEFAULT_TRANSLATION_MESSAGE = "Translate the uploaded documents.";
     const DEFAULT_DSE_PRACTICE_MESSAGE = "Generate a HKDSE Mathematics practice question.";
-    const dseState = {
-      sessionId: null, questionId: null, question: "", stepCount: 0, awaitingRetry: false, questions: [],
+    function emptyDseBucket() {
+      return {
+        sessionId: null, questionId: null, question: "", stepCount: 0, awaitingRetry: false, questions: [],
+      };
+    }
+    const dseBuckets = {
+      solve: emptyDseBucket(),
+      create: emptyDseBucket(),
+      explain: emptyDseBucket(),
     };
+    let dseState = dseBuckets.solve;
     const RAG_ACCEPT = ".pdf,.docx,.doc,.txt,.md,.xlsx,.xls,.csv,.json";
     const TRANSLATION_ACCEPT = ".pdf,.docx,.doc,.pptx,.ppt,.xlsx,.xls,.txt,.md";
     const RAG_HINT = "Accepted: .pdf, .docx, .doc, .txt, .md, .xlsx, .xls, .csv, .json. Maximum 10 MB. .doc and .xls are stored, but text extraction needs a converted copy. Chat for RAG uses the extracted text as context.";
@@ -1066,6 +1081,73 @@
       });
     }
 
+    function adoptDseBucket() {
+      const option = selectedDseOption();
+      dseState = dseBuckets[option] || dseBuckets.solve;
+    }
+
+    function activeChatLog() {
+      if (state.functionId === "dse_math") {
+        const option = selectedDseOption();
+        return document.getElementById("dse-log-" + option) || document.getElementById("chat-log");
+      }
+      return document.getElementById("chat-log");
+    }
+
+    function syncChatLogs() {
+      const ids = ["chat-log", "dse-log-solve", "dse-log-create", "dse-log-explain"];
+      const active = activeChatLog();
+      ids.forEach((id) => {
+        const node = document.getElementById(id);
+        if (!node) return;
+        const show = node === active && node.childElementCount > 0;
+        node.hidden = !show;
+      });
+      const toolbar = document.getElementById("chat-log-toolbar");
+      const caption = document.getElementById("chat-log-caption");
+      const clear = document.getElementById("chat-clear");
+      const dse = state.functionId === "dse_math";
+      const labels = {
+        solve: "Solve responses",
+        create: "Create and mark responses",
+        explain: "Explain responses",
+      };
+      if (toolbar) toolbar.hidden = !dse;
+      if (caption) {
+        caption.textContent = dse ? (labels[selectedDseOption()] || "Responses") : "Responses";
+      }
+      if (clear) {
+        clear.disabled = !dse || !active || active.childElementCount === 0;
+        clear.textContent = "Clear responses";
+      }
+    }
+
+    function clearActiveDseResponses() {
+      if (state.functionId !== "dse_math") return;
+      const option = selectedDseOption();
+      const names = {
+        solve: "Solve a question",
+        create: "Create and mark questions",
+        explain: "Explain",
+      };
+      const ok = window.confirm(
+        "Clear past responses for “" + (names[option] || option) + "”? "
+        + "The other two DSE functions keep their history. Uploaded syllabus files are not deleted."
+      );
+      if (!ok) return;
+      const log = activeChatLog();
+      if (log) log.replaceChildren();
+      dseBuckets[option] = emptyDseBucket();
+      dseState = dseBuckets[option];
+      setDseFailChoices(false);
+      const status = document.getElementById("chat-state");
+      if (status) {
+        status.className = "";
+        status.textContent = "Cleared “" + (names[option] || option) + "” responses.";
+      }
+      syncDseModeUi();
+    }
+
     function syncChatChrome() {
       const title = document.getElementById("chat-title");
       const lede = document.getElementById("chat-lede");
@@ -1095,6 +1177,7 @@
     }
 
     function syncDseModeUi() {
+      adoptDseBucket();
       const option = selectedDseOption();
       const mode = selectedDseMode();
       const create = option === "create";
@@ -1152,6 +1235,7 @@
           : dsePlaceholder(mode);
       }
       syncChatChrome();
+      syncChatLogs();
     }
 
     function selectedDseSelect(id) {
@@ -1315,6 +1399,7 @@
         });
       }
       syncChatChrome();
+      syncChatLogs();
     }
 
     function renderFiles() {
@@ -1538,7 +1623,8 @@
     }
 
     function appendChatMessage(role, text, sources, grounding, options) {
-      const log = document.getElementById("chat-log");
+      const log = activeChatLog();
+      if (!log) return;
       log.hidden = false;
       const article = document.createElement("article");
       article.className = "chat-message " + role;
@@ -1569,6 +1655,7 @@
         }
       }
       log.appendChild(article);
+      syncChatLogs();
     }
 
     document.getElementById("target-language").addEventListener("change", () => {
@@ -1587,6 +1674,8 @@
         syncDseModeUi();
       });
     });
+    const chatClear = document.getElementById("chat-clear");
+    if (chatClear) chatClear.addEventListener("click", clearActiveDseResponses);
     document.querySelectorAll('#dse-solve-style input[name="dse-solve-style"]').forEach((input) => {
       input.addEventListener("change", () => {
         persistDseSolveStyle(selectedDseSolveStyle());
