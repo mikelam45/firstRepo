@@ -42,6 +42,9 @@ PROMPT_DETAIL = {
     "count_mode": "3",
     "facial_variance": "subtle",
     "motion_variance": "strong",
+    "maintain_background": True,
+    "maintain_dressing": True,
+    "maintain_face": True,
     "facial_variance_notes": "from slight smile to laugh",
     "motion_variance_notes": "walk then reach",
     "facial_cycle": ["neutral", "smile"],
@@ -156,6 +159,9 @@ def test_create_list_get_restores_prompt_detail(tmp_path, monkeypatch):
     assert restored["count_mode"] == "3"
     assert restored["facial_variance"] == "subtle"
     assert restored["motion_variance"] == "strong"
+    assert restored["maintain_face"] is True
+    assert restored["maintain_dressing"] is True
+    assert restored["maintain_background"] is True
     assert len(restored["variance_steps"]) == 3
     assert restored["variance_steps"][0]["motion"] == "off"
     store = tmp_path / "data" / INDEX_NAME

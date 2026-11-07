@@ -57,6 +57,10 @@ def test_home_and_setup_are_distinct_html_pages(tmp_path, monkeypatch):
     assert "walking" in home.text
     assert "Facial change" in home.text
     assert "Motion change" in home.text
+    assert "Maintain 100% across photos" in home.text
+    assert 'id="image-maintain-background"' in home.text
+    assert 'id="image-maintain-dressing"' in home.text
+    assert 'id="image-maintain-face"' in home.text
     assert 'id="image-variance-steps"' in home.text
     assert "Batch variance steps" in home.text
     assert "Apply intensity to all steps" in home.text

@@ -268,6 +268,13 @@ class ImageGenerateIn(BaseModel):
     expression_cycle: list[str] | None = None
     movement_cycle: list[str] | None = None
     variance_steps: list[dict[str, Any]] | None = None
+    maintain_background: bool | None = None
+    maintain_dressing: bool | None = None
+    maintain_face: bool | None = None
+    lock_background: bool | None = None
+    lock_dressing: bool | None = None
+    lock_clothing: bool | None = None
+    lock_face: bool | None = None
     n: int | None = None
     count: int | None = None
     frames: list[str] | None = None

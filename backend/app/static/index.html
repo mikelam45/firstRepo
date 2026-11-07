@@ -774,10 +774,23 @@
         </label>
       </fieldset>
 
+      <fieldset class="consistency" id="image-consistency" hidden aria-labelledby="consistency-title">
+        <legend id="consistency-title">Maintain 100% across photos</legend>
+        <p class="meta">
+          When generating 2–10 photos, lock these so they do not drift. Face lock also turns facial change off.
+          Motion can still vary pose while background, dressing, and face stay the same.
+        </p>
+        <div class="variance-levels maintain-locks" role="group" aria-label="100 percent consistency locks">
+          <label class="option"><input type="checkbox" id="image-maintain-background" checked> Background</label>
+          <label class="option"><input type="checkbox" id="image-maintain-dressing" checked> Dressing</label>
+          <label class="option"><input type="checkbox" id="image-maintain-face" checked> Face</label>
+        </div>
+      </fieldset>
+
       <fieldset class="variance" id="image-variance" aria-labelledby="variance-title">
         <legend id="variance-title">Batch variance</legend>
         <p class="meta">
-          Applies when generating 2–10 photos. Identity, clothing, setting, and reference photos stay consistent.
+          Applies when generating 2–10 photos. Use the locks above for 100% background, dressing, and face.
           Off keeps the same face or pose; Subtle / Medium / Strong add a distinct prompt delta per photo.
         </p>
         <div class="image-row">
@@ -2796,15 +2809,39 @@
       return steps;
     }
 
+    function selectedMaintainLock(id) {
+      const node = document.getElementById(id);
+      return !!(node && node.checked);
+    }
+
+    function maintainPayload() {
+      return {
+        maintain_background: selectedMaintainLock("image-maintain-background"),
+        maintain_dressing: selectedMaintainLock("image-maintain-dressing"),
+        maintain_face: selectedMaintainLock("image-maintain-face"),
+      };
+    }
+
+    function applyMaintainLock(id, value) {
+      const node = document.getElementById(id);
+      if (!node) return;
+      if (value === undefined || value === null || value === "") {
+        node.checked = true;
+        return;
+      }
+      node.checked = value === true || value === "true" || value === 1 || value === "1" || value === "on";
+    }
+
     function variancePayload() {
-      const facial = selectedVarianceLevel("facial-variance", "medium");
+      const faceLock = selectedMaintainLock("image-maintain-face");
+      const facial = faceLock ? "off" : selectedVarianceLevel("facial-variance", "medium");
       const motion = selectedVarianceLevel("motion-variance", "medium");
-      const payload = {
+      const payload = Object.assign({
         facial_variance: facial,
         motion_variance: motion,
-        facial_variance_notes: fieldValue("image-facial-notes"),
+        facial_variance_notes: faceLock ? "" : fieldValue("image-facial-notes"),
         motion_variance_notes: fieldValue("image-motion-notes"),
-      };
+      }, maintainPayload());
       const facialCycle = selectedCycle("facial-cycle", DEFAULT_FACIAL_CYCLE);
       const motionCycle = selectedCycle("motion-cycle", DEFAULT_MOTION_CYCLE);
       if (facialCycle) payload.facial_cycle = facialCycle;
@@ -2820,7 +2857,21 @@
     function syncVarianceVisibility() {
       const sel = selectedImageMode();
       const batch = sel.count > 1;
-      const facialOff = selectedVarianceLevel("facial-variance", "medium") === "off";
+      const faceLock = selectedMaintainLock("image-maintain-face");
+      const consistency = document.getElementById("image-consistency");
+      if (consistency) consistency.hidden = !batch;
+      document.querySelectorAll('input[name="facial-variance"]').forEach((input) => {
+        input.disabled = faceLock;
+      });
+      const facialNotes = document.getElementById("image-facial-notes");
+      if (facialNotes) facialNotes.disabled = faceLock;
+      document.querySelectorAll("select.variance-step-facial").forEach((select) => {
+        select.disabled = faceLock;
+      });
+      document.querySelectorAll("input.variance-step-facial-note").forEach((input) => {
+        input.disabled = faceLock;
+      });
+      const facialOff = faceLock || selectedVarianceLevel("facial-variance", "medium") === "off";
       const motionOff = selectedVarianceLevel("motion-variance", "medium") === "off";
       const facialCycle = document.getElementById("facial-cycle-field");
       const motionCycle = document.getElementById("motion-cycle-field");
@@ -3127,6 +3178,9 @@
           beats.value = "";
         }
       }
+      applyMaintainLock("image-maintain-background", data.maintain_background);
+      applyMaintainLock("image-maintain-dressing", data.maintain_dressing);
+      applyMaintainLock("image-maintain-face", data.maintain_face);
       applyRadioGroup("facial-variance", data.facial_variance || data.facial_change, "medium");
       applyRadioGroup("motion-variance", data.motion_variance || data.motion_change, "medium");
       setFieldValue("image-facial-notes", data.facial_variance_notes || data.facial_notes || "");
@@ -3467,6 +3521,10 @@
     syncProjectActions();
     document.querySelectorAll('input[name="facial-variance"], input[name="motion-variance"]').forEach((input) => {
       input.addEventListener("change", syncVarianceVisibility);
+    });
+    ["image-maintain-background", "image-maintain-dressing", "image-maintain-face"].forEach((id) => {
+      const node = document.getElementById(id);
+      if (node) node.addEventListener("change", syncVarianceVisibility);
     });
     const applyVariance = document.getElementById("image-variance-apply");
     if (applyVariance) {
