@@ -228,7 +228,8 @@ pre.chat-reply,
   background: var(--paper);
   font-weight: 650;
 }
-.chat-reply .chat-chart {
+.chat-reply .chat-chart,
+.chat-reply .chat-figure-svg {
   display: block;
   width: 100%;
   max-width: 36rem;
@@ -237,6 +238,19 @@ pre.chat-reply,
   background: var(--card);
   border: 1px solid var(--line);
   border-radius: 8px;
+}
+.chat-reply .chat-figure {
+  margin: 12px 0;
+  max-width: 36rem;
+}
+.chat-reply .chat-figure .chat-chart,
+.chat-reply .chat-figure .chat-figure-svg {
+  margin: 0;
+}
+.chat-reply .chat-figure figcaption {
+  color: var(--muted);
+  font-size: 0.9rem;
+  margin: 6px 4px 0;
 }
 .chat-reply pre,
 .chat-reply .chat-chart-fallback {
