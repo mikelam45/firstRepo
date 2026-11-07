@@ -79,7 +79,9 @@ def test_functions_page_contains_dse_math(tmp_path, monkeypatch):
     assert "clearActiveDseResponses" in home.text
     assert "dseBuckets" in home.text
     assert 'id="dse-explain-level"' in home.text
-    assert 'id="dse-explain-topic-scroll"' in home.text
+    assert 'id="dse-explain-topic"' in home.text
+    assert 'id="dse-explain-picked-list"' in home.text
+    assert "addExplainTopicFromSelect" in home.text
     assert "/api/dse/topics" in home.text
     assert "edb.gov.hk/en/curriculum-development/kla/ma/curr/index2.html" in home.text
     assert 'id="dse-mode-guided_no_answer"' in home.text
@@ -515,7 +517,9 @@ def test_page_has_three_mode_controls_and_s1_s6(tmp_path, monkeypatch):
     assert 'id="dse-create-workspace"' in home.text
     assert 'id="dse-explain-workspace"' in home.text
     assert 'id="dse-explain-level"' in home.text
-    assert 'id="dse-explain-topic-scroll"' in home.text
+    assert 'id="dse-explain-topic"' in home.text
+    assert 'id="dse-explain-picked-list"' in home.text
+    assert "addExplainTopicFromSelect" in home.text
     assert "/api/dse/topics" in home.text
     assert "edb.gov.hk/en/curriculum-development/kla/ma/curr/index2.html" in home.text
     assert 'id="dse-log-solve"' in home.text
