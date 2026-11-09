@@ -148,7 +148,7 @@ def test_home_and_setup_are_distinct_html_pages(tmp_path, monkeypatch):
     assert 'id="dse-mode-guided_no_answer"' in home.text
     assert 'id="dse-mode-guided_with_answer"' in home.text
     assert "The tutor draws a diagram" in home.text
-    assert "labelled diagram of the question" in home.text
+    assert "ABC, 50°" in home.text
     assert 'id="dse-question-count"' in home.text
     assert 'value="S1"' in home.text
     assert 'value="S6"' in home.text

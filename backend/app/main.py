@@ -575,6 +575,7 @@ def post_chat(
                     topic=dse_topic,
                     question=question_text or message,
                     already_has_figure=session_has_figure(dse_session),
+                    reveal_answer=dse_mode == MODE_GUIDED_WITH_ANSWER,
                 )
                 result["reply"] = reply_text
                 guided = record_guided_turn(
@@ -600,6 +601,7 @@ def post_chat(
                     reply_text,
                     topic=dse_topic,
                     question=message,
+                    reveal_answer=True,
                 )
             if dse_level:
                 result["level"] = dse_level

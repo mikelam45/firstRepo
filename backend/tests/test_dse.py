@@ -93,7 +93,7 @@ def test_functions_page_contains_dse_math(tmp_path, monkeypatch):
     assert 'id="dse-mode-guided_with_answer"' in home.text
     assert "Hints by steps" in home.text
     assert "Immediate answer" in home.text
-    assert "labelled diagram of the question" in home.text
+    assert "ABC, 50°" in home.text
     assert 'id="dse-question-count"' in home.text
     assert 'max="20"' in home.text
     assert "syncChatChrome" in home.text
@@ -359,7 +359,8 @@ def test_guided_no_answer_system_prompt_forbids_final_answer(tmp_path, monkeypat
     assert "Socratic" in system
     assert "Ask what the student has already tried" in system
     assert "```figure" in system
-    assert "You MUST include one labelled" in system
+    assert "You MUST include labelled" in system
+    assert "100% of named givens" in system
     payload = response.json()
     assert payload["mode"] == "guided_no_answer"
     assert payload["session_id"]
@@ -386,6 +387,7 @@ def test_guided_with_answer_includes_final_answer_instruction(tmp_path, monkeypa
     assert "include the final answer immediately" in system
     assert "Final answer:" in system
     assert "```figure" in system
+    assert "100% of named givens" in system
     payload = response.json()
     assert payload["mode"] == "guided_with_answer"
     assert payload["session_id"]
@@ -428,6 +430,7 @@ def test_create_question_returns_session_id_and_mark_fail_hides_official_answer(
     assert "Generate exactly ONE original mathematics question" in create_system
     assert "teaching scenario" in create_system
     assert "figure" in create_system
+    assert "100% of named vertices" in create_system
     assert "繁體" in create_system
     assert payload.get("scenario") == ""
     assert payload.get("figure")
@@ -606,7 +609,7 @@ def test_page_has_three_mode_controls_and_s1_s6(tmp_path, monkeypatch):
     assert 'id="dse-mode-guided_with_answer"' in home.text
     assert "Hints by steps" in home.text
     assert "Immediate answer" in home.text
-    assert "labelled diagram of the question" in home.text
+    assert "ABC, 50°" in home.text
     assert 'id="dse-question-count"' in home.text
     assert 'max="20"' in home.text
     for level in ("S1", "S2", "S3", "S4", "S5", "S6"):
@@ -668,6 +671,7 @@ def test_dse_explain_uses_selected_edb_topics(tmp_path, monkeypatch):
     assert "labelled interactive diagram" in user
     assert "```figure" in system
     assert "You MUST include at least one labelled diagram" in system
+    assert "100% of named givens" in system
     assert "teaching scenario" in system
     payload = empty.json()
     assert payload["topics"] == ["ks3_08_linear_eq_one", "ks3_25_pythagoras"]
@@ -712,7 +716,78 @@ def test_solve_figure_follows_question_not_topic():
     assert session_has_figure({"messages": [{"role": "user", "content": "hi"}]}) is False
 
 
-def test_guided_later_hint_does_not_duplicate_figure(tmp_path, monkeypatch):
+INCIRCLE_TANGENT_QUESTION = (
+    "In a triangle $ABC$, the angle at vertex $A$ measures $50^\\circ$, "
+    "and the angle at vertex $B$ measures $70^\\circ$. A circle is inscribed "
+    "in the triangle, touching all three sides. Calculate the measure of the "
+    "angle formed by the two tangents drawn from point $C$ to the circle."
+)
+
+
+def test_incircle_question_figure_marks_abc_and_given_angles():
+    from app.dse_figures import (
+        ensure_created_figure,
+        ensure_solve_figures,
+        figure_from_question,
+        given_labels_from_text,
+    )
+
+    labels = given_labels_from_text(INCIRCLE_TANGENT_QUESTION)
+    assert "A" in labels and "B" in labels and "C" in labels
+    assert "50°" in labels and "70°" in labels
+
+    question_fig = figure_from_question(INCIRCLE_TANGENT_QUESTION, stage="question")
+    assert question_fig is not None
+    blob = json.dumps(question_fig, ensure_ascii=False)
+    assert "50°" in blob and "70°" in blob
+    assert '"A"' in blob and '"B"' in blob and '"C"' in blob
+    assert "60°" not in blob
+    assert any(el.get("kind") == "circle" for el in question_fig["elements"])
+
+    answer_fig = figure_from_question(INCIRCLE_TANGENT_QUESTION, stage="answer")
+    assert answer_fig is not None
+    answer_blob = json.dumps(answer_fig, ensure_ascii=False)
+    assert "50°" in answer_blob and "70°" in answer_blob and "60°" in answer_blob
+    assert "I" in answer_blob
+
+    incomplete = {
+        "type": "geometry",
+        "elements": [
+            {
+                "kind": "polygon",
+                "points": [[20, 80], [80, 80], [50, 20]],
+                "labels": ["A", "B", "C"],
+            }
+        ],
+    }
+    enforced = ensure_created_figure(
+        incomplete, topic="algebra", question=INCIRCLE_TANGENT_QUESTION
+    )
+    assert "50°" in json.dumps(enforced, ensure_ascii=False)
+
+    hinted = ensure_solve_figures("What is given at A and B?", question=INCIRCLE_TANGENT_QUESTION)
+    assert hinted.count("```figure") == 1
+    assert "50°" in hinted and "70°" in hinted
+    assert "60°" not in hinted
+
+    solved = ensure_solve_figures(
+        "The tangents from C are CA and CB.",
+        question=INCIRCLE_TANGENT_QUESTION,
+        reveal_answer=True,
+    )
+    assert solved.count("```figure") >= 2
+    assert "50°" in solved and "60°" in solved
+
+    step = ensure_solve_figures(
+        "Draw the radii to the touch points.",
+        question=INCIRCLE_TANGENT_QUESTION,
+        already_has_figure=True,
+    )
+    assert "```figure" in step
+    assert "I" in step or "incentre" in step.lower() or "Incentre" in step
+
+
+def test_guided_later_hint_still_has_labelled_figure(tmp_path, monkeypatch):
     _install_key(tmp_path, monkeypatch)
     seen = _mock_chat(
         monkeypatch,
@@ -743,6 +818,42 @@ def test_guided_later_hint_does_not_duplicate_figure(tmp_path, monkeypatch):
         },
     )
     assert second.status_code == 200
-    assert "```figure" not in second.json()["reply"]
-    assert "included angle" in second.json()["reply"]
+    second_reply = second.json()["reply"]
+    assert "```figure" in second_reply
+    assert "included angle" in second_reply
     assert seen["calls"] == 2
+
+
+def test_solve_incircle_tangents_injects_labelled_abc_figure(tmp_path, monkeypatch):
+    _install_key(tmp_path, monkeypatch)
+    seen = _mock_chat(monkeypatch, reply="Look at the given angles at A and B.")
+    client = _client(monkeypatch, tmp_path)
+    response = client.post(
+        "/api/dse/ask",
+        json={
+            "message": INCIRCLE_TANGENT_QUESTION,
+            "mode": "guided_no_answer",
+            "grounding": "mixed",
+        },
+    )
+    assert response.status_code == 200
+    system = seen["json"]["messages"][0]["content"]
+    assert "100% of named givens" in system
+    reply = response.json()["reply"]
+    assert "50°" in reply
+    assert "70°" in reply
+    assert "Look at the given angles at A and B." in reply
+    assert reply.count("```figure") >= 1
+
+    answered = client.post(
+        "/api/dse/ask",
+        json={
+            "message": INCIRCLE_TANGENT_QUESTION,
+            "mode": "guided_with_answer",
+            "grounding": "mixed",
+        },
+    )
+    assert answered.status_code == 200
+    body = answered.json()["reply"]
+    assert "50°" in body and "70°" in body
+    assert body.count("```figure") >= 2

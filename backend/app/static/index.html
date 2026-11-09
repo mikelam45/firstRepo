@@ -99,7 +99,7 @@
           <label class="option">
             <input type="radio" name="dse-option" id="dse-option-solve" value="solve" checked>
             <span class="option-title">1. Solve a question</span>
-            <span class="detail">Paste or photo a question. The tutor draws a diagram, then gives hints by steps or the answer immediately.</span>
+            <span class="detail">Paste or photo a question. The tutor draws a diagram that marks every named vertex and given angle (ABC, 50°), then gives hints by steps or the answer immediately.</span>
           </label>
           <label class="option">
             <input type="radio" name="dse-option" id="dse-option-create" value="create">
@@ -136,12 +136,12 @@
           <label class="option">
             <input type="radio" name="dse-solve-style" id="dse-mode-guided_no_answer" value="hints" checked>
             <span class="option-title">Hints by steps</span>
-            <span class="detail">One hint or one step at a time, with a labelled diagram of the question. The boxed answer stays hidden until you ask.</span>
+            <span class="detail">One hint or one step at a time, each with a labelled diagram of the given facts (ABC, 50°). The boxed answer stays hidden until you ask.</span>
           </label>
           <label class="option">
             <input type="radio" name="dse-solve-style" id="dse-mode-guided_with_answer" value="answer">
             <span class="option-title">Immediate answer</span>
-            <span class="detail">A labelled diagram, full working, and the final answer immediately.</span>
+            <span class="detail">A labelled diagram of the givens, diagrams in the working, and the found measure marked on a figure, plus the final answer immediately.</span>
           </label>
         </fieldset>
         </div>
@@ -205,7 +205,7 @@
           </div>
         </div>
         <div class="dse-create" id="dse-create-panel">
-          <p class="meta" id="dse-create-hint">Choose a level, difficulty if you want, and how many questions (up to 20). Every question includes a teaching scenario and a labelled diagram. Click parts of the diagram. The mark scheme stays hidden until you pass or ask for the solution.</p>
+          <p class="meta" id="dse-create-hint">Choose a level, difficulty if you want, and how many questions (up to 20). Every question includes a teaching scenario and a labelled diagram that marks every named vertex and given angle (ABC, 50°). Click parts of the diagram. The mark scheme stays hidden until you pass or ask for the solution. Passing shows the answer on a diagram too.</p>
           <div class="savebar">
             <button type="button" id="dse-create-question">Create questions</button>
           </div>
@@ -892,7 +892,7 @@
       </p>
     </section>
   </main>
-  <script src="/static/chat_format.js?v=dse-enforce-diagrams"></script>
+  <script src="/static/chat_format.js?v=dse-given-labels"></script>
   <script>
     const TEXT_FUNCTIONS = ["rag_qa", "translation", "cantonese_script", "dse_math"];
     const GROUNDING_KEY = "rag-grounding";
@@ -1253,10 +1253,10 @@
         const option = selectedDseOption();
         if (option === "solve") {
           title.textContent = "1. Solve a question";
-          lede.textContent = "Paste or photo a question, then choose hints by steps or the answer immediately.";
+          lede.textContent = "Paste or photo a question. Diagrams mark every named vertex and given angle (ABC, 50°) in the question, each step, and the answer.";
         } else if (option === "create") {
           title.textContent = "2. Create and mark questions";
-          lede.textContent = "Generate up to 20 questions, pick difficulty, then check typed or photo attempts.";
+          lede.textContent = "Generate up to 20 questions. Each item has a labelled diagram of the named givens; the solution figure appears after a pass.";
         } else {
           title.textContent = "3. Explain";
             lede.textContent = "Choose S1–S6, pick EDB learning units, then send to explain them.";
@@ -2349,7 +2349,13 @@
         if (payload.correct) {
           setDseFailChoices(false);
           if (payload.expected_answer) {
-            appendChatMessage("assistant", "Final answer: " + payload.expected_answer, [], payload.grounding);
+            appendChatMessage(
+              "assistant",
+              "Final answer: " + payload.expected_answer,
+              [],
+              payload.grounding,
+              { figures: payload.figures || (payload.figure ? [payload.figure] : []) }
+            );
           }
           status.className = "";
           status.textContent = "Marked correct.";
