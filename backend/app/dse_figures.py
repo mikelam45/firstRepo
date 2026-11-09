@@ -475,6 +475,10 @@ _LENGTH_RE = re.compile(
     r"\b([A-Za-z]{2})\s*=\s*(\d+(?:\.\d+)?)\s*(cm|mm|m|km)?",
     re.I,
 )
+_DIAMETER_RE = re.compile(
+    r"diameter(?:\s+of)?\s*(?:\$)?(\d+(?:\.\d+)?)(?:\s*\$)?\s*(meters?|metres?|cm|mm|km|m\b)?",
+    re.I,
+)
 
 
 def _plain_math_text(text: str | None) -> str:
@@ -489,6 +493,15 @@ def format_degree(value: Any) -> str:
     if number.is_integer():
         return f"{int(number)}°"
     return f"{number}°"
+
+
+def _length_label(amount: Any, unit: str | None) -> str:
+    number = float(amount)
+    shown = str(int(number)) if number.is_integer() else str(number)
+    raw_unit = (unit or "").strip().lower()
+    if raw_unit in {"meter", "meters", "metre", "metres"}:
+        raw_unit = "m"
+    return f"{shown} {raw_unit}".strip() if raw_unit else shown
 
 
 def given_labels_from_text(text: str | None) -> list[str]:
@@ -521,6 +534,8 @@ def given_labels_from_text(text: str | None) -> list[str]:
         letters, amount, unit = row[0].upper(), row[1], row[2]
         add(letters)
         add(f"{amount} {unit}".strip() if unit else amount)
+    for match in _DIAMETER_RE.finditer(plain):
+        add(_length_label(match.group(1), match.group(2)))
     return labels
 
 
@@ -850,6 +865,76 @@ def labelled_triangle_figure(
     return parsed or spec
 
 
+def labelled_circle_figure(
+    question: str | None,
+    *,
+    stage: str = "question",
+) -> dict[str, Any]:
+    plain = _plain_math_text(question)
+    match = _DIAMETER_RE.search(plain)
+    diameter_label = _length_label(match.group(1), match.group(2)) if match else ""
+    radius = 32.0
+    centre = (50.0, 50.0)
+    left = (centre[0] - radius, centre[1])
+    right = (centre[0] + radius, centre[1])
+    elements: list[dict[str, Any]] = [
+        {
+            "kind": "circle",
+            "cx": centre[0],
+            "cy": centre[1],
+            "r": radius,
+            "id": "circle",
+            "caption": "The full circumference. Nothing is cut off.",
+        },
+        {
+            "kind": "segment",
+            "from": list(left),
+            "to": list(right),
+            "label": diameter_label or "d",
+            "id": "diameter",
+            "caption": f"Diameter {diameter_label}.".strip() if diameter_label else "Diameter.",
+        },
+        {
+            "kind": "point",
+            "x": centre[0],
+            "y": centre[1],
+            "label": "O",
+            "id": "centre",
+            "caption": "Centre O.",
+        },
+    ]
+    title = "Circular fountain" if "fountain" in plain.lower() else "Circle"
+    if diameter_label:
+        title = f"{title} (diameter {diameter_label})"
+    caption = "The complete circle is shown. Click the diameter or the centre."
+    if stage == "answer" and match:
+        diameter = float(match.group(1))
+        rad = diameter / 2.0
+        area = math.pi * rad * rad
+        unit = (match.group(2) or "m").strip()
+        if unit.lower() in {"meter", "meters", "metre", "metres"}:
+            unit = "m"
+        caption = f"Area = πr² with r = {rad:g} {unit}. A = {area:.2f} {unit}²."
+        title = f"{title} (answer)" if "answer" not in title else title
+    spec = {
+        "type": "geometry",
+        "interactive": True,
+        "title": title,
+        "caption": caption,
+        "actions": [
+            {
+                "id": "diameter",
+                "label": "Diameter",
+                "highlight": ["diameter", "centre", "circle"],
+                "caption": caption,
+            }
+        ],
+        "elements": elements,
+    }
+    parsed = _validated(spec)
+    return parsed or spec
+
+
 def figure_from_question(
     question: str | None,
     *,
@@ -861,6 +946,12 @@ def figure_from_question(
     if facts["labels"] or facts["incircle"] or _TRIANGLE_RE.search(_plain_math_text(question) or ""):
         if "triangle" in plain or "△" in (question or "") or facts["angles"] or facts["incircle"]:
             return labelled_triangle_figure(facts, stage=stage)
+    if (
+        "circle" in plain
+        or "fountain" in plain
+        or _DIAMETER_RE.search(_plain_math_text(question) or "")
+    ):
+        return labelled_circle_figure(question, stage=stage)
     return None
 
 
