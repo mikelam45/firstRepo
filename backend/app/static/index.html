@@ -123,8 +123,7 @@
           <label class="field" id="dse-module-field">
             Module
             <select id="dse-module">
-              <option value="" selected>Any module</option>
-              <option value="compulsory">Compulsory Mathematics</option>
+              <option value="compulsory" selected>Compulsory Mathematics</option>
               <option value="m1">M1 Calculus &amp; Statistics</option>
               <option value="m2">M2 Algebra &amp; Calculus</option>
             </select>
@@ -147,11 +146,10 @@
         </div>
         <div id="dse-create-workspace" hidden>
         <div id="dse-create-filters">
-          <div class="language-row">
+          <div class="language-row dse-cascade" id="dse-create-cascade">
             <label class="field">Level
               <select id="dse-level">
-                <option value="" selected>Any level</option>
-                <option value="S1">S1</option>
+                <option value="S1" selected>S1</option>
                 <option value="S2">S2</option>
                 <option value="S3">S3</option>
                 <option value="S4">S4</option>
@@ -161,7 +159,7 @@
             </label>
             <label class="field">Topic
               <select id="dse-topic">
-                <option value="" selected>Any topic</option>
+                <option value="" selected>Any topic in this year</option>
               </select>
             </label>
           </div>
@@ -194,7 +192,7 @@
           </div>
         </div>
         <div class="dse-create" id="dse-create-panel">
-          <p class="meta" id="dse-create-hint">Choose a year (S1–S6), then a topic from that year’s list (or Any topic). Set difficulty if you want, and how many questions (up to 20). Every question includes a teaching scenario and a labelled diagram that matches the named shape (quadrilateral ABCD, triangle ABC) and marks every given angle (80°, 90°). Click parts of the diagram. The mark scheme stays hidden until you pass or ask for the solution. Passing shows the answer on a diagram too.</p>
+          <p class="meta" id="dse-create-hint">Choose a module, then a year. Only topics for that module and year are listed. Set difficulty if you want, and how many questions (up to 20). Every question includes a teaching scenario and a labelled diagram that matches the named shape (quadrilateral ABCD, triangle ABC) and marks every given angle (80°, 90°). Click parts of the diagram. The mark scheme stays hidden until you pass or ask for the solution. Passing shows the answer on a diagram too.</p>
           <div class="savebar">
             <button type="button" id="dse-create-question">Create questions</button>
           </div>
@@ -203,8 +201,8 @@
         </div>
         <div id="dse-explain-workspace" hidden>
           <p class="meta">
-            Choose S1–S6, then pick a topic from that year’s list. You can add more than one.
-            S1, S2, and S3 each have their own junior topics; S4–S6 include Compulsory, M1, and M2 units.
+            Choose a module, then a year. Only topics for that pair are listed. You can add more than one.
+            Compulsory covers S1–S6; M1 and M2 only appear for S5–S6.
             Every explanation includes a teaching scenario and a labelled diagram you can click.
             Answers use uploaded syllabus and notes when they are present.
           </p>
@@ -212,7 +210,7 @@
             Source:
             <a id="dse-explain-source" href="https://www.edb.gov.hk/en/curriculum-development/kla/ma/curr/index2.html" target="_blank" rel="noopener noreferrer">EDB Mathematics curriculum documents</a>
           </p>
-          <div class="language-row" id="dse-explain-filters">
+          <div class="language-row dse-cascade" id="dse-explain-filters">
             <label class="field">Level
               <select id="dse-explain-level">
                 <option value="S1" selected>S1</option>
@@ -229,7 +227,7 @@
               </select>
             </label>
           </div>
-          <p class="meta" id="dse-explain-level-hint">S1 topics from the attached HK secondary mathematics list.</p>
+          <p class="meta" id="dse-explain-level-hint">Compulsory S1 topics. Change the module or year to list a different set.</p>
           <ul class="dse-explain-picked-list" id="dse-explain-picked-list" hidden></ul>
           <p class="meta" id="dse-explain-picked">No topics selected. Choose a topic from the dropdown, then Send.</p>
         </div>
@@ -1245,10 +1243,10 @@
           lede.textContent = "Paste or photo a question. Diagrams mark every named vertex and given angle (ABC, 50°) in the question, each step, and the answer.";
         } else if (option === "create") {
           title.textContent = "2. Create and mark questions";
-          lede.textContent = "Choose S1–S6 and a topic from that year’s list. Each item has a labelled diagram of the named givens; the solution figure appears after a pass.";
+          lede.textContent = "Choose a module, then a year. Only matching topics are listed. Each item has a labelled diagram of the named givens; the solution figure appears after a pass.";
         } else {
           title.textContent = "3. Explain";
-            lede.textContent = "Choose S1–S6, pick a topic from that year’s list, then send to explain it.";
+            lede.textContent = "Choose a module, then a year, then a topic from that filtered list.";
         }
         return;
       }
@@ -1273,24 +1271,46 @@
       return dseExplainPicked.map((row) => (row.level ? row.level + " " : "") + row.label);
     }
 
+    function selectedDseModule() {
+      return selectedDseSelect("dse-module") || "compulsory";
+    }
+
+    function levelsForModule(module) {
+      const key = module || selectedDseModule();
+      const catalog = dseCurriculum;
+      if (catalog && catalog.levels_by_module && catalog.levels_by_module[key] && catalog.levels_by_module[key].length) {
+        return catalog.levels_by_module[key].slice();
+      }
+      if (key === "m1" || key === "m2") return ["S5", "S6"];
+      return ["S1", "S2", "S3", "S4", "S5", "S6"];
+    }
+
+    function fillDseLevelSelect(select) {
+      if (!select) return;
+      const levels = levelsForModule(selectedDseModule());
+      const previous = select.value;
+      select.replaceChildren();
+      levels.forEach((level) => {
+        const option = document.createElement("option");
+        option.value = level;
+        option.textContent = level;
+        select.appendChild(option);
+      });
+      if (levels.indexOf(previous) >= 0) {
+        select.value = previous;
+      } else {
+        select.value = levels[0] || "";
+      }
+    }
+
     function catalogTopicsFor(level, module) {
       const catalog = dseCurriculum;
-      if (!catalog || !catalog.topics) return [];
-      const years = level ? [level] : (catalog.levels || []);
-      const rows = [];
-      years.forEach((year) => {
-        (catalog.topics[year] || []).forEach((row) => rows.push(row));
-      });
-      return rows.filter((row) => {
-        if (module === "compulsory") return row.module_key === "compulsory";
-        if (module === "m1") return row.module_key === "m1";
-        if (module === "m2") return row.module_key === "m2";
-        return true;
-      });
+      if (!catalog || !catalog.topics || !level || !module) return [];
+      return (catalog.topics[level] || []).filter((row) => row.module_key === module);
     }
 
     function explainTopicsForLevel() {
-      return catalogTopicsFor(selectedExplainLevel(), selectedDseSelect("dse-module"));
+      return catalogTopicsFor(selectedExplainLevel(), selectedDseModule());
     }
 
     function appendTopicGroups(select, rows, groupByForm) {
@@ -1376,17 +1396,22 @@
       status.textContent = "Selected: " + labels.join("; ") + ".";
     }
 
+    function pruneExplainPicked() {
+      const allowed = new Set(explainTopicsForLevel().map((row) => row.id));
+      dseExplainPicked = dseExplainPicked.filter((row) => allowed.has(row.id));
+    }
+
     function renderDseExplainTopics() {
+      pruneExplainPicked();
       const select = document.getElementById("dse-explain-topic");
       const hint = document.getElementById("dse-explain-level-hint");
       const source = document.getElementById("dse-explain-source");
       const catalog = dseCurriculum;
       const level = selectedExplainLevel();
-      const junior = level === "S1" || level === "S2" || level === "S3";
+      const module = selectedDseModule();
+      const moduleLabel = (catalog && catalog.modules && catalog.modules[module]) || module;
       if (hint) {
-        hint.textContent = junior
-          ? level + " topics from the attached HK secondary mathematics list. Each junior year has its own units."
-          : level + " Compulsory, M1, and M2 topics from the attached HK secondary mathematics list.";
+        hint.textContent = moduleLabel + " " + level + " topics only. Other years and modules are hidden.";
       }
       if (source && catalog && catalog.source && catalog.source.href) {
         source.href = catalog.source.href;
@@ -1414,7 +1439,7 @@
         select.value = "";
       }
       if (!rows.length) {
-        placeholder.textContent = "No topics for this year / module";
+        placeholder.textContent = "No topics for this module and year";
       }
       syncDseExplainPicked();
     }
@@ -1425,37 +1450,61 @@
       const catalog = dseCurriculum;
       const previous = select.value;
       const level = selectedDseSelect("dse-level");
-      const module = selectedDseSelect("dse-module");
+      const module = selectedDseModule();
       select.replaceChildren();
       const placeholder = document.createElement("option");
       placeholder.value = "";
-      placeholder.textContent = catalog && catalog.topics ? "Any topic" : "Loading topics…";
+      placeholder.textContent = catalog && catalog.topics ? "Any topic in this year" : "Loading topics…";
       select.appendChild(placeholder);
       if (!catalog || !catalog.topics) {
         select.disabled = true;
         return;
       }
       const rows = catalogTopicsFor(level, module);
-      appendTopicGroups(select, rows, !level);
-      select.disabled = false;
+      appendTopicGroups(select, rows, false);
+      select.disabled = !level || rows.length === 0;
       if (previous && Array.prototype.some.call(select.options, (opt) => opt.value === previous)) {
         select.value = previous;
       } else {
         select.value = "";
       }
-      if (!rows.length) {
-        placeholder.textContent = level ? "No topics for this year / module" : "Any topic";
+      if (!level) {
+        placeholder.textContent = "Choose a year first";
+      } else if (!rows.length) {
+        placeholder.textContent = "No topics for this module and year";
       }
+    }
+
+    function syncDseCurriculumFilters() {
+      fillDseLevelSelect(document.getElementById("dse-level"));
+      fillDseLevelSelect(document.getElementById("dse-explain-level"));
+      renderDseCreateTopics();
+      renderDseExplainTopics();
+    }
+
+    function placeDseModuleField() {
+      const field = document.getElementById("dse-module-field");
+      if (!field) return;
+      const option = selectedDseOption();
+      const createRow = document.getElementById("dse-create-cascade");
+      const explainRow = document.getElementById("dse-explain-filters");
+      const languageRow = document.getElementById("dse-language-row");
+      if (option === "explain" && explainRow) {
+        explainRow.insertBefore(field, explainRow.firstChild);
+      } else if (option === "create" && createRow) {
+        createRow.insertBefore(field, createRow.firstChild);
+      } else if (languageRow) {
+        languageRow.appendChild(field);
+      }
+      field.hidden = option === "solve";
     }
 
     function loadDseCurriculum() {
       if (dseCurriculum) {
-        renderDseExplainTopics();
-        renderDseCreateTopics();
+        syncDseCurriculumFilters();
         return Promise.resolve(dseCurriculum);
       }
-      renderDseExplainTopics();
-      renderDseCreateTopics();
+      syncDseCurriculumFilters();
       return fetch("/api/dse/topics")
         .then((response) => {
           if (!response.ok) throw new Error("topics");
@@ -1463,8 +1512,7 @@
         })
         .then((payload) => {
           dseCurriculum = payload;
-          renderDseExplainTopics();
-          renderDseCreateTopics();
+          syncDseCurriculumFilters();
           return payload;
         })
         .catch(() => {
@@ -1497,7 +1545,6 @@
       const solveWorkspace = document.getElementById("dse-solve-workspace");
       const createWorkspace = document.getElementById("dse-create-workspace");
       const explainWorkspace = document.getElementById("dse-explain-workspace");
-      const moduleField = document.getElementById("dse-module-field");
       const ocr = document.getElementById("dse-ocr-controls");
       const check = document.getElementById("dse-check");
       const nextHint = document.getElementById("dse-next-hint");
@@ -1513,7 +1560,7 @@
       if (solveWorkspace) solveWorkspace.hidden = !solve;
       if (createWorkspace) createWorkspace.hidden = !create;
       if (explainWorkspace) explainWorkspace.hidden = !explain;
-      if (moduleField) moduleField.hidden = solve;
+      placeDseModuleField();
       if (ocr) ocr.hidden = !(solve || hasQuestions);
       if (check) check.hidden = !hasQuestions;
       if (send) send.hidden = create;
@@ -1544,6 +1591,7 @@
           : dsePlaceholder(mode);
       }
       if ((explain || create) && state.functionId === "dse_math") {
+        placeDseModuleField();
         loadDseCurriculum();
       }
       syncChatChrome();
@@ -2009,10 +2057,7 @@
     }
     const moduleSelect = document.getElementById("dse-module");
     if (moduleSelect) {
-      moduleSelect.addEventListener("change", () => {
-        renderDseExplainTopics();
-        renderDseCreateTopics();
-      });
+      moduleSelect.addEventListener("change", syncDseCurriculumFilters);
     }
     document.querySelectorAll('#dse-solve-style input[name="dse-solve-style"]').forEach((input) => {
       input.addEventListener("change", () => {
@@ -2152,8 +2197,7 @@
         body.mode = selectedDseMode();
         body.dse_mode = body.mode;
         const option = selectedDseOption();
-        const module = selectedDseSelect("dse-module");
-        if (module) body.module = module;
+        body.module = selectedDseModule();
         if (option === "explain") {
           const level = selectedExplainLevel();
           const topics = selectedExplainTopicIds();
@@ -2267,12 +2311,12 @@
       const topic = selectedDseSelect("dse-topic");
       const difficulty = selectedDseSelect("dse-difficulty");
       const paper = selectedDseSelect("dse-paper");
-      const module = selectedDseSelect("dse-module");
+      const module = selectedDseModule();
       const level = selectedDseSelect("dse-level");
       if (topic) body.topic = topic;
       if (difficulty) body.difficulty = difficulty;
       if (paper) body.paper = paper;
-      if (module) body.module = module;
+      body.module = module;
       if (level) body.level = level;
       return body;
     }

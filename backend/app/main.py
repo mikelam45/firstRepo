@@ -329,7 +329,7 @@ if not CHAT_FORMAT_JS.is_file():
 
 @app.get("/")
 def functions_page() -> FileResponse:
-    return FileResponse(PAGE)
+    return FileResponse(PAGE, headers={"Cache-Control": "no-store"})
 
 
 @app.get("/setup")
@@ -436,7 +436,9 @@ def post_chat(
         dse_count = resolve_question_count(body.count) if function_id == "dse_math" else 1
         dse_session = None
         if function_id == "dse_math":
-            validate_level_topic(dse_level, dse_topic)
+            validate_level_topic(dse_level, dse_topic, dse_module)
+            for topic_id in dse_topics or []:
+                validate_level_topic(dse_level, topic_id, dse_module)
             if body.session_id:
                 dse_session = require_session(settings.data_dir, body.session_id)
         hidden = extra_hidden_ids()

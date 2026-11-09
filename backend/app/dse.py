@@ -31,6 +31,7 @@ from .dse_topics import (
     MAX_EXPLAIN_TOPICS,
     TOPIC_BY_ID,
     figure_topic_key,
+    levels_by_module,
     resolve_topic_id,
     topic_prompt_label,
     topics_catalog,
@@ -446,12 +447,29 @@ def resolve_dse_language(value: str | None) -> str:
     return chosen
 
 
-def validate_level_topic(level: str | None, topic: str | None) -> None:
+def validate_level_topic(
+    level: str | None,
+    topic: str | None,
+    module: str | None = None,
+) -> None:
+    if module and level:
+        allowed = levels_by_module().get(module) or []
+        if allowed and level not in allowed:
+            label = ALLOWED_MODULES.get(module, module)
+            raise ChatError(
+                400,
+                f"{label} is only offered for {' and '.join(allowed)}.",
+            )
     if not topic:
         return
     row = TOPIC_BY_ID.get(topic)
     if row and level and row.get("form") and row["form"] != level:
         raise ChatError(400, f"topic belongs to {row['form']}, not {level}.")
+    if row and module and row.get("module_key") and row["module_key"] != module:
+        raise ChatError(
+            400,
+            f"topic belongs to {row.get('module_short') or row['module_key']}, not the selected module.",
+        )
     figure = figure_topic_key(topic)
     if (
         (topic == "calculus" or figure == "calculus" or (row and row.get("module_key") in {"m1", "m2"}))

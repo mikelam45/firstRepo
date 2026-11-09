@@ -514,6 +514,31 @@ def test_create_question_returns_scenario_and_figure(tmp_path, monkeypatch):
     assert payload["topic"] == "s2_comp_congruence_and_similarity_of_triangles"
 
 
+def test_create_rejects_topic_from_another_module(tmp_path, monkeypatch):
+    client = _client(monkeypatch, tmp_path)
+    mismatch = client.post(
+        "/api/dse/question",
+        json={
+            "level": "S5",
+            "module": "compulsory",
+            "topic": "s5_m1_binomial_expansion_for_positive_integers",
+        },
+    )
+    assert mismatch.status_code == 400
+    assert "M1" in mismatch.json()["detail"] or "module" in mismatch.json()["detail"].lower()
+
+
+def test_create_rejects_m1_for_junior_year(tmp_path, monkeypatch):
+    client = _client(monkeypatch, tmp_path)
+    mismatch = client.post(
+        "/api/dse/question",
+        json={"level": "S2", "module": "m1"},
+    )
+    assert mismatch.status_code == 400
+    detail = mismatch.json()["detail"]
+    assert "S5" in detail and "S6" in detail
+
+
 def test_create_rejects_topic_from_another_year(tmp_path, monkeypatch):
     client = _client(monkeypatch, tmp_path)
     mismatch = client.post(
@@ -620,7 +645,12 @@ def test_page_has_three_mode_controls_and_s1_s6(tmp_path, monkeypatch):
     assert "addExplainTopicFromSelect" in home.text
     assert "catalogTopicsFor" in home.text
     assert "renderDseCreateTopics" in home.text
-    assert "that year’s list" in home.text or "that year's list" in home.text
+    assert "fillDseLevelSelect" in home.text
+    assert "selectedDseModule" in home.text
+    assert "pruneExplainPicked" in home.text
+    assert "Any module" not in home.text
+    assert "Choose a module, then a year" in home.text
+    assert 'id="dse-create-cascade"' in home.text
     assert "/api/dse/topics" in home.text
     assert "edb.gov.hk/en/curriculum-development/kla/ma/curr/index2.html" in home.text
     assert 'id="dse-log-solve"' in home.text
@@ -670,6 +700,23 @@ def test_dse_topics_catalog_is_year_specific_s1_to_s6(tmp_path, monkeypatch):
     )
     s5_modules = {row["module_key"] for row in payload["topics"]["S5"]}
     assert s5_modules == {"compulsory", "m1", "m2"}
+    assert payload["levels_by_module"]["compulsory"] == ["S1", "S2", "S3", "S4", "S5", "S6"]
+    assert payload["levels_by_module"]["m1"] == ["S5", "S6"]
+    assert payload["levels_by_module"]["m2"] == ["S5", "S6"]
+    assert {row["module_key"] for row in payload["topics"]["S2"]} == {"compulsory"}
+    s5_m1 = [
+        row["id"]
+        for row in payload["topics"]["S5"]
+        if row["module_key"] == "m1"
+    ]
+    s5_comp = [
+        row["id"]
+        for row in payload["topics"]["S5"]
+        if row["module_key"] == "compulsory"
+    ]
+    assert s5_m1
+    assert s5_comp
+    assert not set(s5_m1) & set(s5_comp)
 
 
 def test_dse_explain_uses_selected_year_topics(tmp_path, monkeypatch):
@@ -715,6 +762,19 @@ def test_dse_explain_uses_selected_year_topics(tmp_path, monkeypatch):
     )
     assert bad.status_code == 400
     assert "S1–S6" in bad.json()["detail"] or "catalog" in bad.json()["detail"]
+
+    junior_m1 = client.post(
+        "/api/chat",
+        json={
+            "function": "dse_math",
+            "mode": "explain",
+            "level": "S2",
+            "module": "m1",
+            "topics": ["s5_m1_binomial_expansion_for_positive_integers"],
+        },
+    )
+    assert junior_m1.status_code == 400
+    assert "S5" in junior_m1.json()["detail"]
 
 
 def test_solve_figure_follows_question_not_topic():

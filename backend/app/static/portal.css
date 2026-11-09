@@ -374,6 +374,9 @@ pre.chat-reply,
   grid-template-columns: 1fr 1fr;
   gap: 12px;
 }
+.chat .dse-cascade {
+  grid-template-columns: minmax(11rem, 1.3fr) minmax(5.5rem, 0.55fr) minmax(12rem, 1.4fr);
+}
 @media (max-width: 640px) {
   .chat .language-row { grid-template-columns: 1fr; }
 }
