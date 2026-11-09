@@ -48,16 +48,24 @@ def _public_option_ids(payload):
     }
 
 
-def _assert_gemini_absent(payload):
+def _assert_gemini_text_absent(payload):
     option_ids = _public_option_ids(payload)
     assert "google/gemini-2.5-flash" not in option_ids
-    assert "google/gemini-3.1-flash-image" not in option_ids
     assert "google/gemini-2.5-flash" not in payload["selection"].values()
-    assert "google/gemini-3.1-flash-image" not in payload["selection"].values()
-    assert "gemini" not in json.dumps(payload["functions"]).lower()
     for item in payload["functions"]:
         assert item["selected_model_id"] != "google/gemini-2.5-flash"
         assert all("region_note" not in option for option in item["options"])
+
+
+def _assert_image_models_listed(payload):
+    image = next(item for item in payload["functions"] if item["id"] == "image_gen")
+    ids = [option["id"] for option in image["options"]]
+    names = {option["id"]: option["name"] for option in image["options"]}
+    assert "black-forest-labs/flux.2-pro" in ids
+    assert "google/gemini-3.1-flash-image" in ids
+    assert "bytedance-seed/seedream-5-0-flash" in ids
+    assert "Nano Banana 2" in names["google/gemini-3.1-flash-image"]
+    assert names["bytedance-seed/seedream-5-0-flash"] == "Seedream 5.0 Flash"
 
 
 def test_packaged_index_html_exists():
@@ -69,7 +77,8 @@ def test_packaged_index_html_exists():
     assert "Document upload" in home
     assert "OpenRouter connection" in setup
     assert "LLM setup" in setup
-    assert "Only models available in Hong Kong are listed" in setup
+    assert "Nano Banana 2" in setup
+    assert "Seedream 5.0 Flash" in setup
     assert "google/gemini-2.5-flash" not in setup
     assert "region_note" not in setup
 
@@ -120,7 +129,8 @@ def test_get_returns_defaults_and_a_priced_unit(client):
     assert payload["selection"]["dse_math"] == "deepseek/deepseek-chat"
     assert payload["selection"]["image_gen"] == RECOMMENDED_HK_IMAGE_MODEL
     assert payload["prices_recorded_on"] == "2026-11-03"
-    _assert_gemini_absent(payload)
+    _assert_gemini_text_absent(payload)
+    _assert_image_models_listed(payload)
 
     prices = _prices(payload)
     assert prices
@@ -151,6 +161,25 @@ def test_put_swaps_a_model_and_get_shows_it(client, tmp_path):
 
     on_disk = json.loads((tmp_path / "model-selection.json").read_text(encoding="utf-8"))
     assert on_disk["selection"] == updated
+
+
+def test_put_accepts_nano_banana_and_seedream_image_models(client, tmp_path):
+    banana = dict(DEFAULT_SELECTION)
+    banana["image_gen"] = "google/gemini-3.1-flash-image"
+    saved = client.put("/api/models", json=banana)
+    assert saved.status_code == 200
+    assert saved.json()["selection"]["image_gen"] == "google/gemini-3.1-flash-image"
+    image = next(item for item in saved.json()["functions"] if item["id"] == "image_gen")
+    assert image["selected_model_id"] == "google/gemini-3.1-flash-image"
+
+    seedream = dict(DEFAULT_SELECTION)
+    seedream["image_gen"] = "bytedance-seed/seedream-5-0-flash"
+    saved = client.put("/api/models", json=seedream)
+    assert saved.status_code == 200
+    assert saved.json()["selection"]["image_gen"] == "bytedance-seed/seedream-5-0-flash"
+    assert client.get("/api/models").json()["selection"]["image_gen"] == (
+        "bytedance-seed/seedream-5-0-flash"
+    )
 
 
 def test_put_rejects_unknown_and_disallowed_models(client, tmp_path):
@@ -217,12 +246,14 @@ def test_put_rejects_hidden_hong_kong_model(client, tmp_path):
 
 def test_gemini_is_not_in_public_options(client):
     payload = client.get("/api/models").json()
-    _assert_gemini_absent(payload)
+    _assert_gemini_text_absent(payload)
+    _assert_image_models_listed(payload)
     rag = next(item for item in payload["functions"] if item["id"] == "rag_qa")
     assert [option["id"] for option in rag["options"]] == [
         str(model["id"]) for model in models_for("rag_qa")
     ]
     assert "google/gemini-2.5-flash" in hidden_catalog_ids()
+    assert "google/gemini-3.1-flash-image" not in hidden_catalog_ids()
     assert DEFAULT_SELECTION["rag_qa"] == "deepseek/deepseek-chat"
     assert DEFAULT_SELECTION["image_gen"] == "black-forest-labs/flux.2-pro"
 
@@ -232,7 +263,8 @@ def test_defaults_are_hong_kong_safe(client):
         assert "gemini" not in model_id
     payload = client.get("/api/models").json()
     assert payload["selection"] == DEFAULT_SELECTION
-    _assert_gemini_absent(payload)
+    _assert_gemini_text_absent(payload)
+    _assert_image_models_listed(payload)
 
 
 def test_saved_hidden_model_is_coerced(client, tmp_path):
@@ -253,8 +285,9 @@ def test_saved_hidden_model_is_coerced(client, tmp_path):
     assert payload["selection"]["translation"] == "openai/gpt-4o"
     assert payload["selection"]["cantonese_script"] == "deepseek/deepseek-chat"
     assert payload["selection"]["dse_math"] == "deepseek/deepseek-chat"
-    assert payload["selection"]["image_gen"] == "black-forest-labs/flux.2-pro"
-    _assert_gemini_absent(payload)
+    assert payload["selection"]["image_gen"] == "google/gemini-3.1-flash-image"
+    _assert_gemini_text_absent(payload)
+    _assert_image_models_listed(payload)
 
 
 def test_probe_hides_region_403_without_printing_key(tmp_path, monkeypatch):
@@ -282,4 +315,5 @@ def test_probe_hides_region_403_without_printing_key(tmp_path, monkeypatch):
     assert "deepseek/deepseek-chat" in option_ids
     assert secret not in client.get("/api/models").text
     assert secret[:18] not in json.dumps(payload)
-    _assert_gemini_absent(payload)
+    _assert_gemini_text_absent(payload)
+    _assert_image_models_listed(payload)

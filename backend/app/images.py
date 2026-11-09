@@ -1435,7 +1435,7 @@ def _frame_prompt(base: str, caption: str, index: int, total: int) -> str:
 
 
 def _assert_image_model(model_id: str, extra_hidden: frozenset[str] | set[str] | None) -> None:
-    if model_id == GEMINI_IMAGE_ID or not is_available_in_hong_kong(model_id, extra_hidden):
+    if not is_available_in_hong_kong(model_id, extra_hidden):
         raise ImageError(400, f"{model_id} is not available in Hong Kong.")
     model = get_model(model_id)
     if model is None or "image_gen" not in model["functions"]:  # type: ignore[operator]

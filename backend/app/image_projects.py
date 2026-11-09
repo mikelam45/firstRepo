@@ -17,7 +17,6 @@ from typing import Any
 from .catalog import get_model, is_available_in_hong_kong
 from .image_refs import load_index as load_reference_index
 from .images import (
-    GEMINI_IMAGE_ID,
     ImageError,
     MAX_FIELD_CHARS,
     MAX_IMAGE_COUNT,
@@ -167,7 +166,7 @@ def _clip_text(value: object, limit: int = MAX_FIELD_CHARS) -> str:
 
 def _sanitize_model_id(value: object, extra_hidden: frozenset[str] | set[str] | None) -> str:
     model_id = _clip_text(value, 200)
-    if not model_id or model_id == GEMINI_IMAGE_ID:
+    if not model_id:
         return ""
     if not is_available_in_hong_kong(model_id, extra_hidden):
         return ""

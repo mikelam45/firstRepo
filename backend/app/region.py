@@ -6,7 +6,7 @@ from typing import Any
 
 import httpx
 
-from .catalog import MODELS, catalog_available_in_hong_kong
+from .catalog import MODELS, TEXT_FUNCTIONS, catalog_available_in_hong_kong
 from .openrouter_key import load_openrouter_api_key
 
 OPENROUTER_CHAT_URL = "https://openrouter.ai/api/v1/chat/completions"
@@ -80,6 +80,11 @@ def _probe_catalog_ids_impl(api_key: str | None) -> tuple[frozenset[str], frozen
         model_id = str(model["id"])
         if not catalog_available_in_hong_kong(model):
             hidden.add(model_id)
+            continue
+        functions = model.get("functions") or ()
+        if not any(fn in TEXT_FUNCTIONS for fn in functions):  # type: ignore[operator]
+            # Image and video ids are not chat completions; a chat ping would
+            # hide working Image API models.
             continue
         status_code, body = _probe_one(api_key, model_id)
         if is_region_unavailable(status_code, body):
