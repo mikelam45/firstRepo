@@ -34,8 +34,8 @@ PRICE_SOURCE = (
 COST_NOTE = (
     "A single total is not shown. Text, images, and video use different units, "
     "so adding them would not mean anything. Text is USD per 1M tokens, images are "
-    "USD per 1M image-output tokens or USD per megapixel, and video is USD per second. "
-    "Each function below shows its own unit price."
+    "USD per 1M image-output tokens, USD per megapixel, or USD per image, and video "
+    "is USD per second. Each function below shows its own unit price."
 )
 
 # (id, label) in the order the UI presents them.
@@ -53,9 +53,9 @@ FUNCTION_LABELS: dict[str, str] = dict(FUNCTIONS)
 
 TEXT_FUNCTIONS = ("rag_qa", "translation", "cantonese_script", "dse_math")
 
-# Hong Kong: Google Gemini text/image ids 403 with "not available in your region".
-# They stay in the catalog for probes and leftover-file coercion, but public
-# lists omit them. Do not leave them selectable with a warning.
+# Hong Kong: Google Gemini text ids 403 with "not available in your region".
+# Text Gemini stays in the catalog for leftover-file coercion but public lists
+# omit it. Nano Banana 2 (Gemini image) and Seedream 5.0 Flash are selectable.
 RECOMMENDED_HK_TEXT_MODEL = "deepseek/deepseek-chat"
 RECOMMENDED_HK_IMAGE_MODEL = "black-forest-labs/flux.2-pro"
 RECOMMENDED_HK_VIDEO_MODEL = "minimax/hailuo-2.3"
@@ -162,14 +162,14 @@ MODELS: tuple[dict[str, object], ...] = (
     {
         "id": "google/gemini-3.1-flash-image",
         "provider": "Google",
-        "name": "Gemini 3.1 Flash Image",
+        "name": "Nano Banana 2 (Gemini 3.1 Flash Image)",
         # https://openrouter.ai/google/gemini-3.1-flash-image
         # $0.50/M input, $3/M text output, $60/M image-output tokens.
         # Image endpoints API (AI Studio and Vertex global): output_image
         # unit token, cost_usd 0.00006. One Vertex US endpoint lists 0.000066.
-        "good_for": "Fast storyboard frames and image edits.",
+        "good_for": "Fast storyboard frames and image edits (Nano Banana 2).",
         "quality_cost": "Balanced",
-        "available_in_hong_kong": False,
+        "available_in_hong_kong": True,
         "functions": ("image_gen",),
         "compare_amount": "60",
         "compare_unit": "USD per 1M image-output tokens",
@@ -214,6 +214,27 @@ MODELS: tuple[dict[str, object], ...] = (
                 "0.015",
                 "USD per megapixel",
                 "Reference images used for an edit.",
+            ),
+        ),
+    },
+    {
+        "id": "bytedance-seed/seedream-5-0-flash",
+        "provider": "ByteDance Seed",
+        "name": "Seedream 5.0 Flash",
+        # https://openrouter.ai/bytedance-seed/seedream-5-0-flash
+        # Listed from-price $0.018 per output image (10 Nov 2026).
+        "good_for": "Fast, low-cost stills and precise edits.",
+        "quality_cost": "Lower cost",
+        "available_in_hong_kong": True,
+        "functions": ("image_gen",),
+        "compare_amount": "0.018",
+        "compare_unit": "USD per image",
+        "prices": (
+            _price(
+                "Output",
+                "0.018",
+                "USD per image",
+                "Listed from-price per generated image.",
             ),
         ),
     },

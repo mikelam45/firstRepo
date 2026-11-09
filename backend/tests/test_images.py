@@ -744,7 +744,7 @@ def test_enhance_prompt_uses_text_chat_not_images(tmp_path, monkeypatch):
     _assert_secret_absent(response.text)
 
 
-def test_leftover_gemini_image_is_not_used(tmp_path, monkeypatch):
+def test_saved_gemini_image_is_used(tmp_path, monkeypatch):
     _install_key(tmp_path, monkeypatch)
     seen = _mock_images(monkeypatch)
     data_dir = tmp_path / "data"
@@ -753,6 +753,7 @@ def test_leftover_gemini_image_is_not_used(tmp_path, monkeypatch):
         '{"selection": {"rag_qa": "deepseek/deepseek-chat",'
         ' "translation": "deepseek/deepseek-chat",'
         ' "cantonese_script": "deepseek/deepseek-chat",'
+        ' "dse_math": "deepseek/deepseek-chat",'
         ' "image_gen": "google/gemini-3.1-flash-image",'
         ' "video_gen": "minimax/hailuo-2.3"}}\n',
         encoding="utf-8",
@@ -760,8 +761,29 @@ def test_leftover_gemini_image_is_not_used(tmp_path, monkeypatch):
     client = _client(monkeypatch, tmp_path)
     response = client.post("/api/images/generate", json={"prompt": "a lamp"})
     assert response.status_code == 200
-    assert response.json()["model_id"] == "black-forest-labs/flux.2-pro"
-    assert seen["json"]["model"] == "black-forest-labs/flux.2-pro"
+    assert response.json()["model_id"] == "google/gemini-3.1-flash-image"
+    assert seen["json"]["model"] == "google/gemini-3.1-flash-image"
+
+
+def test_saved_seedream_image_is_used(tmp_path, monkeypatch):
+    _install_key(tmp_path, monkeypatch)
+    seen = _mock_images(monkeypatch)
+    data_dir = tmp_path / "data"
+    data_dir.mkdir(parents=True)
+    (data_dir / "model-selection.json").write_text(
+        '{"selection": {"rag_qa": "deepseek/deepseek-chat",'
+        ' "translation": "deepseek/deepseek-chat",'
+        ' "cantonese_script": "deepseek/deepseek-chat",'
+        ' "dse_math": "deepseek/deepseek-chat",'
+        ' "image_gen": "bytedance-seed/seedream-5-0-flash",'
+        ' "video_gen": "minimax/hailuo-2.3"}}\n',
+        encoding="utf-8",
+    )
+    client = _client(monkeypatch, tmp_path)
+    response = client.post("/api/images/generate", json={"prompt": "a lamp"})
+    assert response.status_code == 200
+    assert response.json()["model_id"] == "bytedance-seed/seedream-5-0-flash"
+    assert seen["json"]["model"] == "bytedance-seed/seedream-5-0-flash"
 
 
 def test_generate_count_eleven_is_400(tmp_path, monkeypatch):

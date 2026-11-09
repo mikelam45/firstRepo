@@ -308,22 +308,22 @@ def test_list_newest_updated_first(tmp_path, monkeypatch):
     assert [row["name"] for row in listed] == ["Older", "Newer"]
 
 
-def test_gemini_model_id_is_not_stored(tmp_path, monkeypatch):
+def test_gemini_image_model_id_is_stored(tmp_path, monkeypatch):
     client = _client(monkeypatch, tmp_path)
     created = client.post(
         "/api/images/projects",
         json={
-            "name": "HK only",
+            "name": "Nano Banana 2",
             "model_id": "google/gemini-3.1-flash-image",
             "prompt_detail": {"subject": "a lamp", "model_id": "google/gemini-3.1-flash-image"},
         },
     )
     assert created.status_code == 201
     payload = created.json()
-    assert payload["model_id"] == ""
-    assert payload["prompt_detail"].get("model_id") in {"", None}
+    assert payload["model_id"] == "google/gemini-3.1-flash-image"
+    assert payload["prompt_detail"].get("model_id") == "google/gemini-3.1-flash-image"
     store = (tmp_path / "data" / INDEX_NAME).read_text(encoding="utf-8")
-    assert "google/gemini-3.1-flash-image" not in store
+    assert "google/gemini-3.1-flash-image" in store
 
 
 def test_kept_reference_ids_survive_when_files_exist(tmp_path, monkeypatch):

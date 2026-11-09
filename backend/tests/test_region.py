@@ -23,10 +23,12 @@ def test_is_region_unavailable_detects_403_wording():
 
 def test_probe_hides_region_403_and_keeps_200(monkeypatch):
     seen_keys = []
+    seen_models = []
 
     def fake_post(url, json=None, headers=None, timeout=None, follow_redirects=None):
         seen_keys.append(headers.get("Authorization") if headers else None)
         model_id = json["model"]
+        seen_models.append(model_id)
         if "gemini" in model_id:
             return _response(
                 403,
@@ -37,7 +39,12 @@ def test_probe_hides_region_403_and_keeps_200(monkeypatch):
     monkeypatch.setattr("app.region.httpx.post", fake_post)
     hidden, ok = _probe_catalog_ids_impl(SECRET)
     assert "google/gemini-2.5-flash" in hidden
-    assert "google/gemini-3.1-flash-image" in hidden
+    assert "google/gemini-2.5-flash" not in seen_models
+    assert "google/gemini-3.1-flash-image" not in hidden
+    assert "google/gemini-3.1-flash-image" not in ok
+    assert "google/gemini-3.1-flash-image" not in seen_models
+    assert "bytedance-seed/seedream-5-0-flash" not in hidden
+    assert "bytedance-seed/seedream-5-0-flash" not in seen_models
     assert "deepseek/deepseek-chat" in ok
     assert SECRET not in hidden
     assert SECRET not in ok
