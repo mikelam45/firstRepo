@@ -22,12 +22,12 @@ cd /Users/mikelam/firstRepo/RAG_portal
 bash scripts/dev.sh
 ```
 
-If `main` does not have these scripts yet, check out the current Mac development branch after clone (this tip includes Image studio, labelled DSE givens, and complete unclipped circle diagrams):
+If `main` does not have these scripts yet, check out the current Mac development branch after clone (this tip includes Image studio, labelled DSE givens, unclipped circles, and four-sided quadrilateral diagrams):
 
 ```bash
 git fetch origin
-git checkout cursor/dse-circle-fit-1e46
-git pull origin cursor/dse-circle-fit-1e46
+git checkout cursor/dse-quad-figure-1e46
+git pull origin cursor/dse-quad-figure-1e46
 ```
 
 The first run creates `.venv`, installs `backend/requirements.txt`, and copies `.env.development.example` to `.env.development`. The server listens on `http://127.0.0.1:8099`. A second `scripts/dev.sh` replaces the previous development server on 8099; a foreign process on that port is left alone.

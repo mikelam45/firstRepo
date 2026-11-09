@@ -277,8 +277,9 @@ DSE_WORKING_AND_FINAL = (
 DSE_TUTOR_BASE = DSE_TUTOR_IDENTITY + " " + DSE_WORKING_AND_FINAL
 DSE_GIVEN_LABEL_INSTRUCTION = (
     "100% of named givens MUST appear as labels on the diagram: every vertex "
-    "(for example A, B, C on triangle ABC) and every given angle or length "
-    "(for example 50°, 70°, 6 cm). Never leave those only in prose. "
+    "(for example A, B, C, D on quadrilateral ABCD) and every given angle or length "
+    "(for example 80°, 90°, 50°, 6 cm). Never leave those only in prose. "
+    "Match the named shape: a quadrilateral is four sides, never a triangle. "
     "Question and hint figures show given facts only. "
     "Working-step figures may add constructions (incentre, radii, touch points). "
     "The answer figure marks the found angle or length on the same diagram."
@@ -371,7 +372,9 @@ DSE_CREATE_FIGURE_JSON = (
     "angle, point, label. For algebra use a number_line or coordinate axes. For data "
     "use a chart. The figure must show given information only, never the answer. "
     "100% of named vertices and given angles or lengths in the question text "
-    "must be labels on the figure (triangle ABC with 50° at A, not a blank sketch). "
+    "must be labels on the figure (quadrilateral ABCD with 80° at A, not a blank sketch). "
+    "Draw the named shape: quadrilateral ABCD is a four-sided polygon with vertices "
+    "A, B, C, D, never a triangle. "
     "scenario is one or two sentences of teaching context, not the solution."
 )
 DSE_CREATE_QUESTION_INSTRUCTION = (

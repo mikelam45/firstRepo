@@ -272,6 +272,90 @@ ARC_SECTOR_FIGURE: dict[str, Any] = {
     ],
 }
 
+QUADRILATERAL_FIGURE: dict[str, Any] = {
+    "type": "geometry",
+    "interactive": True,
+    "title": "Quadrilateral ABCD",
+    "caption": "Click a vertex or side. Named givens stay labelled on the figure.",
+    "actions": [
+        {
+            "id": "givens",
+            "label": "Givens",
+            "highlight": ["angle-a", "angle-b", "angle-c", "angle-d", "ab", "bc", "cd", "da"],
+            "caption": "Click a vertex or side. Named givens stay labelled on the figure.",
+        }
+    ],
+    "elements": [
+        {
+            "kind": "polygon",
+            "points": [[16, 84], [86, 84], [78, 16], [22, 28]],
+            "labels": ["A", "B", "C", "D"],
+            "id": "quad",
+        },
+        {
+            "kind": "segment",
+            "from": [16, 84],
+            "to": [86, 84],
+            "id": "ab",
+            "caption": "Side AB.",
+        },
+        {
+            "kind": "segment",
+            "from": [86, 84],
+            "to": [78, 16],
+            "id": "bc",
+            "caption": "Side BC.",
+        },
+        {
+            "kind": "segment",
+            "from": [78, 16],
+            "to": [22, 28],
+            "id": "cd",
+            "caption": "Side CD.",
+        },
+        {
+            "kind": "segment",
+            "from": [22, 28],
+            "to": [16, 84],
+            "id": "da",
+            "caption": "Side DA.",
+        },
+        {
+            "kind": "angle",
+            "at": [16, 84],
+            "from": [86, 84],
+            "to": [22, 28],
+            "id": "angle-a",
+            "caption": "Angle at A.",
+        },
+        {
+            "kind": "angle",
+            "at": [86, 84],
+            "from": [16, 84],
+            "to": [78, 16],
+            "right": True,
+            "id": "angle-b",
+            "caption": "Angle at B.",
+        },
+        {
+            "kind": "angle",
+            "at": [78, 16],
+            "from": [86, 84],
+            "to": [22, 28],
+            "id": "angle-c",
+            "caption": "Angle at C.",
+        },
+        {
+            "kind": "angle",
+            "at": [22, 28],
+            "from": [78, 16],
+            "to": [16, 84],
+            "id": "angle-d",
+            "caption": "Angle at D.",
+        },
+    ],
+}
+
 TRIANGLE_FIGURE: dict[str, Any] = {
     "type": "geometry",
     "interactive": True,
@@ -404,7 +488,7 @@ EXPLAIN_FIGURES: dict[str, dict[str, Any]] = {
     "ks3_18_mensuration": CIRCLE_FIGURE,
     "ks3_19_angles_parallel": TRIANGLE_FIGURE,
     "ks3_20_polygons": TRIANGLE_FIGURE,
-    "ks3_23_quadrilaterals": TRIANGLE_FIGURE,
+    "ks3_23_quadrilaterals": QUADRILATERAL_FIGURE,
     "ks3_24_centres_triangles": TRIANGLE_FIGURE,
     "ks3_25_pythagoras": TRIANGLE_FIGURE,
     "ks3_26_rectangular_coords": COORDINATE_FIGURE,
@@ -443,6 +527,24 @@ def _validated(spec: dict[str, Any] | None) -> dict[str, Any] | None:
 _FENCE_BODY_RE = re.compile(r"```figure[^\n]*\n(.*?)```", re.S)
 _TRIANGLE_RE = re.compile(
     r"(?:triangle|△|∆)\s*([A-Za-z])\s*([A-Za-z])\s*([A-Za-z])",
+    re.I,
+)
+_QUAD_RE = re.compile(
+    r"(?:quadrilateral|parallelogram|rectangle|rhombus|trapez(?:ium|oid)|kite)\s*"
+    r"([A-Za-z])\s*([A-Za-z])\s*([A-Za-z])\s*([A-Za-z])",
+    re.I,
+)
+_CIRCLE_WORD_RE = re.compile(
+    r"\b(circles?|circular|incircle|in-circle|fountain)\b",
+    re.I,
+)
+_RESPECTIVE_ANGLES_RE = re.compile(
+    r"angles?\s+([A-Za-z](?:\s*,\s*[A-Za-z])*(?:\s*,?\s*and\s+[A-Za-z])?)\s+"
+    r"(?:measuring|are)\s+(.+?)(?:\s+respectively)?\s*(?:\.|$)",
+    re.I | re.S,
+)
+_MEASURE_TOKEN_RE = re.compile(
+    r"(\d+(?:\.\d+)?|[A-Za-z])\s*(?:°|degrees|deg)",
     re.I,
 )
 _DEGREE_RE = re.compile(
@@ -516,10 +618,20 @@ def given_labels_from_text(text: str | None) -> list[str]:
         seen.add(item)
         labels.append(item)
 
+    match = _QUAD_RE.search(plain)
+    if match:
+        for group in match.groups():
+            add(group.upper())
     match = _TRIANGLE_RE.search(plain)
     if match:
         for group in match.groups():
             add(group.upper())
+    for names, measures in _respective_angle_pairs(plain):
+        for name in names:
+            add(name)
+        for token in measures:
+            if not _is_unknown_measure(token):
+                add(format_degree(token))
     for pattern in _VERTEX_ANGLE_RES:
         for row in pattern.findall(plain):
             if pattern is _VERTEX_ANGLE_RES[-1]:
@@ -539,32 +651,85 @@ def given_labels_from_text(text: str | None) -> list[str]:
     return labels
 
 
+def _split_vertex_names(chunk: str) -> list[str]:
+    names: list[str] = []
+    for part in re.split(r",|\band\b", chunk or ""):
+        token = part.strip().upper()
+        if len(token) == 1 and token.isalpha():
+            names.append(token)
+    return names
+
+
+def _is_unknown_measure(token: str) -> bool:
+    text = str(token).strip()
+    if not text:
+        return True
+    if text.lower() in {"x", "y", "z", "n", "k", "m", "t"}:
+        return True
+    try:
+        float(text)
+    except ValueError:
+        return True
+    return False
+
+
+def _respective_angle_pairs(plain: str) -> list[tuple[list[str], list[str]]]:
+    pairs: list[tuple[list[str], list[str]]] = []
+    for match in _RESPECTIVE_ANGLES_RE.finditer(plain):
+        names = _split_vertex_names(match.group(1))
+        measures = [token for token in _MEASURE_TOKEN_RE.findall(match.group(2) or "")]
+        if names and measures:
+            pairs.append((names, measures))
+    return pairs
+
+
 def _given_facts(text: str | None) -> dict[str, Any]:
     plain = _plain_math_text(text)
-    vertices = ("A", "B", "C")
-    match = _TRIANGLE_RE.search(plain)
-    if match:
-        vertices = tuple(group.upper() for group in match.groups())
+    vertices: tuple[str, ...] = ()
+    shape = ""
+    quad = _QUAD_RE.search(plain)
+    tri = _TRIANGLE_RE.search(plain)
+    if quad:
+        vertices = tuple(group.upper() for group in quad.groups())
+        shape = "quadrilateral"
+    elif tri:
+        vertices = tuple(group.upper() for group in tri.groups())
+        shape = "triangle"
     angles: dict[str, float] = {}
+    unknowns: list[str] = []
+    for names, measures in _respective_angle_pairs(plain):
+        if not vertices:
+            vertices = tuple(names)
+            if len(names) >= 4:
+                shape = "quadrilateral"
+            elif len(names) == 3:
+                shape = "triangle"
+        for name, token in zip(names, measures):
+            if _is_unknown_measure(token):
+                if name not in unknowns:
+                    unknowns.append(name)
+                continue
+            if name not in angles:
+                angles[name] = float(token)
     for pattern in _VERTEX_ANGLE_RES:
         for row in pattern.findall(plain):
             if pattern is _VERTEX_ANGLE_RES[-1]:
                 vertex, amount = row[1][0].upper(), float(row[0])
             else:
                 vertex, amount = row[0][0].upper(), float(row[1])
-            if vertex in vertices or vertex.isalpha():
-                key = vertex if len(vertex) == 1 else vertex[0]
-                if key not in angles:
-                    angles[key] = amount
+            key = vertex if len(vertex) == 1 else vertex[0]
+            if key not in angles:
+                angles[key] = amount
     assigned = {format_degree(value) for value in angles.values()}
     unused = [
         float(match.group(1))
         for match in _DEGREE_RE.finditer(plain)
         if format_degree(match.group(1)) not in assigned
     ]
-    for vertex in vertices:
-        if vertex not in angles and unused:
-            angles[vertex] = unused.pop(0)
+    if vertices:
+        for vertex in vertices:
+            if vertex not in angles and vertex not in unknowns and unused:
+                angles[vertex] = unused.pop(0)
     lengths: dict[str, str] = {}
     for letters, amount, unit in _LENGTH_RE.findall(plain):
         key = "".join(sorted(letters.upper()))
@@ -577,7 +742,9 @@ def _given_facts(text: str | None) -> dict[str, Any]:
     )
     return {
         "vertices": vertices,
+        "shape": shape,
         "angles": angles,
+        "unknowns": unknowns,
         "lengths": lengths,
         "incircle": incircle,
         "labels": given_labels_from_text(text),
@@ -661,12 +828,129 @@ def _xy(point: tuple[float, float]) -> list[float]:
     return [round(point[0], 2), round(point[1], 2)]
 
 
+def labelled_quadrilateral_figure(
+    facts: dict[str, Any],
+    *,
+    stage: str = "question",
+) -> dict[str, Any]:
+    verts = tuple(facts.get("vertices") or ())
+    if len(verts) < 4:
+        verts = ("A", "B", "C", "D")
+    a_name, b_name, c_name, d_name = verts[:4]
+    given_angles: dict[str, float] = dict(facts.get("angles") or {})
+    angles: dict[str, float] = dict(given_angles)
+    lengths: dict[str, str] = dict(facts.get("lengths") or {})
+    points = {
+        a_name: (16.0, 84.0),
+        b_name: (86.0, 84.0),
+        c_name: (78.0, 16.0),
+        d_name: (22.0, 28.0),
+    }
+    missing = [name for name in (a_name, b_name, c_name, d_name) if name not in given_angles]
+    if stage == "answer" and len(missing) == 1:
+        leftover = 360.0 - sum(
+            given_angles[name]
+            for name in (a_name, b_name, c_name, d_name)
+            if name in given_angles
+        )
+        if leftover > 0:
+            angles[missing[0]] = leftover
+    side_pairs = (
+        (a_name, b_name, "ab"),
+        (b_name, c_name, "bc"),
+        (c_name, d_name, "cd"),
+        (d_name, a_name, "da"),
+    )
+    elements: list[dict[str, Any]] = [
+        {
+            "kind": "polygon",
+            "points": [
+                _xy(points[a_name]),
+                _xy(points[b_name]),
+                _xy(points[c_name]),
+                _xy(points[d_name]),
+            ],
+            "labels": [a_name, b_name, c_name, d_name],
+            "id": "quad",
+        }
+    ]
+    for start, end, part_id in side_pairs:
+        key = "".join(sorted((start, end)))
+        elements.append(
+            {
+                "kind": "segment",
+                "from": _xy(points[start]),
+                "to": _xy(points[end]),
+                "label": lengths.get(key, ""),
+                "id": part_id,
+                "caption": f"Side {start}{end}.",
+            }
+        )
+    for vertex, start, end, part_id in (
+        (a_name, b_name, d_name, "angle-a"),
+        (b_name, a_name, c_name, "angle-b"),
+        (c_name, b_name, d_name, "angle-c"),
+        (d_name, c_name, a_name, "angle-d"),
+    ):
+        labelled = vertex in given_angles or (stage == "answer" and vertex in angles)
+        label = format_degree(angles[vertex]) if labelled and vertex in angles else ""
+        item: dict[str, Any] = {
+            "kind": "angle",
+            "at": _xy(points[vertex]),
+            "from": _xy(points[start]),
+            "to": _xy(points[end]),
+            "label": label,
+            "id": part_id,
+            "caption": f"Angle at {vertex}" + (f" = {label}." if label else "."),
+        }
+        if labelled and vertex in angles and abs(angles[vertex] - 90.0) < 0.51:
+            item["right"] = True
+        elements.append(item)
+    actions = [
+        {
+            "id": "givens",
+            "label": "Givens",
+            "highlight": ["angle-a", "angle-b", "angle-c", "angle-d", "ab", "bc", "cd", "da"],
+            "caption": "Click a vertex or side. Named givens stay labelled on the figure.",
+        }
+    ]
+    title = f"Quadrilateral {a_name}{b_name}{c_name}{d_name}"
+    caption = "Given vertices and angles are marked. Click a part to highlight it."
+    if stage == "answer" and missing and missing[0] in angles:
+        found = format_degree(angles[missing[0]])
+        caption = (
+            f"{missing[0]} = {found} because the interior angles of a quadrilateral "
+            "sum to 360°."
+        )
+        actions.append(
+            {
+                "id": "sum",
+                "label": "Angle sum",
+                "highlight": ["angle-a", "angle-b", "angle-c", "angle-d"],
+                "caption": caption,
+            }
+        )
+    spec = {
+        "type": "geometry",
+        "interactive": True,
+        "title": title if stage == "question" else f"{title} ({stage})",
+        "caption": caption,
+        "actions": actions,
+        "elements": elements,
+    }
+    parsed = _validated(spec)
+    return parsed or spec
+
+
 def labelled_triangle_figure(
     facts: dict[str, Any],
     *,
     stage: str = "question",
 ) -> dict[str, Any]:
-    a_name, b_name, c_name = facts["vertices"]
+    verts = tuple(facts.get("vertices") or ())
+    if len(verts) < 3:
+        verts = ("A", "B", "C")
+    a_name, b_name, c_name = verts[:3]
     given_angles: dict[str, float] = dict(facts.get("angles") or {})
     angles: dict[str, float] = dict(given_angles)
     lengths: dict[str, str] = dict(facts.get("lengths") or {})
@@ -935,6 +1219,27 @@ def labelled_circle_figure(
     return parsed or spec
 
 
+def _mentions_quadrilateral(question: str | None, facts: dict[str, Any]) -> bool:
+    if facts.get("shape") == "quadrilateral":
+        return True
+    if len(facts.get("vertices") or ()) >= 4:
+        return True
+    plain = _plain_math_text(question)
+    if _QUAD_RE.search(plain):
+        return True
+    lowered = plain.lower()
+    return any(
+        word in lowered
+        for word in (
+            "quadrilateral",
+            "parallelogram",
+            "rhombus",
+            "trapezium",
+            "trapezoid",
+        )
+    )
+
+
 def figure_from_question(
     question: str | None,
     *,
@@ -942,15 +1247,19 @@ def figure_from_question(
     topic: str | None = None,
 ) -> dict[str, Any] | None:
     facts = _given_facts(question)
-    plain = _plain_math_text(question).lower()
-    if facts["labels"] or facts["incircle"] or _TRIANGLE_RE.search(_plain_math_text(question) or ""):
-        if "triangle" in plain or "△" in (question or "") or facts["angles"] or facts["incircle"]:
+    plain = _plain_math_text(question)
+    lowered = plain.lower()
+    if _mentions_quadrilateral(question, facts):
+        return labelled_quadrilateral_figure(facts, stage=stage)
+    if facts["labels"] or facts["incircle"] or _TRIANGLE_RE.search(plain):
+        if (
+            "triangle" in lowered
+            or "△" in (question or "")
+            or facts["incircle"]
+            or (facts["angles"] and len(facts.get("vertices") or ()) <= 3)
+        ):
             return labelled_triangle_figure(facts, stage=stage)
-    if (
-        "circle" in plain
-        or "fountain" in plain
-        or _DIAMETER_RE.search(_plain_math_text(question) or "")
-    ):
+    if _CIRCLE_WORD_RE.search(plain) or _DIAMETER_RE.search(plain):
         return labelled_circle_figure(question, stage=stage)
     return None
 
@@ -1017,7 +1326,9 @@ def default_solve_figure(
     text = (question or "").lower()
     if any(word in text for word in ("sector", "arc length", "arc ")):
         return _validated(ARC_SECTOR_FIGURE) or default_create_figure(None)
-    if "circle" in text:
+    if _mentions_quadrilateral(question, _given_facts(question)):
+        return labelled_quadrilateral_figure(_given_facts(question), stage=stage)
+    if _CIRCLE_WORD_RE.search(question or "") or _DIAMETER_RE.search(_plain_math_text(question)):
         return _validated(CIRCLE_FIGURE) or default_create_figure(None)
     if any(word in text for word in ("triangle", "congruent", "similar", "pythag")):
         return _validated(TRIANGLE_FIGURE) or default_create_figure(None)
