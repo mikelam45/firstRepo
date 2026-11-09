@@ -716,6 +716,51 @@ def test_solve_figure_follows_question_not_topic():
     assert session_has_figure({"messages": [{"role": "user", "content": "hi"}]}) is False
 
 
+FOUNTAIN_QUESTION = (
+    "Scenario. A student is planning a community project and needs to calculate "
+    "the area of a circular fountain.\n\nCircular Fountain\nCircle with diameter 10m.\n"
+    "A circular fountain has a diameter of $10$ meters. Find the area of the fountain."
+)
+
+
+def test_fountain_circle_figure_is_complete_and_labelled():
+    from app.dse_figures import (
+        CIRCLE_FIGURE,
+        ensure_created_figure,
+        figure_from_question,
+        given_labels_from_text,
+    )
+
+    labels = given_labels_from_text(FOUNTAIN_QUESTION)
+    assert "10 m" in labels
+
+    fig = figure_from_question(FOUNTAIN_QUESTION, stage="question")
+    assert fig is not None
+    circle = next(el for el in fig["elements"] if el.get("kind") == "circle")
+    assert circle["cy"] - circle["r"] > 5
+    assert circle["cy"] + circle["r"] < 95
+    blob = json.dumps(fig, ensure_ascii=False)
+    assert "10 m" in blob
+    assert any(el.get("id") == "diameter" for el in fig["elements"])
+
+    clipped = {
+        "type": "geometry",
+        "title": "Circular Fountain",
+        "elements": [
+            {"kind": "circle", "cx": 50, "cy": 50, "r": 50, "id": "circle"},
+        ],
+    }
+    enforced = ensure_created_figure(clipped, question=FOUNTAIN_QUESTION)
+    assert "10 m" in json.dumps(enforced, ensure_ascii=False)
+    drawn = next(el for el in enforced["elements"] if el.get("kind") == "circle")
+    assert drawn["r"] < 50
+
+    template = CIRCLE_FIGURE
+    assert template["elements"][0]["kind"] == "circle"
+    assert template["elements"][0]["cy"] - template["elements"][0]["r"] > 0
+    assert template["elements"][0]["cy"] + template["elements"][0]["r"] < 100
+
+
 INCIRCLE_TANGENT_QUESTION = (
     "In a triangle $ABC$, the angle at vertex $A$ measures $50^\\circ$, "
     "and the angle at vertex $B$ measures $70^\\circ$. A circle is inscribed "

@@ -238,10 +238,12 @@ pre.chat-reply,
   background: var(--card);
   border: 1px solid var(--line);
   border-radius: 8px;
+  overflow: visible;
 }
 .chat-reply .chat-figure {
   margin: 12px 0;
   max-width: 36rem;
+  overflow: visible;
 }
 .chat-reply .chat-figure .chat-chart,
 .chat-reply .chat-figure .chat-figure-svg {

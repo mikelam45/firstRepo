@@ -763,6 +763,52 @@
     return drawAxisChart(spec);
   }
 
+  function figureHasRound(spec) {
+    return (spec.elements || []).some(function (el) {
+      return el.kind === "circle" || el.kind === "arc" || el.kind === "sector";
+    });
+  }
+
+  function geometryBox(spec) {
+    var xs = [];
+    var ys = [];
+    (spec.elements || []).forEach(function (el) {
+      if (el.kind === "circle" || el.kind === "arc" || el.kind === "sector") {
+        xs.push(el.cx - el.r, el.cx + el.r);
+        ys.push(el.cy - el.r, el.cy + el.r);
+      } else if (el.kind === "point" || el.kind === "label") {
+        xs.push(el.x);
+        ys.push(el.y);
+      } else if (el.kind === "segment" || el.kind === "arrow") {
+        xs.push(el.from[0], el.to[0]);
+        ys.push(el.from[1], el.to[1]);
+      } else if (el.kind === "polygon") {
+        el.points.forEach(function (pt) { xs.push(pt[0]); ys.push(pt[1]); });
+      } else if (el.kind === "angle") {
+        xs.push(el.at[0], el.from[0], el.to[0]);
+        ys.push(el.at[1], el.from[1], el.to[1]);
+      }
+    });
+    if (!xs.length || !ys.length) {
+      return { xmin: 0, xmax: 100, ymin: 0, ymax: 100 };
+    }
+    var xmin = Math.min.apply(null, xs);
+    var xmax = Math.max.apply(null, xs);
+    var ymin = Math.min.apply(null, ys);
+    var ymax = Math.max.apply(null, ys);
+    if (xmin === xmax) xmax = xmin + 1;
+    if (ymin === ymax) ymax = ymin + 1;
+    var padFrac = figureHasRound(spec) ? 0.16 : 0.1;
+    var padX = Math.max((xmax - xmin) * padFrac, figureHasRound(spec) ? 8 : 4);
+    var padY = Math.max((ymax - ymin) * padFrac, figureHasRound(spec) ? 8 : 4);
+    return {
+      xmin: xmin - padX,
+      xmax: xmax + padX,
+      ymin: ymin - padY,
+      ymax: ymax + padY,
+    };
+  }
+
   function mapBounds(spec, width, height, pad) {
     var yUp = spec.type === "coordinate";
     var xmin = 0;
@@ -775,45 +821,42 @@
       ymin = spec.axes.ymin;
       ymax = spec.axes.ymax;
     } else if (spec.type === "coordinate") {
-      var xs = [];
-      var ys = [];
-      (spec.elements || []).forEach(function (el) {
-        if (el.kind === "point" || el.kind === "label") {
-          xs.push(el.x); ys.push(el.y);
-        } else if (el.kind === "circle") {
-          xs.push(el.cx - el.r, el.cx + el.r);
-          ys.push(el.cy - el.r, el.cy + el.r);
-        } else if (el.kind === "segment" || el.kind === "arrow") {
-          xs.push(el.from[0], el.to[0]);
-          ys.push(el.from[1], el.to[1]);
-        } else if (el.kind === "polygon") {
-          el.points.forEach(function (pt) { xs.push(pt[0]); ys.push(pt[1]); });
-        } else if (el.kind === "angle") {
-          xs.push(el.at[0], el.from[0], el.to[0]);
-          ys.push(el.at[1], el.from[1], el.to[1]);
-        }
-      });
-      if (xs.length && ys.length) {
-        xmin = Math.min.apply(null, xs);
-        xmax = Math.max.apply(null, xs);
-        ymin = Math.min.apply(null, ys);
-        ymax = Math.max.apply(null, ys);
-        if (xmin === xmax) xmax = xmin + 1;
-        if (ymin === ymax) ymax = ymin + 1;
-        var padX = (xmax - xmin) * 0.12 || 1;
-        var padY = (ymax - ymin) * 0.12 || 1;
-        xmin -= padX; xmax += padX; ymin -= padY; ymax += padY;
-      }
+      var box = geometryBox(spec);
+      xmin = box.xmin;
+      xmax = box.xmax;
+      ymin = box.ymin;
+      ymax = box.ymax;
+    } else {
+      var geo = geometryBox(spec);
+      xmin = geo.xmin;
+      xmax = geo.xmax;
+      ymin = geo.ymin;
+      ymax = geo.ymax;
+    }
+    var innerW = width - pad.left - pad.right;
+    var innerH = height - pad.top - pad.bottom;
+    var xRange = xmax - xmin || 1;
+    var yRange = ymax - ymin || 1;
+    var left = pad.left;
+    var top = pad.top;
+    var usedW = innerW;
+    var usedH = innerH;
+    if (!yUp) {
+      var scale = Math.min(innerW / xRange, innerH / yRange);
+      usedW = xRange * scale;
+      usedH = yRange * scale;
+      left = pad.left + (innerW - usedW) / 2;
+      top = pad.top + (innerH - usedH) / 2;
     }
     return {
       xmin: xmin,
       xmax: xmax,
       ymin: ymin,
       ymax: ymax,
-      left: pad.left,
-      top: pad.top,
-      width: width - pad.left - pad.right,
-      height: height - pad.top - pad.bottom,
+      left: left,
+      top: top,
+      width: usedW,
+      height: usedH,
       yUp: yUp,
     };
   }
@@ -907,13 +950,21 @@
 
   function drawGeometryFigure(spec) {
     var width = 560;
-    var height = 320;
-    var pad = { top: spec.title ? 44 : 24, right: 24, bottom: 24, left: 24 };
+    var pad = { top: spec.title ? 48 : 28, right: 32, bottom: 32, left: 32 };
+    var box = geometryBox(spec);
+    var xRange = box.xmax - box.xmin || 1;
+    var yRange = box.ymax - box.ymin || 1;
+    var innerW = width - pad.left - pad.right;
+    var innerH = innerW * (yRange / xRange);
+    if (figureHasRound(spec)) innerH = Math.max(innerH, innerW);
+    innerH = Math.max(240, Math.min(520, innerH));
+    var height = Math.round(innerH + pad.top + pad.bottom);
     var bounds = mapBounds(spec, width, height, pad);
     var svg = svgEl("svg", {
       class: "chat-chart chat-figure-svg",
       viewBox: "0 0 " + width + " " + height,
       role: "img",
+      overflow: "visible",
       "aria-label": spec.title || spec.caption || spec.type + " figure",
     });
     svg.appendChild(svgEl("rect", { width: width, height: height, fill: "var(--card)", rx: 8 }));
@@ -990,8 +1041,9 @@
         }
       } else if (el.kind === "circle") {
         var c = mapPointToPx([el.cx, el.cy], bounds);
-        var rim = mapPointToPx([el.cx + el.r, el.cy], bounds);
-        var rpx = Math.abs(rim.x - c.x);
+        var rimX = mapPointToPx([el.cx + el.r, el.cy], bounds);
+        var rimY = mapPointToPx([el.cx, el.cy + el.r], bounds);
+        var rpx = Math.min(Math.abs(rimX.x - c.x), Math.abs(rimY.y - c.y));
         svg.appendChild(markHit(svgEl("circle", {
           cx: c.x, cy: c.y, r: Math.max(4, rpx),
           fill: "none", stroke: "var(--ink)", "stroke-width": "2",
@@ -999,7 +1051,10 @@
         placeLabel(c, el.label, 8, -8);
       } else if (el.kind === "sector" || el.kind === "arc") {
         var sc = mapPointToPx([el.cx, el.cy], bounds);
-        var srpx = Math.abs(mapPointToPx([el.cx + el.r, el.cy], bounds).x - sc.x);
+        var srpx = Math.min(
+          Math.abs(mapPointToPx([el.cx + el.r, el.cy], bounds).x - sc.x),
+          Math.abs(mapPointToPx([el.cx, el.cy + el.r], bounds).y - sc.y)
+        );
         srpx = Math.max(4, srpx);
         var sStart = polarPx(sc, srpx, el.start);
         var sEnd = polarPx(sc, srpx, el.end);

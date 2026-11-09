@@ -212,6 +212,9 @@ def test_functions_page_includes_table_chart_renderer(tmp_path, monkeypatch):
     assert "renderAssistantReply" in script.text
     assert "drawChartSvg" in script.text
     assert "drawFigureSvg" in script.text
+    assert "figureHasRound" in script.text
+    assert "geometryBox" in script.text
+    assert "rimY" in script.text
     assert "chat-figure-hit" in script.text
     assert "chat-figure-actions" in script.text
     assert "```figure" in script.text or "figure" in script.text
