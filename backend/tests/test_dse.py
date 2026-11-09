@@ -112,7 +112,8 @@ def test_functions_page_contains_dse_math(tmp_path, monkeypatch):
     assert 'id="dse-ocr-file"' in home.text
     assert 'id="dse-ocr-read"' in home.text
     assert "/api/dse/ask" in home.text or 'function: state.functionId' in home.text
-    assert "Number &amp; Algebra" in home.text or "Number & Algebra" in home.text
+    assert "Any topic" in home.text
+    assert "loadDseCurriculum" in home.text
     assert "Paper 1" in home.text
     assert "Paper 2" in home.text
     assert PAGE.is_file()
@@ -488,7 +489,11 @@ def test_create_question_returns_scenario_and_figure(tmp_path, monkeypatch):
     client = _client(monkeypatch, tmp_path)
     created = client.post(
         "/api/dse/question",
-        json={"level": "S2", "topic": "geometry", "grounding": "mixed"},
+        json={
+            "level": "S2",
+            "topic": "s2_comp_congruence_and_similarity_of_triangles",
+            "grounding": "mixed",
+        },
     )
     assert created.status_code == 200, created.text
     payload = created.json()
@@ -505,6 +510,21 @@ def test_create_question_returns_scenario_and_figure(tmp_path, monkeypatch):
     system = seen["json"]["messages"][0]["content"]
     assert "scenario" in system
     assert "figure" in system
+    assert "Congruence and Similarity of Triangles" in system
+    assert payload["topic"] == "s2_comp_congruence_and_similarity_of_triangles"
+
+
+def test_create_rejects_topic_from_another_year(tmp_path, monkeypatch):
+    client = _client(monkeypatch, tmp_path)
+    mismatch = client.post(
+        "/api/dse/question",
+        json={
+            "level": "S2",
+            "topic": "s1_comp_directed_numbers_and_the_number_line",
+        },
+    )
+    assert mismatch.status_code == 400
+    assert "S1" in mismatch.json()["detail"]
 
 
 def test_s7_or_bad_mode_returns_400(tmp_path, monkeypatch):
@@ -598,6 +618,9 @@ def test_page_has_three_mode_controls_and_s1_s6(tmp_path, monkeypatch):
     assert 'id="dse-explain-topic"' in home.text
     assert 'id="dse-explain-picked-list"' in home.text
     assert "addExplainTopicFromSelect" in home.text
+    assert "catalogTopicsFor" in home.text
+    assert "renderDseCreateTopics" in home.text
+    assert "that year’s list" in home.text or "that year's list" in home.text
     assert "/api/dse/topics" in home.text
     assert "edb.gov.hk/en/curriculum-development/kla/ma/curr/index2.html" in home.text
     assert 'id="dse-log-solve"' in home.text
@@ -619,43 +642,49 @@ def test_page_has_three_mode_controls_and_s1_s6(tmp_path, monkeypatch):
     assert "/api/dse/mark" in home.text
 
 
-def test_dse_explain_topics_catalog_is_edb_s1_to_s6(tmp_path, monkeypatch):
+def test_dse_topics_catalog_is_year_specific_s1_to_s6(tmp_path, monkeypatch):
+    from app.dse_topics import TOPICS_CSV_NAME, TOPICS_CSV_PATH
+
+    assert TOPICS_CSV_PATH.is_file()
     client = _client(monkeypatch, tmp_path)
     response = client.get("/api/dse/topics")
     assert response.status_code == 200
     payload = response.json()
     assert payload["levels"] == ["S1", "S2", "S3", "S4", "S5", "S6"]
+    assert payload["source"]["file"] == TOPICS_CSV_NAME
     assert payload["source"]["href"].endswith("/ma/curr/index2.html")
+    counts = {level: len(payload["topics"][level]) for level in payload["levels"]}
+    assert counts == {"S1": 10, "S2": 10, "S3": 10, "S4": 8, "S5": 21, "S6": 12}
     s1_ids = [row["id"] for row in payload["topics"]["S1"]]
+    s2_ids = [row["id"] for row in payload["topics"]["S2"]]
     s3_ids = [row["id"] for row in payload["topics"]["S3"]]
-    s4_ids = [row["id"] for row in payload["topics"]["S4"]]
-    assert s1_ids == s3_ids
-    assert "ks3_01_basic_computation" in s1_ids
-    assert "ks3_25_pythagoras" in s1_ids
-    assert "ks3_32_inquiry" in s1_ids
-    assert len(s1_ids) == 32
-    assert "cp_01_quadratic_equations" in s4_ids
-    assert "cp_11_basic_circles" in s4_ids
-    assert "m1_01_binomial_expansion" in s4_ids
-    assert "m2_02_mathematical_induction" in s4_ids
-    assert "m2_16_scalar_vector_product" in s4_ids
-    labels = {row["id"]: row["label"] for row in payload["topics"]["S4"]}
-    assert labels["cp_07_sequences"] == (
-        "7. Arithmetic and geometric sequences and their summations"
+    assert s1_ids != s2_ids
+    assert s2_ids != s3_ids
+    assert "s1_comp_directed_numbers_and_the_number_line" in s1_ids
+    assert "s1_comp_directed_numbers_and_the_number_line" not in s2_ids
+    assert "s2_comp_pythagoras_theorem_and_irrational_numbers" in s2_ids
+    assert "s3_comp_properties_of_quadrilaterals_and_parallelograms" in s3_ids
+    s4_labels = {row["id"]: row["label"] for row in payload["topics"]["S4"]}
+    assert s4_labels["s4_comp_quadratic_equations_in_one_unknown"] == (
+        "Quadratic Equations in One Unknown"
     )
+    s5_modules = {row["module_key"] for row in payload["topics"]["S5"]}
+    assert s5_modules == {"compulsory", "m1", "m2"}
 
 
-def test_dse_explain_uses_selected_edb_topics(tmp_path, monkeypatch):
+def test_dse_explain_uses_selected_year_topics(tmp_path, monkeypatch):
     _install_key(tmp_path, monkeypatch)
     seen = _mock_chat(monkeypatch, reply="topic explanation")
     client = _client(monkeypatch, tmp_path)
+    pythagoras = "s2_comp_pythagoras_theorem_and_irrational_numbers"
+    congruence = "s2_comp_congruence_and_similarity_of_triangles"
     empty = client.post(
         "/api/chat",
         json={
             "function": "dse_math",
             "mode": "explain",
             "level": "S2",
-            "topics": ["ks3_08_linear_eq_one", "ks3_25_pythagoras"],
+            "topics": [pythagoras, congruence],
         },
     )
     assert empty.status_code == 200
@@ -663,10 +692,10 @@ def test_dse_explain_uses_selected_edb_topics(tmp_path, monkeypatch):
     system = seen["json"]["messages"][0]["content"]
     user = seen["json"]["messages"][1]["content"]
     assert "School level: S2" in system
-    assert "Linear equations in one unknown" in system
     assert "Pythagoras" in system
-    assert "EDB Mathematics learning units" in system
-    assert "S1–S3 8. Linear equations in one unknown" in user
+    assert "Congruence" in system
+    assert "Hong Kong secondary mathematics topics to explain" in system
+    assert "S2 Pythagoras" in user
     assert "real-life scenario" in user
     assert "labelled interactive diagram" in user
     assert "```figure" in system
@@ -674,7 +703,7 @@ def test_dse_explain_uses_selected_edb_topics(tmp_path, monkeypatch):
     assert "100% of named givens" in system
     assert "teaching scenario" in system
     payload = empty.json()
-    assert payload["topics"] == ["ks3_08_linear_eq_one", "ks3_25_pythagoras"]
+    assert payload["topics"] == [pythagoras, congruence]
     assert payload["level"] == "S2"
     assert "```figure" in payload["reply"]
     assert payload["reply"].count("```figure") >= 2
@@ -967,7 +996,9 @@ def test_quadrilateral_abcd_is_drawn_as_four_sides_not_a_triangle():
     assert '"id": "quad"' in hinted or '"id":"quad"' in hinted
     assert hinted.count('"kind": "polygon"') + hinted.count('"kind":"polygon"') >= 1
 
-    topic_fig = explain_figure_for_topic("ks3_23_quadrilaterals")
+    topic_fig = explain_figure_for_topic(
+        "s3_comp_properties_of_quadrilaterals_and_parallelograms"
+    )
     topic_poly = next(el for el in topic_fig["elements"] if el.get("kind") == "polygon")
     assert len(topic_poly["points"]) == 4
     assert topic_poly["labels"] == ["A", "B", "C", "D"]

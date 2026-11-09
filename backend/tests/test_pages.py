@@ -133,6 +133,9 @@ def test_home_and_setup_are_distinct_html_pages(tmp_path, monkeypatch):
     assert 'id="dse-explain-topic"' in home.text
     assert 'id="dse-explain-picked-list"' in home.text
     assert "addExplainTopicFromSelect" in home.text
+    assert "catalogTopicsFor" in home.text
+    assert "renderDseCreateTopics" in home.text
+    assert "HK secondary mathematics" in home.text
     assert "formatCreatedQuestionText" in home.text
     assert "teaching scenario" in home.text
     assert "labelled diagram you can click" in home.text

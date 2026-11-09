@@ -162,17 +162,6 @@
             <label class="field">Topic
               <select id="dse-topic">
                 <option value="" selected>Any topic</option>
-                <option value="number_algebra">Number &amp; Algebra</option>
-                <option value="measures_shape_space">Measures, Shape &amp; Space</option>
-                <option value="data_handling">Data Handling</option>
-                <option value="numbers">Numbers</option>
-                <option value="algebra">Algebra</option>
-                <option value="geometry">Geometry</option>
-                <option value="mensuration">Mensuration</option>
-                <option value="data">Data</option>
-                <option value="trig">Trigonometry</option>
-                <option value="functions">Functions</option>
-                <option value="calculus">Calculus (S5–S6)</option>
               </select>
             </label>
           </div>
@@ -205,7 +194,7 @@
           </div>
         </div>
         <div class="dse-create" id="dse-create-panel">
-          <p class="meta" id="dse-create-hint">Choose a level, difficulty if you want, and how many questions (up to 20). Every question includes a teaching scenario and a labelled diagram that matches the named shape (quadrilateral ABCD, triangle ABC) and marks every given angle (80°, 90°). Click parts of the diagram. The mark scheme stays hidden until you pass or ask for the solution. Passing shows the answer on a diagram too.</p>
+          <p class="meta" id="dse-create-hint">Choose a year (S1–S6), then a topic from that year’s list (or Any topic). Set difficulty if you want, and how many questions (up to 20). Every question includes a teaching scenario and a labelled diagram that matches the named shape (quadrilateral ABCD, triangle ABC) and marks every given angle (80°, 90°). Click parts of the diagram. The mark scheme stays hidden until you pass or ask for the solution. Passing shows the answer on a diagram too.</p>
           <div class="savebar">
             <button type="button" id="dse-create-question">Create questions</button>
           </div>
@@ -214,8 +203,8 @@
         </div>
         <div id="dse-explain-workspace" hidden>
           <p class="meta">
-            Choose S1–S6, then pick a topic from the dropdown. You can add more than one.
-            Junior secondary (S1–S3) shares the Key Stage 3 units; S4–S6 uses the Compulsory Part and Extended Part.
+            Choose S1–S6, then pick a topic from that year’s list. You can add more than one.
+            S1, S2, and S3 each have their own junior topics; S4–S6 include Compulsory, M1, and M2 units.
             Every explanation includes a teaching scenario and a labelled diagram you can click.
             Answers use uploaded syllabus and notes when they are present.
           </p>
@@ -240,7 +229,7 @@
               </select>
             </label>
           </div>
-          <p class="meta" id="dse-explain-level-hint">Junior Secondary (S1–S3) learning units. Schools decide the year; the explanation stays at S1.</p>
+          <p class="meta" id="dse-explain-level-hint">S1 topics from the attached HK secondary mathematics list.</p>
           <ul class="dse-explain-picked-list" id="dse-explain-picked-list" hidden></ul>
           <p class="meta" id="dse-explain-picked">No topics selected. Choose a topic from the dropdown, then Send.</p>
         </div>
@@ -917,7 +906,7 @@
       explain: emptyDseBucket(),
     };
     let dseState = dseBuckets.solve;
-    let dseExplainCurriculum = null;
+    let dseCurriculum = null;
     let dseExplainPicked = [];
     const MAX_EXPLAIN_TOPICS = 8;
     const RAG_ACCEPT = ".pdf,.docx,.doc,.txt,.md,.xlsx,.xls,.csv,.json";
@@ -1256,10 +1245,10 @@
           lede.textContent = "Paste or photo a question. Diagrams mark every named vertex and given angle (ABC, 50°) in the question, each step, and the answer.";
         } else if (option === "create") {
           title.textContent = "2. Create and mark questions";
-          lede.textContent = "Generate up to 20 questions. Each item has a labelled diagram of the named givens; the solution figure appears after a pass.";
+          lede.textContent = "Choose S1–S6 and a topic from that year’s list. Each item has a labelled diagram of the named givens; the solution figure appears after a pass.";
         } else {
           title.textContent = "3. Explain";
-            lede.textContent = "Choose S1–S6, pick EDB learning units, then send to explain them.";
+            lede.textContent = "Choose S1–S6, pick a topic from that year’s list, then send to explain it.";
         }
         return;
       }
@@ -1284,18 +1273,48 @@
       return dseExplainPicked.map((row) => (row.level ? row.level + " " : "") + row.label);
     }
 
-    function explainTopicsForLevel() {
-      const catalog = dseExplainCurriculum;
+    function catalogTopicsFor(level, module) {
+      const catalog = dseCurriculum;
       if (!catalog || !catalog.topics) return [];
-      const level = selectedExplainLevel();
-      const junior = level === "S1" || level === "S2" || level === "S3";
-      const module = selectedDseSelect("dse-module");
-      return (catalog.topics[level] || []).filter((row) => {
-        if (junior) return row.strand !== "m1" && row.strand !== "m2";
-        if (module === "compulsory") return row.strand !== "m1" && row.strand !== "m2";
-        if (module === "m1") return row.strand !== "m2";
-        if (module === "m2") return row.strand !== "m1";
+      const years = level ? [level] : (catalog.levels || []);
+      const rows = [];
+      years.forEach((year) => {
+        (catalog.topics[year] || []).forEach((row) => rows.push(row));
+      });
+      return rows.filter((row) => {
+        if (module === "compulsory") return row.module_key === "compulsory";
+        if (module === "m1") return row.module_key === "m1";
+        if (module === "m2") return row.module_key === "m2";
         return true;
+      });
+    }
+
+    function explainTopicsForLevel() {
+      return catalogTopicsFor(selectedExplainLevel(), selectedDseSelect("dse-module"));
+    }
+
+    function appendTopicGroups(select, rows, groupByForm) {
+      const groups = [];
+      const seen = {};
+      rows.forEach((row) => {
+        const base = row.group || row.category || row.strand || "Topics";
+        const key = groupByForm && row.form ? row.form + " · " + base : base;
+        if (!seen[key]) {
+          seen[key] = [];
+          groups.push(key);
+        }
+        seen[key].push(row);
+      });
+      groups.forEach((key) => {
+        const group = document.createElement("optgroup");
+        group.label = key;
+        seen[key].forEach((row) => {
+          const option = document.createElement("option");
+          option.value = row.id;
+          option.textContent = row.label;
+          group.appendChild(option);
+        });
+        select.appendChild(group);
       });
     }
 
@@ -1361,13 +1380,13 @@
       const select = document.getElementById("dse-explain-topic");
       const hint = document.getElementById("dse-explain-level-hint");
       const source = document.getElementById("dse-explain-source");
-      const catalog = dseExplainCurriculum;
+      const catalog = dseCurriculum;
       const level = selectedExplainLevel();
       const junior = level === "S1" || level === "S2" || level === "S3";
       if (hint) {
         hint.textContent = junior
-          ? "Junior Secondary (S1–S3) EDB learning units. Schools decide the year; the explanation stays at " + level + "."
-          : "Senior Secondary (S4–S6) Compulsory Part and Extended Part (M1 / M2). The explanation stays at " + level + ".";
+          ? level + " topics from the attached HK secondary mathematics list. Each junior year has its own units."
+          : level + " Compulsory, M1, and M2 topics from the attached HK secondary mathematics list.";
       }
       if (source && catalog && catalog.source && catalog.source.href) {
         source.href = catalog.source.href;
@@ -1387,27 +1406,7 @@
       placeholder.textContent = "Choose a topic";
       select.appendChild(placeholder);
       const rows = explainTopicsForLevel();
-      const groups = [];
-      const seen = {};
-      rows.forEach((row) => {
-        const strand = row.strand || "further";
-        if (!seen[strand]) {
-          seen[strand] = [];
-          groups.push(strand);
-        }
-        seen[strand].push(row);
-      });
-      groups.forEach((strand) => {
-        const group = document.createElement("optgroup");
-        group.label = (catalog.strands && catalog.strands[strand]) || strand;
-        seen[strand].forEach((row) => {
-          const option = document.createElement("option");
-          option.value = row.id;
-          option.textContent = row.label;
-          group.appendChild(option);
-        });
-        select.appendChild(group);
-      });
+      appendTopicGroups(select, rows, false);
       select.disabled = rows.length === 0;
       if (previous && Array.prototype.some.call(select.options, (opt) => opt.value === previous)) {
         select.value = previous;
@@ -1415,37 +1414,75 @@
         select.value = "";
       }
       if (!rows.length) {
-        placeholder.textContent = "No topics for this level";
+        placeholder.textContent = "No topics for this year / module";
       }
       syncDseExplainPicked();
     }
 
-    function loadDseExplainTopics() {
-      if (dseExplainCurriculum) {
+    function renderDseCreateTopics() {
+      const select = document.getElementById("dse-topic");
+      if (!select) return;
+      const catalog = dseCurriculum;
+      const previous = select.value;
+      const level = selectedDseSelect("dse-level");
+      const module = selectedDseSelect("dse-module");
+      select.replaceChildren();
+      const placeholder = document.createElement("option");
+      placeholder.value = "";
+      placeholder.textContent = catalog && catalog.topics ? "Any topic" : "Loading topics…";
+      select.appendChild(placeholder);
+      if (!catalog || !catalog.topics) {
+        select.disabled = true;
+        return;
+      }
+      const rows = catalogTopicsFor(level, module);
+      appendTopicGroups(select, rows, !level);
+      select.disabled = false;
+      if (previous && Array.prototype.some.call(select.options, (opt) => opt.value === previous)) {
+        select.value = previous;
+      } else {
+        select.value = "";
+      }
+      if (!rows.length) {
+        placeholder.textContent = level ? "No topics for this year / module" : "Any topic";
+      }
+    }
+
+    function loadDseCurriculum() {
+      if (dseCurriculum) {
         renderDseExplainTopics();
-        return Promise.resolve(dseExplainCurriculum);
+        renderDseCreateTopics();
+        return Promise.resolve(dseCurriculum);
       }
       renderDseExplainTopics();
+      renderDseCreateTopics();
       return fetch("/api/dse/topics")
         .then((response) => {
           if (!response.ok) throw new Error("topics");
           return response.json();
         })
         .then((payload) => {
-          dseExplainCurriculum = payload;
+          dseCurriculum = payload;
           renderDseExplainTopics();
+          renderDseCreateTopics();
           return payload;
         })
         .catch(() => {
-          const select = document.getElementById("dse-explain-topic");
-          if (!select) return;
-          select.replaceChildren();
-          const option = document.createElement("option");
-          option.value = "";
-          option.textContent = "Could not load topics";
-          select.appendChild(option);
-          select.disabled = true;
+          ["dse-explain-topic", "dse-topic"].forEach((id) => {
+            const select = document.getElementById(id);
+            if (!select) return;
+            select.replaceChildren();
+            const option = document.createElement("option");
+            option.value = "";
+            option.textContent = "Could not load topics";
+            select.appendChild(option);
+            select.disabled = true;
+          });
         });
+    }
+
+    function loadDseExplainTopics() {
+      return loadDseCurriculum();
     }
 
     function syncDseModeUi() {
@@ -1506,8 +1543,8 @@
           ? "Type your attempt for the selected question"
           : dsePlaceholder(mode);
       }
-      if (explain && state.functionId === "dse_math") {
-        loadDseExplainTopics();
+      if ((explain || create) && state.functionId === "dse_math") {
+        loadDseCurriculum();
       }
       syncChatChrome();
       syncChatLogs();
@@ -1966,10 +2003,15 @@
     if (explainTopic) {
       explainTopic.addEventListener("change", addExplainTopicFromSelect);
     }
+    const createLevel = document.getElementById("dse-level");
+    if (createLevel) {
+      createLevel.addEventListener("change", renderDseCreateTopics);
+    }
     const moduleSelect = document.getElementById("dse-module");
     if (moduleSelect) {
       moduleSelect.addEventListener("change", () => {
-        if (selectedDseOption() === "explain") renderDseExplainTopics();
+        renderDseExplainTopics();
+        renderDseCreateTopics();
       });
     }
     document.querySelectorAll('#dse-solve-style input[name="dse-solve-style"]').forEach((input) => {

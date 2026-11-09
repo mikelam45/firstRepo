@@ -506,6 +506,8 @@ EXPLAIN_FIGURES: dict[str, dict[str, Any]] = {
 CREATE_FIGURES: dict[str, dict[str, Any]] = {
     "geometry": TRIANGLE_FIGURE,
     "measures_shape_space": TRIANGLE_FIGURE,
+    "congruent": CONGRUENT_TRIANGLES_FIGURE,
+    "quadrilateral": QUADRILATERAL_FIGURE,
     "trig": TRIANGLE_FIGURE,
     "mensuration": CIRCLE_FIGURE,
     "data": BAR_CHART_FIGURE,
@@ -1278,7 +1280,9 @@ def explain_figure_for_topic(topic_id: str) -> dict[str, Any]:
     parsed = _validated(EXPLAIN_FIGURES.get(topic_id))
     if parsed:
         return parsed
-    return default_create_figure(None)
+    from .dse_topics import figure_topic_key
+
+    return default_create_figure(figure_topic_key(topic_id))
 
 
 def explain_figures_for_topics(topic_ids: list[str] | None) -> list[dict[str, Any]]:

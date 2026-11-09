@@ -25,6 +25,16 @@ from .dse_figures import (
     figure_from_question,
     session_has_figure,
 )
+from .dse_topics import (
+    ALLOWED_LEVELS,
+    EXPLAIN_STRANDS,
+    MAX_EXPLAIN_TOPICS,
+    TOPIC_BY_ID,
+    figure_topic_key,
+    resolve_topic_id,
+    topic_prompt_label,
+    topics_catalog,
+)
 from .rag import (
     COLLECTION_DSE_MATH,
     FORMAT_REPLY_INSTRUCTION,
@@ -89,22 +99,7 @@ HIDDEN_SESSION_FIELDS = (
 )
 ALLOWED_VERDICTS = frozenset({"correct", "partial", "wrong"})
 
-ALLOWED_LEVELS = ("S1", "S2", "S3", "S4", "S5", "S6")
 CALCULUS_LEVELS = frozenset({"S5", "S6"})
-
-ALLOWED_TOPICS = {
-    "number_algebra": "Number & Algebra",
-    "measures_shape_space": "Measures, Shape & Space",
-    "data_handling": "Data Handling",
-    "calculus": "Calculus",
-    "numbers": "Numbers",
-    "algebra": "Algebra",
-    "geometry": "Geometry",
-    "mensuration": "Mensuration",
-    "data": "Data",
-    "trig": "Trigonometry",
-    "functions": "Functions",
-}
 ALLOWED_DIFFICULTIES = {
     "easy": "easy",
     "mid": "mid",
@@ -124,136 +119,8 @@ ALLOWED_MODULES = {
     "m1": "Module 1 (M1): Calculus & Statistics",
     "m2": "Module 2 (M2): Algebra & Calculus",
 }
-EXPLAIN_STRANDS = {
-    "number_algebra": "Number and Algebra",
-    "measures_shape_space": "Measures, Shape and Space",
-    "data_handling": "Data Handling",
-    "further": "Further Learning Unit",
-    "m1": "Module 1 (Calculus and Statistics)",
-    "m2": "Module 2 (Algebra and Calculus)",
-}
-JUNIOR_LEVELS = ("S1", "S2", "S3")
-SENIOR_LEVELS = ("S4", "S5", "S6")
-MAX_EXPLAIN_TOPICS = 8
 DEFAULT_EXPLAIN_MESSAGE = "Explain the selected mathematics topics."
-EDB_CURRICULUM_HREF = (
-    "https://www.edb.gov.hk/en/curriculum-development/kla/ma/curr/index2.html"
-)
-# Official EDB learning units. Junior Secondary is Key Stage 3 (S1–S3) as a whole;
-# Senior Secondary Compulsory Part and Extended Part cover S4–S6.
-# Source: Mathematics Education curriculum documents on edb.gov.hk.
-# id, label, strand, stage ("junior" | "senior")
-_EXPLAIN_TOPIC_ROWS = (
-    ("ks3_01_basic_computation", "1. Basic computation", "number_algebra", "junior"),
-    ("ks3_02_directed_numbers", "2. Directed numbers", "number_algebra", "junior"),
-    ("ks3_03_approximate_values", "3. Approximate values and numerical estimation", "number_algebra", "junior"),
-    ("ks3_04_rational_irrational", "4. Rational and irrational numbers", "number_algebra", "junior"),
-    ("ks3_05_using_percentages", "5. Using percentages", "number_algebra", "junior"),
-    ("ks3_06_rates_ratios", "6. Rates, ratios and proportions", "number_algebra", "junior"),
-    ("ks3_07_algebraic_expressions", "7. Algebraic expressions", "number_algebra", "junior"),
-    ("ks3_08_linear_eq_one", "8. Linear equations in one unknown", "number_algebra", "junior"),
-    ("ks3_09_linear_eq_two", "9. Linear equations in two unknowns", "number_algebra", "junior"),
-    ("ks3_10_laws_indices", "10. Laws of integral indices", "number_algebra", "junior"),
-    ("ks3_11_polynomials", "11. Polynomials", "number_algebra", "junior"),
-    ("ks3_12_identities", "12. Identities", "number_algebra", "junior"),
-    ("ks3_13_formulae", "13. Formulae", "number_algebra", "junior"),
-    ("ks3_14_linear_inequalities", "14. Linear inequalities in one unknown", "number_algebra", "junior"),
-    ("ks3_15_errors_measurement", "15. Errors in measurement", "measures_shape_space", "junior"),
-    ("ks3_16_arc_sectors", "16. Arc lengths and areas of sectors", "measures_shape_space", "junior"),
-    ("ks3_17_3d_figures", "17. 3-D figures", "measures_shape_space", "junior"),
-    ("ks3_18_mensuration", "18. Mensuration", "measures_shape_space", "junior"),
-    ("ks3_19_angles_parallel", "19. Angles and parallel lines", "measures_shape_space", "junior"),
-    ("ks3_20_polygons", "20. Polygons", "measures_shape_space", "junior"),
-    ("ks3_21_congruent_triangles", "21. Congruent triangles", "measures_shape_space", "junior"),
-    ("ks3_22_similar_triangles", "22. Similar triangles", "measures_shape_space", "junior"),
-    ("ks3_23_quadrilaterals", "23. Quadrilaterals", "measures_shape_space", "junior"),
-    ("ks3_24_centres_triangles", "24. Centres of triangles", "measures_shape_space", "junior"),
-    ("ks3_25_pythagoras", "25. Pythagoras’ theorem", "measures_shape_space", "junior"),
-    ("ks3_26_rectangular_coords", "26. Rectangular coordinate system", "measures_shape_space", "junior"),
-    ("ks3_27_trigonometry", "27. Trigonometry", "measures_shape_space", "junior"),
-    ("ks3_28_organisation_data", "28. Organisation of data", "data_handling", "junior"),
-    ("ks3_29_presentation_data", "29. Presentation of data", "data_handling", "junior"),
-    ("ks3_30_central_tendency", "30. Measures of central tendency", "data_handling", "junior"),
-    ("ks3_31_probability", "31. Probability", "data_handling", "junior"),
-    ("ks3_32_inquiry", "32. Inquiry and investigation", "further", "junior"),
-    ("cp_01_quadratic_equations", "1. Quadratic equations in one unknown", "number_algebra", "senior"),
-    ("cp_02_functions_graphs", "2. Functions and graphs", "number_algebra", "senior"),
-    ("cp_03_exponential_log", "3. Exponential and logarithmic functions", "number_algebra", "senior"),
-    ("cp_04_more_polynomials", "4. More about polynomials", "number_algebra", "senior"),
-    ("cp_05_more_equations", "5. More about equations", "number_algebra", "senior"),
-    ("cp_06_variations", "6. Variations", "number_algebra", "senior"),
-    ("cp_07_sequences", "7. Arithmetic and geometric sequences and their summations", "number_algebra", "senior"),
-    ("cp_08_inequalities_lp", "8. Inequalities and linear programming", "number_algebra", "senior"),
-    ("cp_09_more_function_graphs", "9. More about graphs of functions", "number_algebra", "senior"),
-    ("cp_10_equations_straight_lines", "10. Equations of straight lines", "measures_shape_space", "senior"),
-    ("cp_11_basic_circles", "11. Basic properties of circles", "measures_shape_space", "senior"),
-    ("cp_12_loci", "12. Loci", "measures_shape_space", "senior"),
-    ("cp_13_equations_circles", "13. Equations of circles", "measures_shape_space", "senior"),
-    ("cp_14_more_trigonometry", "14. More about trigonometry", "measures_shape_space", "senior"),
-    ("cp_15_permutations_combinations", "15. Permutations and combinations", "data_handling", "senior"),
-    ("cp_16_more_probability", "16. More about probability", "data_handling", "senior"),
-    ("cp_17_measures_dispersion", "17. Measures of dispersion", "data_handling", "senior"),
-    ("cp_18_uses_abuses_statistics", "18. Uses and abuses of statistics", "data_handling", "senior"),
-    ("cp_19_further_applications", "19. Further applications", "further", "senior"),
-    ("cp_20_inquiry", "20. Inquiry and investigation", "further", "senior"),
-    ("m1_01_binomial_expansion", "1. Binomial expansion", "m1", "senior"),
-    ("m1_02_exponential_log", "2. Exponential and logarithmic functions", "m1", "senior"),
-    ("m1_03_derivative", "3. Derivative of a function", "m1", "senior"),
-    ("m1_04_differentiation", "4. Differentiation of a function", "m1", "senior"),
-    ("m1_05_second_derivative", "5. Second derivative", "m1", "senior"),
-    ("m1_06_applications_diff", "6. Applications of differentiation", "m1", "senior"),
-    ("m1_07_indefinite_integration", "7. Indefinite integration and its applications", "m1", "senior"),
-    ("m1_08_definite_integration", "8. Definite integration and its applications", "m1", "senior"),
-    ("m1_09_trapezoidal_rule", "9. Approximation of definite integrals using the trapezoidal rule", "m1", "senior"),
-    ("m1_10_conditional_probability", "10. Conditional probability and Bayes’ theorem", "m1", "senior"),
-    ("m1_11_discrete_rv", "11. Discrete random variables", "m1", "senior"),
-    ("m1_12_probability_distribution", "12. Probability distribution, expectation and variance", "m1", "senior"),
-    ("m1_13_binomial_distribution", "13. The binomial distribution", "m1", "senior"),
-    ("m1_14_poisson_distribution", "14. The Poisson distribution", "m1", "senior"),
-    ("m1_15_binomial_poisson_apps", "15. Applications of the binomial and the Poisson distributions", "m1", "senior"),
-    ("m1_16_normal_definition", "16. Basic definition and properties of normal distribution", "m1", "senior"),
-    ("m1_17_normal_standardisation", "17. Standardisation of a normal variable and use of the standard normal table", "m1", "senior"),
-    ("m1_18_normal_applications", "18. Applications of the normal distribution", "m1", "senior"),
-    ("m1_19_sampling_point_estimates", "19. Sampling distribution and point estimates", "m1", "senior"),
-    ("m1_20_confidence_interval", "20. Confidence interval for a population mean", "m1", "senior"),
-    ("m1_21_inquiry", "21. Inquiry and investigation", "m1", "senior"),
-    ("m2_01_odd_even", "1. Odd and even functions", "m2", "senior"),
-    ("m2_02_mathematical_induction", "2. Mathematical induction", "m2", "senior"),
-    ("m2_03_binomial_theorem", "3. The binomial theorem", "m2", "senior"),
-    ("m2_04_trig_functions", "4. More about trigonometric functions", "m2", "senior"),
-    ("m2_05_introduction_to_e", "5. Introduction to e", "m2", "senior"),
-    ("m2_06_limits", "6. Limits", "m2", "senior"),
-    ("m2_07_differentiation", "7. Differentiation", "m2", "senior"),
-    ("m2_08_applications_diff", "8. Applications of differentiation", "m2", "senior"),
-    ("m2_09_indefinite_integration", "9. Indefinite integration and its applications", "m2", "senior"),
-    ("m2_10_definite_integration", "10. Definite integration", "m2", "senior"),
-    ("m2_11_applications_definite", "11. Applications of definite integration", "m2", "senior"),
-    ("m2_12_determinants", "12. Determinants", "m2", "senior"),
-    ("m2_13_matrices", "13. Matrices", "m2", "senior"),
-    ("m2_14_linear_systems", "14. Systems of linear equations", "m2", "senior"),
-    ("m2_15_introduction_vectors", "15. Introduction to vectors", "m2", "senior"),
-    ("m2_16_scalar_vector_product", "16. Scalar product and vector product", "m2", "senior"),
-    ("m2_17_applications_vectors", "17. Applications of vectors", "m2", "senior"),
-    ("m2_18_inquiry", "18. Inquiry and investigation", "m2", "senior"),
-)
-
-
-def _levels_for_stage(stage: str) -> tuple[str, ...]:
-    if stage == "junior":
-        return JUNIOR_LEVELS
-    return SENIOR_LEVELS
-
-
-EXPLAIN_TOPIC_BY_ID = {
-    row[0]: {
-        "id": row[0],
-        "label": row[1],
-        "strand": row[2],
-        "stage": row[3],
-        "levels": _levels_for_stage(row[3]),
-    }
-    for row in _EXPLAIN_TOPIC_ROWS
-}
+EXPLAIN_TOPIC_BY_ID = TOPIC_BY_ID
 
 NO_DSE_DOCUMENTS_STRICT_REPLY = (
     "There are no uploaded syllabus or notes to ground on. "
@@ -484,24 +351,11 @@ def _optional_choice(
 
 
 def resolve_dse_topic(value: str | None) -> str | None:
-    return _optional_choice(value, ALLOWED_TOPICS, "topic")
+    return resolve_topic_id(value)
 
 
 def explain_topics_catalog() -> dict[str, object]:
-    by_level: dict[str, list[dict[str, str]]] = {level: [] for level in ALLOWED_LEVELS}
-    for row in _EXPLAIN_TOPIC_ROWS:
-        item = {"id": row[0], "label": row[1], "strand": row[2], "stage": row[3]}
-        for level in _levels_for_stage(row[3]):
-            by_level[level].append(item)
-    return {
-        "levels": list(ALLOWED_LEVELS),
-        "strands": dict(EXPLAIN_STRANDS),
-        "topics": by_level,
-        "source": {
-            "label": "EDB Mathematics curriculum documents",
-            "href": EDB_CURRICULUM_HREF,
-        },
-    }
+    return topics_catalog()
 
 
 def _normalize_topic_ids(values: list[str] | str | None) -> list[str]:
@@ -546,8 +400,8 @@ def explain_topic_labels(topic_ids: list[str]) -> list[str]:
         row = EXPLAIN_TOPIC_BY_ID.get(topic_id)
         if not row:
             continue
-        stage = "S1–S3" if row.get("stage") == "junior" else "S4–S6"
-        labels.append(f"{stage} {row['label']}".strip())
+        form = row.get("form") or ("S1–S3" if row.get("stage") == "junior" else "S4–S6")
+        labels.append(f"{form} {row['label']}".strip())
     return labels
 
 
@@ -593,8 +447,18 @@ def resolve_dse_language(value: str | None) -> str:
 
 
 def validate_level_topic(level: str | None, topic: str | None) -> None:
-    if topic == "calculus" and level and level not in CALCULUS_LEVELS:
-        raise ChatError(400, "topic 'calculus' is only available for S5 and S6.")
+    if not topic:
+        return
+    row = TOPIC_BY_ID.get(topic)
+    if row and level and row.get("form") and row["form"] != level:
+        raise ChatError(400, f"topic belongs to {row['form']}, not {level}.")
+    figure = figure_topic_key(topic)
+    if (
+        (topic == "calculus" or figure == "calculus" or (row and row.get("module_key") in {"m1", "m2"}))
+        and level
+        and level not in CALCULUS_LEVELS
+    ):
+        raise ChatError(400, "Calculus and M1/M2 topics are only available for S5 and S6.")
 
 
 def _language_instructions(target_language: str) -> list[str]:
@@ -650,7 +514,8 @@ def dse_system_prompt(
     if module:
         parts.append(f"Curriculum module: {ALLOWED_MODULES[module]}.")
     if topic:
-        parts.append(f"Topic: {ALLOWED_TOPICS[topic]}.")
+        label = topic_prompt_label(topic) or topic
+        parts.append(f"Topic: {label}.")
     if topics:
         labeled = []
         for topic_id in topics:
@@ -658,14 +523,18 @@ def dse_system_prompt(
             if not row:
                 continue
             strand = EXPLAIN_STRANDS.get(row["strand"], row["strand"])
-            labeled.append(f"{row['label']} ({strand})")
+            form = row.get("form") or ""
+            labeled.append(f"{form} {row['label']} ({strand})".strip())
         if labeled:
             parts.append(
-                "EDB Mathematics learning units to explain: " + "; ".join(labeled) + "."
+                "Hong Kong secondary mathematics topics to explain: "
+                + "; ".join(labeled)
+                + "."
             )
             parts.append(
-                "Follow the Education Bureau Mathematics curriculum learning objectives "
-                "for these units. Pitch the explanation at the stated school level."
+                "Follow the attached S1–S6 topic list and the Education Bureau "
+                "Mathematics curriculum learning objectives. Pitch the explanation "
+                "at the stated school year."
             )
     if difficulty:
         parts.append(f"Difficulty: {ALLOWED_DIFFICULTIES[difficulty]}.")
@@ -932,7 +801,7 @@ def store_created_question(
         "scenario": clip_scenario(parsed.get("scenario")),
         "figure": ensure_created_figure(
             parsed.get("figure"),
-            topic=topic,
+            topic=figure_topic_key(topic),
             question=parsed.get("question"),
         ),
         "expected_answer": parsed.get("expected_answer") or "",
@@ -1064,8 +933,10 @@ def build_mark_context(
     parts.extend(_language_instructions(target_language))
     if session.get("level"):
         parts.append(f"School level: {session['level']} (Hong Kong secondary).")
-    if session.get("topic") and session["topic"] in ALLOWED_TOPICS:
-        parts.append(f"Topic: {ALLOWED_TOPICS[session['topic']]}.")
+    if session.get("topic"):
+        label = topic_prompt_label(session["topic"])
+        if label:
+            parts.append(f"Topic: {label}.")
     parts.append("Question:\n" + str(session.get("question") or ""))
     mark_scheme = str(session.get("mark_scheme") or "").strip()
     expected = str(session.get("expected_answer") or "").strip()
