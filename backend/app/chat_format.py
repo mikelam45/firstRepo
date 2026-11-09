@@ -448,5 +448,351 @@ def markdown_table_to_html(markdown: str) -> str | None:
             cell = cells[index] if index < len(cells) else ""
             parts.append(f"<td>{escape_html(cell)}</td>")
         parts.append("</tr>")
-    parts.extend(["</tbody>", "</table>"])
+        parts.extend(["</tbody>", "</table>"])
     return "".join(parts)
+
+
+MATH_GREEK = {
+    "alpha": "α",
+    "beta": "β",
+    "gamma": "γ",
+    "delta": "δ",
+    "Delta": "Δ",
+    "epsilon": "ε",
+    "varepsilon": "ε",
+    "zeta": "ζ",
+    "eta": "η",
+    "theta": "θ",
+    "Theta": "Θ",
+    "vartheta": "ϑ",
+    "iota": "ι",
+    "kappa": "κ",
+    "lambda": "λ",
+    "mu": "μ",
+    "nu": "ν",
+    "xi": "ξ",
+    "pi": "π",
+    "Pi": "Π",
+    "rho": "ρ",
+    "sigma": "σ",
+    "Sigma": "Σ",
+    "tau": "τ",
+    "upsilon": "υ",
+    "phi": "φ",
+    "Phi": "Φ",
+    "varphi": "φ",
+    "chi": "χ",
+    "psi": "ψ",
+    "omega": "ω",
+    "Omega": "Ω",
+    "ell": "ℓ",
+    "infty": "∞",
+    "partial": "∂",
+    "nabla": "∇",
+    "hbar": "ℏ",
+}
+MATH_SYMBOLS = {
+    "times": "×",
+    "div": "÷",
+    "cdot": "·",
+    "pm": "±",
+    "mp": "∓",
+    "leq": "≤",
+    "geq": "≥",
+    "le": "≤",
+    "ge": "≥",
+    "neq": "≠",
+    "ne": "≠",
+    "approx": "≈",
+    "equiv": "≡",
+    "sim": "∼",
+    "propto": "∝",
+    "circ": "°",
+    "degree": "°",
+    "angle": "∠",
+    "triangle": "△",
+    "perp": "⊥",
+    "parallel": "∥",
+    "in": "∈",
+    "to": "→",
+    "rightarrow": "→",
+    "leftarrow": "←",
+    "ldots": "…",
+    "cdots": "⋯",
+    "dots": "…",
+    "therefore": "∴",
+    "because": "∵",
+    "int": "∫",
+    "sum": "∑",
+    "prod": "∏",
+    "infty": "∞",
+}
+MATH_FUNCTIONS = frozenset(
+    {
+        "sin",
+        "cos",
+        "tan",
+        "cot",
+        "sec",
+        "csc",
+        "arcsin",
+        "arccos",
+        "arctan",
+        "sinh",
+        "cosh",
+        "tanh",
+        "log",
+        "ln",
+        "lg",
+        "exp",
+        "lim",
+        "max",
+        "min",
+        "det",
+        "gcd",
+        "arg",
+        "deg",
+        "dim",
+    }
+)
+MATH_REL = frozenset("=<>≤≥≠≈≡∼∝→←∈")
+MATH_BIN = frozenset("+-×÷·±∓")
+
+
+def _span(cls: str, inner: str, tag: str = "span") -> str:
+    if cls:
+        return f'<{tag} class="{cls}">{inner}</{tag}>'
+    return f"<{tag}>{inner}</{tag}>"
+
+
+class _MathCursor:
+    def __init__(self, src: str) -> None:
+        self.src = src or ""
+        self.i = 0
+
+    def peek(self) -> str:
+        return self.src[self.i] if self.i < len(self.src) else ""
+
+    def skip_space(self) -> None:
+        while self.peek() and self.peek().isspace():
+            self.i += 1
+
+
+def _read_command_name(cur: _MathCursor) -> str:
+    cur.i += 1
+    ch = cur.peek()
+    if ch.isalpha():
+        name = []
+        while cur.peek().isalpha():
+            name.append(cur.peek())
+            cur.i += 1
+        cur.skip_space()
+        return "".join(name)
+    if ch:
+        cur.i += 1
+        return ch
+    return ""
+
+
+def _read_math_atom(cur: _MathCursor) -> str | None:
+    cur.skip_space()
+    ch = cur.peek()
+    if not ch:
+        return None
+    if ch == "}":
+        return None
+    if ch == "{":
+        cur.i += 1
+        inner = _parse_math_list(cur, "}")
+        return _span("math-group", inner)
+    if ch == "\\":
+        return _read_math_command(cur)
+    if ch in "^_":
+        return None
+    if ch.isdigit() or (ch == "." and cur.i + 1 < len(cur.src) and cur.src[cur.i + 1].isdigit()):
+        start = cur.i
+        cur.i += 1
+        while cur.peek().isdigit() or cur.peek() == ".":
+            cur.i += 1
+        return _span("math-numeral", escape_html(cur.src[start : cur.i]))
+    if ch.isalpha():
+        cur.i += 1
+        return _span("math-letter", escape_html(ch))
+    cur.i += 1
+    glyph = "−" if ch == "-" else ch
+    cls = "math-rel" if glyph in MATH_REL else "math-bin" if glyph in MATH_BIN else "math-sym"
+    if ch in "()[]|.":
+        cls = "math-delim"
+    return _span(cls, escape_html(glyph))
+
+
+def _read_math_command(cur: _MathCursor) -> str:
+    name = _read_command_name(cur)
+    if name in {"frac", "dfrac", "tfrac"}:
+        num = _read_math_atom(cur) or ""
+        den = _read_math_atom(cur) or ""
+        return _span(
+            "math-frac",
+            _span("math-num", num) + _span("math-den", den),
+        )
+    if name == "sqrt":
+        body = _read_math_atom(cur) or ""
+        return _span(
+            "math-sqrt",
+            _span("math-radic", "√") + _span("math-radicand", body),
+        )
+    if name in {"text", "mathrm", "mathbf", "operatorname"}:
+        body = _read_math_atom(cur) or ""
+        plain = re.sub(r"<[^>]+>", "", body)
+        return _span("math-text", plain)
+    if name in {"left", "right"}:
+        delim = cur.peek()
+        if delim == "\\":
+            inner = _read_command_name(cur)
+            delim = inner or delim
+        elif delim:
+            cur.i += 1
+        if not delim or delim == ".":
+            return ""
+        return _span("math-delim", escape_html(delim))
+    if name in {"quad", "qquad", ",", ";", "!", " "}:
+        return _span("math-space", "\u00a0")
+    if name in MATH_GREEK:
+        return _span("math-sym", MATH_GREEK[name])
+    if name in MATH_SYMBOLS:
+        glyph = MATH_SYMBOLS[name]
+        cls = "math-rel" if glyph in MATH_REL else "math-bin" if glyph in MATH_BIN else "math-sym"
+        return _span(cls, glyph)
+    if name in MATH_FUNCTIONS:
+        return _span("math-fn", escape_html(name))
+    if name in {"{", "}", "%", "$", "_", "&", "#"}:
+        return _span("math-sym", escape_html(name))
+    if name == "\\":
+        return "<br>"
+    if re.fullmatch(r"[A-Za-z]+", name or ""):
+        return _span("math-fn", escape_html(name))
+    return _span("math-sym", escape_html(name))
+
+
+def _attach_script(base: str, kind: str, script: str) -> str:
+    tag = "sup" if kind == "sup" else "sub"
+    cls = "math-sup" if kind == "sup" else "math-sub"
+    return _span("math-scripted", base + f'<{tag} class="{cls}">{script}</{tag}>')
+
+
+def _parse_math_list(cur: _MathCursor, stop: str | None = None) -> str:
+    parts: list[str] = []
+    while cur.i < len(cur.src):
+        if stop and cur.peek() == stop:
+            cur.i += 1
+            break
+        atom = _read_math_atom(cur)
+        if atom is None:
+            if stop and cur.peek() == stop:
+                cur.i += 1
+            break
+        while cur.peek() in {"^", "_"}:
+            kind = "sup" if cur.peek() == "^" else "sub"
+            cur.i += 1
+            script = _read_math_atom(cur) or ""
+            atom = _attach_script(atom, kind, script)
+        parts.append(atom)
+    return "".join(parts)
+
+
+def render_math_html(tex: str, display: bool = False) -> str:
+    inner = _parse_math_list(_MathCursor(tex or ""))
+    cls = "math-display" if display else "math-inline"
+    tag = "div" if display else "span"
+    return f'<{tag} class="{cls}" role="math">{inner}</{tag}>'
+
+
+def split_math_segments(text: str) -> list[tuple[str, str]]:
+    src = text or ""
+    out: list[tuple[str, str]] = []
+    i = 0
+    n = len(src)
+    while i < n:
+        start, opener = _next_math(src, i)
+        if start is None:
+            out.append(("text", src[i:]))
+            break
+        if start > i:
+            out.append(("text", src[i:start]))
+        if opener == "$$":
+            end = src.find("$$", start + 2)
+            if end < 0:
+                out.append(("display", src[start + 2 :]))
+                break
+            out.append(("display", src[start + 2 : end]))
+            i = end + 2
+        elif opener == "\\[":
+            end = src.find("\\]", start + 2)
+            if end < 0:
+                out.append(("display", src[start + 2 :]))
+                break
+            out.append(("display", src[start + 2 : end]))
+            i = end + 2
+        elif opener == "\\(":
+            end = src.find("\\)", start + 2)
+            if end < 0:
+                out.append(("inline", src[start + 2 :]))
+                break
+            out.append(("inline", src[start + 2 : end]))
+            i = end + 2
+        else:
+            end = _next_unescaped_dollar(src, start + 1)
+            if end < 0:
+                out.append(("inline", src[start + 1 :]))
+                break
+            out.append(("inline", src[start + 1 : end]))
+            i = end + 1
+    return out
+
+
+def _next_math(src: str, start: int) -> tuple[int | None, str | None]:
+    j = start
+    n = len(src)
+    while j < n:
+        if src.startswith("$$", j):
+            return j, "$$"
+        if src.startswith("\\[", j):
+            return j, "\\["
+        if src.startswith("\\(", j):
+            return j, "\\("
+        if src[j] == "$" and (j == 0 or src[j - 1] != "\\"):
+            return j, "$"
+        j += 1
+    return None, None
+
+
+def _next_unescaped_dollar(src: str, start: int) -> int:
+    j = start
+    while j < len(src):
+        if src.startswith("$$", j):
+            j += 2
+            continue
+        if src[j] == "$" and src[j - 1] != "\\":
+            return j
+        j += 1
+    return -1
+
+
+def tex_to_plain(text: str) -> str:
+    raw = text or ""
+    raw = raw.replace("$$", "").replace("\\[", "").replace("\\]", "")
+    raw = raw.replace("\\(", "").replace("\\)", "")
+    raw = raw.replace("^\\circ", "°").replace("\\circ", "°")
+    frac_re = re.compile(r"\\(?:dfrac|tfrac|frac)\s*\{([^{}]*)\}\s*\{([^{}]*)\}")
+    while frac_re.search(raw):
+        raw = frac_re.sub(lambda match: f"{match.group(1)}/{match.group(2)}", raw)
+    for name, glyph in sorted(MATH_GREEK.items(), key=lambda item: -len(item[0])):
+        raw = raw.replace("\\" + name, glyph)
+    for name, glyph in sorted(MATH_SYMBOLS.items(), key=lambda item: -len(item[0])):
+        raw = raw.replace("\\" + name, glyph)
+    for name in sorted(MATH_FUNCTIONS, key=len, reverse=True):
+        raw = re.sub(r"\\" + name + r"(?![A-Za-z])", name, raw)
+    raw = raw.replace("$", "")
+    raw = re.sub(r"\\([A-Za-z]+)", r"\1", raw)
+    raw = raw.replace("{", "").replace("}", "")
+    return re.sub(r"\s+", " ", raw).strip()

@@ -134,7 +134,10 @@ DSE_TUTOR_IDENTITY = (
     "Algebra & Calculus. "
     "Use precise HKDSE terminology (for example Alternate Segment Theorem, "
     "Integration by Parts, Mathematical Induction). "
-    "Write mathematics in LaTeX ($ ... $ inline, $$ ... $$ display)."
+    "Write mathematics in LaTeX so the page can typeset it like a textbook: "
+    "$ ... $ or \\( ... \\) inline, $$ ... $$ or \\[ ... \\] on its own line for display. "
+    "Use \\frac{a}{b} so a sits above b (never a/b as the main form, never the source markup "
+    "as the student-facing answer). Use \\theta for θ, \\sin for sine, \\circ or ^\\circ for degrees."
 )
 DSE_WORKING_AND_FINAL = (
     "Show numbered step-by-step working. Mark the final answer on its own line "

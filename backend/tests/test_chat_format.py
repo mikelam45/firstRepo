@@ -5,6 +5,9 @@ from app.chat_format import (
     markdown_table_to_html,
     parse_chart_fence,
     parse_figure_spec,
+    render_math_html,
+    split_math_segments,
+    tex_to_plain,
 )
 from app.catalog import DEFAULT_SELECTION
 from app.main import CHAT_FORMAT_JS, PAGE, app
@@ -193,6 +196,44 @@ def test_parse_figure_spec_accepts_geometry_and_rejects_junk():
     assert sector["actions"][0]["label"] == "Arc length"
 
 
+def test_render_math_html_typesets_theta_and_stacked_fraction():
+    html = render_math_html(
+        r"\sin(\theta)=\frac{\text{Opposite}}{\text{Hypotenuse}}=\frac{8}{10}=0.8"
+    )
+    assert "θ" in html
+    assert "\\theta" not in html
+    assert "\\frac" not in html
+    assert "math-fn" in html
+    assert ">sin<" in html or "sin</span>" in html
+    assert 'class="math-num"' in html
+    assert 'class="math-den"' in html
+    assert ">8<" in html or ">8</span>" in html
+    assert ">10<" in html or ">10</span>" in html
+    assert "Opposite" in html
+    assert "Hypotenuse" in html
+    display = render_math_html(r"\frac{1}{10}", display=True)
+    assert 'class="math-display"' in display
+    assert 'class="math-num"' in display
+    assert ">1<" in display or ">1</span>" in display
+    assert ">10<" in display or ">10</span>" in display
+
+
+def test_split_math_segments_paren_and_bracket_delimiters():
+    segs = split_math_segments(
+        r"Calculate \( \sin(\theta) \):"
+        "\n"
+        r"\[ \sin(\theta) = \frac{8}{10} = 0.8 \]"
+    )
+    kinds = [kind for kind, _ in segs]
+    assert "inline" in kinds
+    assert "display" in kinds
+    inline = next(text for kind, text in segs if kind == "inline")
+    display = next(text for kind, text in segs if kind == "display")
+    assert r"\sin" in inline
+    assert r"\frac{8}{10}" in display
+    assert tex_to_plain(r"\sin(\theta)=\frac{8}{10}") == "sin(θ)=8/10"
+
+
 def test_functions_page_includes_table_chart_renderer(tmp_path, monkeypatch):
     client = _client(monkeypatch, tmp_path)
     home = client.get("/")
@@ -210,6 +251,11 @@ def test_functions_page_includes_table_chart_renderer(tmp_path, monkeypatch):
     assert "markdownTableToHtml" in script.text
     assert "escapeHtml" in script.text
     assert "renderAssistantReply" in script.text
+    assert "splitMathSegments" in script.text
+    assert "appendMath" in script.text
+    assert "texToPlain" in script.text
+    assert "math-frac" in script.text
+    assert "math-display" in script.text
     assert "drawChartSvg" in script.text
     assert "drawFigureSvg" in script.text
     assert "figureHasRound" in script.text

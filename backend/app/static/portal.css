@@ -209,6 +209,80 @@ pre.chat-reply,
   border-radius: 4px;
   padding: 0 4px;
 }
+.math-inline,
+.math-display {
+  font-family: "Times New Roman", Times, "STIX Two Math", Cambria, "Liberation Serif", serif;
+  font-style: italic;
+  font-weight: 400;
+  line-height: 1.35;
+}
+.math-inline {
+  white-space: nowrap;
+  padding: 0 0.08em;
+}
+.math-display {
+  display: block;
+  text-align: center;
+  font-size: 1.18em;
+  margin: 0.7em 0;
+  overflow-x: auto;
+}
+.math-fn,
+.math-text,
+.math-numeral,
+.math-delim {
+  font-style: normal;
+}
+.math-rel { padding: 0 0.28em; }
+.math-bin { padding: 0 0.18em; }
+.math-space { display: inline-block; min-width: 0.35em; }
+.math-frac {
+  display: inline-block;
+  vertical-align: middle;
+  text-align: center;
+  font-style: normal;
+  padding: 0 0.2em;
+  line-height: 1.15;
+}
+.math-frac .math-num,
+.math-frac .math-den {
+  display: block;
+  padding: 0.05em 0.32em;
+  font-style: italic;
+}
+.math-frac .math-num {
+  border-bottom: 1.5px solid currentColor;
+}
+.math-frac .math-text,
+.math-frac .math-fn,
+.math-frac .math-numeral {
+  font-style: normal;
+}
+.math-frac .math-frac {
+  font-size: 0.9em;
+}
+.math-sqrt {
+  display: inline-flex;
+  align-items: stretch;
+  font-style: normal;
+}
+.math-radic {
+  font-style: normal;
+  padding-right: 0.05em;
+}
+.math-radicand {
+  border-top: 1.5px solid currentColor;
+  padding: 0 0.15em 0 0.05em;
+  font-style: italic;
+}
+.math-scripted {
+  display: inline;
+}
+.math-sup,
+.math-sub {
+  font-size: 0.75em;
+  font-style: italic;
+}
 .chat-reply a { color: var(--green); }
 .chat-reply table {
   width: 100%;
