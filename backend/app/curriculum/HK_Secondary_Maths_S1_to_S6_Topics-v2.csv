@@ -1,0 +1,72 @@
+﻿Form,Module/Part,Category,Topic
+S1,Compulsory,Number and Algebra,Directed Numbers and the Number Line
+S1,Compulsory,Number and Algebra,Basic Algebra and Algebraic Expressions
+S1,Compulsory,Number and Algebra,Linear Equations in One Unknown
+S1,Compulsory,Number and Algebra,Percentages (Part 1: Basic Concepts)
+S1,Compulsory,Number and Algebra,Ratios and Rates
+S1,Compulsory,"Measures, Shape and Space","Basic Geometry (Points, Lines, Angles)"
+S1,Compulsory,"Measures, Shape and Space",Parallel Lines and Rectilinear Figures
+S1,Compulsory,"Measures, Shape and Space",Introduction to Coordinates and Rectangular Coordinate System
+S1,Compulsory,"Measures, Shape and Space",Area and Volume (Prisms and Cylinders)
+S1,Compulsory,Data Handling,"Introduction to Statistics and Data Presentation (Bar charts, Pie charts, Histograms)"
+S2,Compulsory,Number and Algebra,Laws of Integral Exponents
+S2,Compulsory,Number and Algebra,Polynomials (Algebraic Operations and Factorization)
+S2,Compulsory,Number and Algebra,Linear Equations in Two Unknowns (Simultaneous Equations)
+S2,Compulsory,Number and Algebra,Linear Inequalities in One Unknown
+S2,Compulsory,Number and Algebra,"Percentages (Part 2: Growth/Decay, Simple & Compound Interest)"
+S2,Compulsory,"Measures, Shape and Space",Pythagoras' Theorem and Irrational Numbers
+S2,Compulsory,"Measures, Shape and Space","Trigonometry (Basic Ratios: Sine, Cosine, Tangent)"
+S2,Compulsory,"Measures, Shape and Space",Congruence and Similarity of Triangles
+S2,Compulsory,"Measures, Shape and Space",Angles related to Polygons
+S2,Compulsory,Data Handling,"Measures of Central Tendency (Mean, Median, Mode)"
+S3,Compulsory,Number and Algebra,Algebraic Fractions and Formulas
+S3,Compulsory,Number and Algebra,Laws of Rational Exponents and Radicals
+S3,Compulsory,Number and Algebra,Identities and Factorization (Advanced)
+S3,Compulsory,"Measures, Shape and Space","Application of Trigonometry (Angles of Elevation/Depression, Bearings)"
+S3,Compulsory,"Measures, Shape and Space",Properties of Quadrilaterals and Parallelograms
+S3,Compulsory,"Measures, Shape and Space","3D Figures and Mensuration (Pyramids, Cones, Spheres)"
+S3,Compulsory,"Measures, Shape and Space","Coordinate Geometry of Straight Lines (Slope, Midpoint, Distance)"
+S3,Compulsory,"Measures, Shape and Space",Deductive Geometry (Proofs and Axioms)
+S3,Compulsory,Data Handling,Simple Probability (Theoretical and Empirical)
+S3,Compulsory,Data Handling,"Measures of Dispersion (Range, Interquartile Range)"
+S4,Compulsory,Number and Algebra,Quadratic Equations in One Unknown
+S4,Compulsory,Number and Algebra,Functions and Graphs (Quadratic Functions)
+S4,Compulsory,Number and Algebra,Polynomials (Remainder Theorem & Factor Theorem)
+S4,Compulsory,Number and Algebra,Complex Numbers
+S4,Compulsory,Number and Algebra,Exponential and Logarithmic Functions
+S4,Compulsory,Number and Algebra,"Variations (Direct, Inverse, Joint, Partial)"
+S4,Compulsory,"Measures, Shape and Space","Basic Properties of Circles (Chords, Angles, Tangents)"
+S4,Compulsory,"Measures, Shape and Space",Trigonometric Functions and Graphs
+S5,Compulsory,Number and Algebra,Arithmetic and Geometric Sequences and Series
+S5,Compulsory,Number and Algebra,Linear Inequalities and Linear Programming
+S5,Compulsory,"Measures, Shape and Space","Applications of Trigonometry in 2D and 3D (Sine/Cosine Law, Area)"
+S5,Compulsory,"Measures, Shape and Space",Equation of Straight Lines and Circles
+S5,Compulsory,"Measures, Shape and Space",Locus and Loci Equations
+S5,Compulsory,Data Handling,Permutations and Combinations
+S5,Compulsory,Data Handling,"Probability (Addition/Multiplication Rules, Conditional Probability)"
+S5,M1 (Calculus & Statistics),Calculus,Binomial Expansion for Positive Integers
+S5,M1 (Calculus & Statistics),Calculus,Limits of Functions and Intuitive Concept of Continuity
+S5,M1 (Calculus & Statistics),Calculus,"Derivative of a Function (First Principles, Power Rule, Product/Quotient Rules)"
+S5,M1 (Calculus & Statistics),Calculus,Derivatives of Exponential and Logarithmic Functions
+S5,M1 (Calculus & Statistics),Calculus,"Applications of Differentiation (Rates of Change, Maxima/Minima, Curve Sketching)"
+S5,M1 (Calculus & Statistics),Statistics,Conditional Probability and Bayes' Theorem
+S5,M1 (Calculus & Statistics),Statistics,Discrete Random Variables and Expectation/Variance
+S5,M2 (Algebra & Calculus),Algebra,Mathematical Induction
+S5,M2 (Algebra & Calculus),Algebra,Binomial Theorem for Positive Integers
+S5,M2 (Algebra & Calculus),Trigonometry,"Advanced Trigonometric Identities and Equations (Sum/Difference, Double/Half Angle)"
+S5,M2 (Algebra & Calculus),Calculus,Limits of Functions (Algebraic and Trigonometric)
+S5,M2 (Algebra & Calculus),Calculus,"Differentiation (Chain Rule, Implicit Differentiation, Higher Order Derivatives)"
+S5,M2 (Algebra & Calculus),Calculus,Derivatives of Trigonometric Functions
+S5,M2 (Algebra & Calculus),Calculus,"Applications of Differentiation (Curve Sketching, Tangents/Normals, Maxima/Minima)"
+S6,Compulsory,Data Handling,"Advanced Statistics (Standard Deviation, Normal Distribution, Standard Scores)"
+S6,Compulsory,Data Handling,Uses and Abuses of Statistics
+S6,Compulsory,Revision & Integration,HKDSE Paper 1 & Paper 2 Integrated Exam Strategy & Mock Revision
+S6,M1 (Calculus & Statistics),Calculus,"Indefinite and Definite Integration (Substitution, Integration by Parts)"
+S6,M1 (Calculus & Statistics),Calculus,"Applications of Integration (Area under Curve, Population/Growth Models)"
+S6,M1 (Calculus & Statistics),Statistics,"Discrete Probability Distributions (Binomial, Poisson Distributions)"
+S6,M1 (Calculus & Statistics),Statistics,Continuous Probability Distributions (Normal Distribution and Standard Scores)
+S6,M1 (Calculus & Statistics),Statistics,Point and Interval Estimation (Confidence Intervals for Mean and Proportion)
+S6,M2 (Algebra & Calculus),Calculus,"Indefinite and Definite Integration (Trigonometric Substitution, Integration by Parts)"
+S6,M2 (Algebra & Calculus),Calculus,"Applications of Integration (Area of Plane Figures, Volume of Solids of Revolution)"
+S6,M2 (Algebra & Calculus),Algebra,"Matrices and Systems of Linear Equations (Determinants, Inverse Matrix, Cramer's Rule)"
+S6,M2 (Algebra & Calculus),Algebra,"Vectors in 2D and 3D (Scalar Product, Vector Product, Applications in Geometry)"
