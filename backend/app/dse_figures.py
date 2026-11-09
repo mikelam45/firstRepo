@@ -1,12 +1,14 @@
-"""Mandatory diagrams for DSE Create and Explain.
+"""Mandatory diagrams for DSE Create, Explain, and Solve.
 
-The tutor is told to emit a figure. If it skips one, these templates are attached
-so the student still gets a labelled, clickable diagram.
+The tutor is told to emit a figure. If it skips one, or if the figure omits named
+givens (triangle ABC, 50°, 70°), these builders attach a labelled clickable diagram.
 """
 
 from __future__ import annotations
 
 import json
+import math
+import re
 from typing import Any
 
 from .chat_format import parse_figure_spec
@@ -438,6 +440,430 @@ def _validated(spec: dict[str, Any] | None) -> dict[str, Any] | None:
     return parse_figure_spec(spec)
 
 
+_FENCE_BODY_RE = re.compile(r"```figure[^\n]*\n(.*?)```", re.S)
+_TRIANGLE_RE = re.compile(
+    r"(?:triangle|△|∆)\s*([A-Za-z])\s*([A-Za-z])\s*([A-Za-z])",
+    re.I,
+)
+_DEGREE_RE = re.compile(
+    r"(\d+(?:\.\d+)?)\s*(?:°|degrees|deg)",
+    re.I,
+)
+_VERTEX_ANGLE_RES = (
+    re.compile(
+        r"angle\s+at(?:\s+vertex)?\s+([A-Za-z])\s+(?:measures?|is|=|:)?\s*(\d+(?:\.\d+)?)",
+        re.I,
+    ),
+    re.compile(
+        r"∠\s*([A-Za-z]{1,3})\s*(?:=|measures?|is|:)?\s*(\d+(?:\.\d+)?)",
+        re.I,
+    ),
+    re.compile(
+        r"angle\s+([A-Za-z])\s*(?:=|measures?|is|:)\s*(\d+(?:\.\d+)?)",
+        re.I,
+    ),
+    re.compile(
+        r"\b([A-Za-z])\s*=\s*(\d+(?:\.\d+)?)\s*°",
+        re.I,
+    ),
+    re.compile(
+        r"(\d+(?:\.\d+)?)\s*°\s+at\s+(?:vertex\s+)?([A-Za-z])",
+        re.I,
+    ),
+)
+_LENGTH_RE = re.compile(
+    r"\b([A-Za-z]{2})\s*=\s*(\d+(?:\.\d+)?)\s*(cm|mm|m|km)?",
+    re.I,
+)
+
+
+def _plain_math_text(text: str | None) -> str:
+    raw = text or ""
+    raw = raw.replace("^\\circ", "°").replace("\\circ", "°").replace("^circ", "°")
+    raw = raw.replace("$", "")
+    return raw
+
+
+def format_degree(value: Any) -> str:
+    number = float(value)
+    if number.is_integer():
+        return f"{int(number)}°"
+    return f"{number}°"
+
+
+def given_labels_from_text(text: str | None) -> list[str]:
+    plain = _plain_math_text(text)
+    labels: list[str] = []
+    seen: set[str] = set()
+
+    def add(token: str) -> None:
+        item = str(token).strip()
+        if not item or item in seen:
+            return
+        seen.add(item)
+        labels.append(item)
+
+    match = _TRIANGLE_RE.search(plain)
+    if match:
+        for group in match.groups():
+            add(group.upper())
+    for pattern in _VERTEX_ANGLE_RES:
+        for row in pattern.findall(plain):
+            if pattern is _VERTEX_ANGLE_RES[-1]:
+                add(format_degree(row[0]))
+                add(row[1][0].upper())
+            else:
+                add(row[0][0].upper())
+                add(format_degree(row[1]))
+    for match in _DEGREE_RE.finditer(plain):
+        add(format_degree(match.group(1)))
+    for row in _LENGTH_RE.findall(plain):
+        letters, amount, unit = row[0].upper(), row[1], row[2]
+        add(letters)
+        add(f"{amount} {unit}".strip() if unit else amount)
+    return labels
+
+
+def _given_facts(text: str | None) -> dict[str, Any]:
+    plain = _plain_math_text(text)
+    vertices = ("A", "B", "C")
+    match = _TRIANGLE_RE.search(plain)
+    if match:
+        vertices = tuple(group.upper() for group in match.groups())
+    angles: dict[str, float] = {}
+    for pattern in _VERTEX_ANGLE_RES:
+        for row in pattern.findall(plain):
+            if pattern is _VERTEX_ANGLE_RES[-1]:
+                vertex, amount = row[1][0].upper(), float(row[0])
+            else:
+                vertex, amount = row[0][0].upper(), float(row[1])
+            if vertex in vertices or vertex.isalpha():
+                key = vertex if len(vertex) == 1 else vertex[0]
+                if key not in angles:
+                    angles[key] = amount
+    assigned = {format_degree(value) for value in angles.values()}
+    unused = [
+        float(match.group(1))
+        for match in _DEGREE_RE.finditer(plain)
+        if format_degree(match.group(1)) not in assigned
+    ]
+    for vertex in vertices:
+        if vertex not in angles and unused:
+            angles[vertex] = unused.pop(0)
+    lengths: dict[str, str] = {}
+    for letters, amount, unit in _LENGTH_RE.findall(plain):
+        key = "".join(sorted(letters.upper()))
+        label = f"{amount} {unit}".strip() if unit else amount
+        lengths[key] = label
+    lowered = plain.lower()
+    incircle = any(
+        word in lowered
+        for word in ("inscribed", "incircle", "in-circle", "touches all three", "tangent")
+    )
+    return {
+        "vertices": vertices,
+        "angles": angles,
+        "lengths": lengths,
+        "incircle": incircle,
+        "labels": given_labels_from_text(text),
+    }
+
+
+def _figure_tokens(spec: dict[str, Any] | None) -> set[str]:
+    tokens: set[str] = set()
+
+    def add(value: Any) -> None:
+        text = str(value or "").strip()
+        if not text:
+            return
+        tokens.add(text)
+        tokens.add(text.upper())
+        for match in _DEGREE_RE.finditer(_plain_math_text(text)):
+            tokens.add(format_degree(match.group(1)))
+
+    def walk(node: Any) -> None:
+        if isinstance(node, dict):
+            for key, value in node.items():
+                if key in {"label", "labels", "title", "caption", "text", "hint"}:
+                    if isinstance(value, list):
+                        for item in value:
+                            add(item)
+                    else:
+                        add(value)
+                else:
+                    walk(value)
+        elif isinstance(node, list):
+            for item in node:
+                walk(item)
+
+    walk(spec)
+    return tokens
+
+
+def figure_spec_has_labels(spec: dict[str, Any] | None, required: list[str] | None) -> bool:
+    if not required:
+        return spec is not None
+    if not spec:
+        return False
+    tokens = _figure_tokens(spec)
+    for item in required:
+        if item in tokens or item.upper() in tokens:
+            continue
+        return False
+    return True
+
+
+def figure_text_has_labels(text: str | None, required: list[str] | None) -> bool:
+    if not required:
+        return FIGURE_FENCE_MARK in (text or "")
+    for body in _FENCE_BODY_RE.findall(text or ""):
+        spec = parse_figure_spec(body)
+        if spec and figure_spec_has_labels(spec, required):
+            return True
+    return False
+
+
+def _intersect(
+    origin: tuple[float, float],
+    direction: tuple[float, float],
+    other: tuple[float, float],
+    other_dir: tuple[float, float],
+) -> tuple[float, float] | None:
+    det = direction[0] * other_dir[1] - direction[1] * other_dir[0]
+    if abs(det) < 1e-9:
+        return None
+    t = (
+        (other[0] - origin[0]) * other_dir[1] - (other[1] - origin[1]) * other_dir[0]
+    ) / det
+    return (origin[0] + t * direction[0], origin[1] + t * direction[1])
+
+
+def _dist(a: tuple[float, float], b: tuple[float, float]) -> float:
+    return math.hypot(a[0] - b[0], a[1] - b[1])
+
+
+def _xy(point: tuple[float, float]) -> list[float]:
+    return [round(point[0], 2), round(point[1], 2)]
+
+
+def labelled_triangle_figure(
+    facts: dict[str, Any],
+    *,
+    stage: str = "question",
+) -> dict[str, Any]:
+    a_name, b_name, c_name = facts["vertices"]
+    given_angles: dict[str, float] = dict(facts.get("angles") or {})
+    angles: dict[str, float] = dict(given_angles)
+    lengths: dict[str, str] = dict(facts.get("lengths") or {})
+    point_a = (16.0, 86.0)
+    point_b = (84.0, 86.0)
+    ang_a = angles.get(a_name)
+    ang_b = angles.get(b_name)
+    point_c = (50.0, 18.0)
+    if ang_a and ang_b:
+        rad_a = math.radians(ang_a)
+        rad_b = math.radians(ang_b)
+        hit = _intersect(
+            point_a,
+            (math.cos(rad_a), -math.sin(rad_a)),
+            point_b,
+            (math.cos(math.pi - rad_b), -math.sin(math.pi - rad_b)),
+        )
+        if hit and 6 <= hit[0] <= 94 and 6 <= hit[1] <= 90:
+            point_c = hit
+    if c_name in given_angles and a_name in given_angles and b_name not in given_angles:
+        angles[b_name] = 180.0 - angles[a_name] - angles[c_name]
+    if (
+        stage == "answer"
+        and a_name in given_angles
+        and b_name in given_angles
+        and c_name not in given_angles
+    ):
+        leftover = 180.0 - angles[a_name] - angles[b_name]
+        if leftover > 0:
+            angles[c_name] = leftover
+    points = {a_name: point_a, b_name: point_b, c_name: point_c}
+    side_pairs = (
+        (a_name, b_name, "ab"),
+        (b_name, c_name, "bc"),
+        (c_name, a_name, "ca"),
+    )
+    elements: list[dict[str, Any]] = [
+        {
+            "kind": "polygon",
+            "points": [_xy(point_a), _xy(point_b), _xy(point_c)],
+            "labels": [a_name, b_name, c_name],
+            "id": "tri",
+        }
+    ]
+    for start, end, part_id in side_pairs:
+        key = "".join(sorted((start, end)))
+        elements.append(
+            {
+                "kind": "segment",
+                "from": _xy(points[start]),
+                "to": _xy(points[end]),
+                "label": lengths.get(key, ""),
+                "id": part_id,
+                "caption": f"Side {start}{end}.",
+            }
+        )
+    for vertex, start, end, part_id in (
+        (a_name, b_name, c_name, "angle-a"),
+        (b_name, a_name, c_name, "angle-b"),
+        (c_name, a_name, b_name, "angle-c"),
+    ):
+        label = ""
+        if vertex in given_angles or (stage == "answer" and vertex in angles):
+            label = format_degree(angles[vertex]) if vertex in angles else ""
+        elements.append(
+            {
+                "kind": "angle",
+                "at": _xy(points[vertex]),
+                "from": _xy(points[start]),
+                "to": _xy(points[end]),
+                "label": label,
+                "id": part_id,
+                "caption": f"Angle at {vertex}" + (f" = {label}." if label else "."),
+            }
+        )
+    actions = [
+        {
+            "id": "givens",
+            "label": "Givens",
+            "highlight": ["angle-a", "angle-b", "ab", "bc", "ca"],
+            "caption": "Click a vertex or side. Named givens stay labelled on the figure.",
+        }
+    ]
+    title = f"Triangle {a_name}{b_name}{c_name}"
+    caption = "Given vertices and angles are marked. Click a part to highlight it."
+    if facts.get("incircle"):
+        side_a = _dist(point_b, point_c)
+        side_b = _dist(point_a, point_c)
+        side_c = _dist(point_a, point_b)
+        perimeter = side_a + side_b + side_c
+        incenter = (
+            (side_a * point_a[0] + side_b * point_b[0] + side_c * point_c[0]) / perimeter,
+            (side_a * point_a[1] + side_b * point_b[1] + side_c * point_c[1]) / perimeter,
+        )
+        semi = perimeter / 2
+        area_sq = max(semi * (semi - side_a) * (semi - side_b) * (semi - side_c), 0)
+        radius = (math.sqrt(area_sq) / semi) if semi else 8
+        radius = round(max(6.0, min(radius, 18.0)), 2)
+        in_xy = _xy(incenter)
+        elements.append(
+            {
+                "kind": "circle",
+                "cx": in_xy[0],
+                "cy": in_xy[1],
+                "r": radius,
+                "id": "incircle",
+                "caption": "Incircle touching AB, BC, and CA.",
+            }
+        )
+        def foot(p: tuple[float, float], q: tuple[float, float]) -> tuple[float, float]:
+            qx, qy = q[0] - p[0], q[1] - p[1]
+            length = _dist(p, q) or 1
+            t = ((incenter[0] - p[0]) * qx + (incenter[1] - p[1]) * qy) / (length * length)
+            t = max(0.0, min(1.0, t))
+            return (p[0] + t * qx, p[1] + t * qy)
+
+        touch = {
+            "x": foot(point_a, point_b),
+            "y": foot(point_b, point_c),
+            "z": foot(point_c, point_a),
+        }
+        if stage in {"steps", "answer"}:
+            elements.append(
+                {
+                    "kind": "point",
+                    "x": in_xy[0],
+                    "y": in_xy[1],
+                    "label": "I",
+                    "id": "incentre",
+                    "caption": "Incentre I.",
+                }
+            )
+            for point, label, part_id in (
+                (touch["x"], "X", "ix"),
+                (touch["y"], "Y", "iy"),
+                (touch["z"], "Z", "iz"),
+            ):
+                pt = _xy(point)
+                elements.append(
+                    {
+                        "kind": "point",
+                        "x": pt[0],
+                        "y": pt[1],
+                        "label": label,
+                        "id": part_id.replace("i", "").lower(),
+                        "caption": f"Touch point {label}.",
+                    }
+                )
+                elements.append(
+                    {
+                        "kind": "segment",
+                        "from": in_xy,
+                        "to": pt,
+                        "id": part_id,
+                        "caption": f"Radius to {label} (perpendicular to the tangent).",
+                    }
+                )
+            actions.append(
+                {
+                    "id": "tangents",
+                    "label": "Tangents at C",
+                    "highlight": ["ca", "bc", "iz", "iy", "angle-c"],
+                    "caption": f"The tangents from {c_name} are {c_name}{a_name} and {c_name}{b_name}.",
+                }
+            )
+            caption = (
+                f"Incentre I and radii to the touch points. The tangents from {c_name} "
+                f"are sides {c_name}{a_name} and {c_name}{b_name}."
+            )
+            if stage == "answer" and c_name in angles:
+                caption = (
+                    f"The angle of the tangents from {c_name} is angle {c_name} = "
+                    f"{format_degree(angles[c_name])}."
+                )
+        else:
+            caption = (
+                f"Incircle of triangle {a_name}{b_name}{c_name}. Given angles stay labelled."
+            )
+            actions.append(
+                {
+                    "id": "circle",
+                    "label": "Incircle",
+                    "highlight": ["incircle", "ab", "bc", "ca"],
+                    "caption": "The circle touches all three sides.",
+                }
+            )
+    spec = {
+        "type": "geometry",
+        "interactive": True,
+        "title": title if stage == "question" else f"{title} ({stage})",
+        "caption": caption,
+        "actions": actions,
+        "elements": elements,
+    }
+    parsed = _validated(spec)
+    return parsed or spec
+
+
+def figure_from_question(
+    question: str | None,
+    *,
+    stage: str = "question",
+    topic: str | None = None,
+) -> dict[str, Any] | None:
+    facts = _given_facts(question)
+    plain = _plain_math_text(question).lower()
+    if facts["labels"] or facts["incircle"] or _TRIANGLE_RE.search(_plain_math_text(question) or ""):
+        if "triangle" in plain or "△" in (question or "") or facts["angles"] or facts["incircle"]:
+            return labelled_triangle_figure(facts, stage=stage)
+    return None
+
+
 def default_create_figure(topic: str | None = None) -> dict[str, Any]:
     raw = CREATE_FIGURES.get(topic or "") or NUMBER_LINE_FIGURE
     parsed = _validated(raw)
@@ -474,8 +900,15 @@ def ensure_created_figure(
     figure: dict[str, Any] | None,
     *,
     topic: str | None = None,
+    question: str | None = None,
 ) -> dict[str, Any]:
+    required = given_labels_from_text(question)
     parsed = parse_figure_spec(figure) if figure else None
+    if parsed and figure_spec_has_labels(parsed, required):
+        return parsed
+    built = figure_from_question(question, stage="question", topic=topic)
+    if built:
+        return built
     if parsed:
         return parsed
     return default_create_figure(topic)
@@ -484,7 +917,12 @@ def ensure_created_figure(
 def default_solve_figure(
     topic: str | None = None,
     question: str | None = None,
+    *,
+    stage: str = "question",
 ) -> dict[str, Any]:
+    built = figure_from_question(question, stage=stage, topic=topic)
+    if built:
+        return built
     text = (question or "").lower()
     if any(word in text for word in ("sector", "arc length", "arc ")):
         return _validated(ARC_SECTOR_FIGURE) or default_create_figure(None)
@@ -505,11 +943,31 @@ def ensure_solve_figures(
     topic: str | None = None,
     question: str | None = None,
     already_has_figure: bool = False,
+    reveal_answer: bool = False,
 ) -> str:
     text = reply or ""
-    if FIGURE_FENCE_MARK in text or already_has_figure:
+    required = given_labels_from_text(question)
+    has_fence = FIGURE_FENCE_MARK in text
+    covering = (not required and (has_fence or already_has_figure)) or (
+        has_fence and figure_text_has_labels(text, required)
+    )
+    extras: list[dict[str, Any]] = []
+    answer_fig = (
+        figure_from_question(question, stage="answer", topic=topic) if reveal_answer else None
+    )
+    if not covering:
+        if already_has_figure and not reveal_answer:
+            extras.append(default_solve_figure(topic, question, stage="steps"))
+        else:
+            extras.append(default_solve_figure(topic, question, stage="question"))
+        if answer_fig:
+            extras.append(answer_fig)
+    elif answer_fig:
+        extras.append(answer_fig)
+    if not extras:
         return text
-    return text.rstrip() + "\n\n" + figure_fence(default_solve_figure(topic, question))
+    blocks = "\n\n".join(figure_fence(spec) for spec in extras)
+    return text.rstrip() + "\n\n" + blocks
 
 
 def session_has_figure(session: dict[str, Any] | None) -> bool:

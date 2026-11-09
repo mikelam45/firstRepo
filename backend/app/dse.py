@@ -22,6 +22,7 @@ from .dse_figures import (
     ensure_explain_figures,
     ensure_solve_figures,
     explain_figures_for_topics,
+    figure_from_question,
     session_has_figure,
 )
 from .rag import (
@@ -274,10 +275,19 @@ DSE_WORKING_AND_FINAL = (
     "in a Markdown table. "
 )
 DSE_TUTOR_BASE = DSE_TUTOR_IDENTITY + " " + DSE_WORKING_AND_FINAL
+DSE_GIVEN_LABEL_INSTRUCTION = (
+    "100% of named givens MUST appear as labels on the diagram: every vertex "
+    "(for example A, B, C on triangle ABC) and every given angle or length "
+    "(for example 50°, 70°, 6 cm). Never leave those only in prose. "
+    "Question and hint figures show given facts only. "
+    "Working-step figures may add constructions (incentre, radii, touch points). "
+    "The answer figure marks the found angle or length on the same diagram."
+)
 DSE_SOLVE_FIGURE_INSTRUCTION = (
-    "You MUST include one labelled ```figure of the given question. "
-    "Draw given lengths, angles, and points only. "
-    "Later hints may refer to that same diagram instead of redrawing it. "
+    "You MUST include labelled ```figure blocks for the question, each working "
+    "step, and the answer. "
+    + DSE_GIVEN_LABEL_INSTRUCTION
+    + " Draw given lengths, angles, and points. "
     "Use the figure fence contract (geometry, coordinate, number_line, or chart). "
     "Give clickable ids on corresponding parts."
 )
@@ -308,7 +318,8 @@ DSE_FIGURE_INSTRUCTION = (
     "number_line uses min, max, marks, and points. chart uses labels and series "
     "(bar, line, or pie). "
     "Give elements an id so the student can click corresponding parts. "
-    "Label given lengths and angles. Do not draw the hidden answer."
+    "Label given lengths and angles. Do not draw the hidden answer. "
+    + DSE_GIVEN_LABEL_INSTRUCTION
 )
 DSE_EXPLAIN_INSTRUCTION = (
     "Mode is Explain. Teach the selected school-level topics step by step, "
@@ -330,9 +341,10 @@ DSE_GUIDED_NO_ANSWER_INSTRUCTION = (
     "Do not write 'Final answer:'. Do not put the complete solution in the first "
     "replies. Ask what the student has already tried. "
     "If they share working, comment on that step only. "
-    "On the first reply, draw a labelled ```figure of the given question. "
+    "Every hint or working step MUST include a labelled ```figure. "
+    "On the first reply, draw the given question (vertices and given angles). "
     "Do not mark the unknown, the completed construction, or the final answer on "
-    "the figure. "
+    "the first figure. Later steps may add constructions on a new figure. "
     + DSE_SOLVE_FIGURE_INSTRUCTION
 )
 DSE_GUIDED_WITH_ANSWER_INSTRUCTION = (
@@ -341,8 +353,9 @@ DSE_GUIDED_WITH_ANSWER_INSTRUCTION = (
     "marked clearly on its own line as 'Final answer: …', plus full working. "
     "When a mark scheme helps, use HKDSE M-marks (method) and A-marks (accuracy) "
     "in a Markdown table. "
-    "Start with a labelled ```figure of the given question, then refer to it in "
-    "the working. "
+    "Start with a labelled ```figure of the given question (all named vertices "
+    "and given angles). In the working, add a figure for the key construction. "
+    "On the answer, mark the found measure on a figure. "
     + DSE_SOLVE_FIGURE_INSTRUCTION
 )
 DSE_CREATE_JSON_KEYS = (
@@ -357,6 +370,8 @@ DSE_CREATE_FIGURE_JSON = (
     "geometry uses a 0–100 canvas, x right, y down. Also allowed: circle, arc, sector, "
     "angle, point, label. For algebra use a number_line or coordinate axes. For data "
     "use a chart. The figure must show given information only, never the answer. "
+    "100% of named vertices and given angles or lengths in the question text "
+    "must be labels on the figure (triangle ABC with 50° at A, not a blank sketch). "
     "scenario is one or two sentences of teaching context, not the solution."
 )
 DSE_CREATE_QUESTION_INSTRUCTION = (
@@ -912,7 +927,11 @@ def store_created_question(
         "language": language,
         "question": parsed["question"],
         "scenario": clip_scenario(parsed.get("scenario")),
-        "figure": ensure_created_figure(parsed.get("figure"), topic=topic),
+        "figure": ensure_created_figure(
+            parsed.get("figure"),
+            topic=topic,
+            question=parsed.get("question"),
+        ),
         "expected_answer": parsed.get("expected_answer") or "",
         "mark_scheme": parsed.get("mark_scheme") or "",
         "outline": parsed.get("outline") or "",
@@ -1003,6 +1022,14 @@ def public_mark_payload(
     }
     if correct:
         payload["expected_answer"] = session.get("expected_answer") or ""
+        answer_figure = figure_from_question(
+            session.get("question"),
+            stage="answer",
+            topic=session.get("topic"),
+        )
+        if answer_figure:
+            payload["figure"] = answer_figure
+            payload["figures"] = [answer_figure]
     else:
         payload["next_options"] = list(MARK_FAIL_NEXT_OPTIONS)
     return scrub_hidden_fields(payload, include_answer=correct)
