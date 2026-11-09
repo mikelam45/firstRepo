@@ -18,6 +18,7 @@ def test_home_and_setup_are_distinct_html_pages(tmp_path, monkeypatch):
     assert setup.status_code == 200
     assert settings.status_code == 200
     assert css.status_code == 200
+    assert ".dse-cascade" in css.text
     assert "text/html" in home.headers["content-type"]
     assert "text/html" in setup.headers["content-type"]
     assert "text/css" in css.headers["content-type"]
@@ -135,7 +136,12 @@ def test_home_and_setup_are_distinct_html_pages(tmp_path, monkeypatch):
     assert "addExplainTopicFromSelect" in home.text
     assert "catalogTopicsFor" in home.text
     assert "renderDseCreateTopics" in home.text
-    assert "HK secondary mathematics" in home.text
+    assert "fillDseLevelSelect" in home.text
+    assert "Any module" not in home.text
+    assert "Choose a module, then a year" in home.text
+    assert 'id="dse-create-cascade"' in home.text
+    assert "dse-cascade" in home.text
+    assert "pruneExplainPicked" in home.text
     assert "formatCreatedQuestionText" in home.text
     assert "teaching scenario" in home.text
     assert "labelled diagram you can click" in home.text

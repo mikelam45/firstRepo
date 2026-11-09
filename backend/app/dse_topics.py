@@ -235,6 +235,18 @@ def topic_by_id() -> dict[str, dict[str, str]]:
 TOPIC_BY_ID = topic_by_id()
 
 
+def levels_by_module() -> dict[str, list[str]]:
+    found: dict[str, set[str]] = {key: set() for key in MODULE_KEYS}
+    for row in load_topic_rows():
+        key = row["module_key"]
+        if key in found:
+            found[key].add(row["form"])
+    return {
+        key: [level for level in ALLOWED_LEVELS if level in found[key]]
+        for key in MODULE_KEYS
+    }
+
+
 def topics_catalog() -> dict[str, Any]:
     by_level: dict[str, list[dict[str, str]]] = {level: [] for level in ALLOWED_LEVELS}
     for row in load_topic_rows():
@@ -243,6 +255,7 @@ def topics_catalog() -> dict[str, Any]:
         "levels": list(ALLOWED_LEVELS),
         "strands": dict(EXPLAIN_STRANDS),
         "modules": dict(MODULE_KEYS),
+        "levels_by_module": levels_by_module(),
         "topics": by_level,
         "source": {
             "label": "HK secondary mathematics topics (S1–S6)",
