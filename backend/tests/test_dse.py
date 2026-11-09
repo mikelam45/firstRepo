@@ -902,3 +902,72 @@ def test_solve_incircle_tangents_injects_labelled_abc_figure(tmp_path, monkeypat
     body = answered.json()["reply"]
     assert "50°" in body and "70°" in body
     assert body.count("```figure") >= 2
+
+
+QUAD_ANGLE_QUESTION = (
+    "A quadrilateral ABCD has angles A, B, C, and D measuring 80°, 90°, 100°, and x° "
+    "respectively. Find the value of x."
+)
+
+
+def test_quadrilateral_abcd_is_drawn_as_four_sides_not_a_triangle():
+    from app.dse_figures import (
+        ensure_created_figure,
+        ensure_solve_figures,
+        explain_figure_for_topic,
+        figure_from_question,
+        given_labels_from_text,
+    )
+
+    labels = given_labels_from_text(QUAD_ANGLE_QUESTION)
+    assert "A" in labels and "B" in labels and "C" in labels and "D" in labels
+    assert "80°" in labels and "90°" in labels and "100°" in labels
+    assert "x" not in labels and "x°" not in labels
+
+    fig = figure_from_question(QUAD_ANGLE_QUESTION, stage="question")
+    assert fig is not None
+    assert "Quadrilateral" in fig["title"]
+    assert "Triangle" not in fig["title"]
+    polygons = [el for el in fig["elements"] if el.get("kind") == "polygon"]
+    assert len(polygons) == 1
+    assert len(polygons[0]["points"]) == 4
+    assert polygons[0]["labels"] == ["A", "B", "C", "D"]
+    assert not any(el.get("kind") == "circle" for el in fig["elements"])
+    blob = json.dumps(fig, ensure_ascii=False)
+    assert "80°" in blob and "90°" in blob and "100°" in blob
+    angle_d = next(el for el in fig["elements"] if el.get("id") == "angle-d")
+    assert not angle_d.get("label")
+
+    answer = figure_from_question(QUAD_ANGLE_QUESTION, stage="answer")
+    assert answer is not None
+    answer_d = next(el for el in answer["elements"] if el.get("id") == "angle-d")
+    assert answer_d.get("label") == "90°"
+    assert "360" in (answer.get("caption") or "")
+
+    triangle = {
+        "type": "geometry",
+        "title": "Triangle ABC",
+        "elements": [
+            {
+                "kind": "polygon",
+                "points": [[20, 80], [80, 80], [50, 20]],
+                "labels": ["A", "B", "C"],
+            }
+        ],
+    }
+    enforced = ensure_created_figure(triangle, question=QUAD_ANGLE_QUESTION)
+    drawn = next(el for el in enforced["elements"] if el.get("kind") == "polygon")
+    assert len(drawn["points"]) == 4
+    assert drawn["labels"] == ["A", "B", "C", "D"]
+    assert "Triangle" not in enforced["title"]
+
+    hinted = ensure_solve_figures("Name the given angles.", question=QUAD_ANGLE_QUESTION)
+    assert "```figure" in hinted
+    assert "Quadrilateral ABCD" in hinted
+    assert '"id": "quad"' in hinted or '"id":"quad"' in hinted
+    assert hinted.count('"kind": "polygon"') + hinted.count('"kind":"polygon"') >= 1
+
+    topic_fig = explain_figure_for_topic("ks3_23_quadrilaterals")
+    topic_poly = next(el for el in topic_fig["elements"] if el.get("kind") == "polygon")
+    assert len(topic_poly["points"]) == 4
+    assert topic_poly["labels"] == ["A", "B", "C", "D"]
