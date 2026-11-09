@@ -19,6 +19,10 @@ def test_home_and_setup_are_distinct_html_pages(tmp_path, monkeypatch):
     assert settings.status_code == 200
     assert css.status_code == 200
     assert ".dse-cascade" in css.text
+    assert ".math-frac" in css.text
+    assert ".math-num" in css.text
+    assert ".math-den" in css.text
+    assert ".math-display" in css.text
     assert "text/html" in home.headers["content-type"]
     assert "text/html" in setup.headers["content-type"]
     assert "text/css" in css.headers["content-type"]

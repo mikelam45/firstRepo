@@ -373,7 +373,326 @@
     return splitTableRow(line).length >= 2;
   }
 
-  function appendInline(parent, text) {
+  var MATH_GREEK = {
+    alpha: "α", beta: "β", gamma: "γ", delta: "δ", Delta: "Δ",
+    epsilon: "ε", varepsilon: "ε", zeta: "ζ", eta: "η",
+    theta: "θ", Theta: "Θ", vartheta: "ϑ", iota: "ι", kappa: "κ",
+    lambda: "λ", mu: "μ", nu: "ν", xi: "ξ", pi: "π", Pi: "Π",
+    rho: "ρ", sigma: "σ", Sigma: "Σ", tau: "τ", upsilon: "υ",
+    phi: "φ", Phi: "Φ", varphi: "φ", chi: "χ", psi: "ψ",
+    omega: "ω", Omega: "Ω", ell: "ℓ", infty: "∞", partial: "∂",
+    nabla: "∇", hbar: "ℏ"
+  };
+  var MATH_SYMBOLS = {
+    times: "×", div: "÷", cdot: "·", pm: "±", mp: "∓",
+    leq: "≤", geq: "≥", le: "≤", ge: "≥", neq: "≠", ne: "≠",
+    approx: "≈", equiv: "≡", sim: "∼", propto: "∝",
+    circ: "°", degree: "°", angle: "∠", triangle: "△",
+    perp: "⊥", parallel: "∥", in: "∈", to: "→",
+    rightarrow: "→", leftarrow: "←", ldots: "…", cdots: "⋯",
+    dots: "…", therefore: "∴", because: "∵", int: "∫",
+    sum: "∑", prod: "∏", infty: "∞"
+  };
+  var MATH_FUNCTIONS = {
+    sin: 1, cos: 1, tan: 1, cot: 1, sec: 1, csc: 1,
+    arcsin: 1, arccos: 1, arctan: 1, sinh: 1, cosh: 1, tanh: 1,
+    log: 1, ln: 1, lg: 1, exp: 1, lim: 1, max: 1, min: 1,
+    det: 1, gcd: 1, arg: 1, deg: 1, dim: 1
+  };
+  var MATH_REL = "=<>≤≥≠≈≡∼∝→←∈";
+  var MATH_BIN = "+-×÷·±∓";
+
+  function mathEl(tag, className, text) {
+    var node = document.createElement(tag);
+    if (className) node.className = className;
+    if (text != null && text !== "") node.appendChild(document.createTextNode(text));
+    return node;
+  }
+
+  function mathCursor(src) {
+    return { src: String(src == null ? "" : src), i: 0 };
+  }
+
+  function mathPeek(cur) {
+    return cur.i < cur.src.length ? cur.src.charAt(cur.i) : "";
+  }
+
+  function mathSkipSpace(cur) {
+    while (mathPeek(cur) && /\s/.test(mathPeek(cur))) cur.i += 1;
+  }
+
+  function mathReadCommandName(cur) {
+    cur.i += 1;
+    var ch = mathPeek(cur);
+    if (/[A-Za-z]/.test(ch)) {
+      var start = cur.i;
+      while (/[A-Za-z]/.test(mathPeek(cur))) cur.i += 1;
+      var name = cur.src.slice(start, cur.i);
+      mathSkipSpace(cur);
+      return name;
+    }
+    if (ch) {
+      cur.i += 1;
+      return ch;
+    }
+    return "";
+  }
+
+  function mathClassForGlyph(glyph) {
+    if (MATH_REL.indexOf(glyph) >= 0) return "math-rel";
+    if (MATH_BIN.indexOf(glyph) >= 0) return "math-bin";
+    if ("()[]|.".indexOf(glyph) >= 0) return "math-delim";
+    return "math-sym";
+  }
+
+  function mathReadAtom(cur) {
+    mathSkipSpace(cur);
+    var ch = mathPeek(cur);
+    if (!ch || ch === "}") return null;
+    if (ch === "{") {
+      cur.i += 1;
+      var group = mathEl("span", "math-group");
+      mathParseList(cur, "}", group);
+      return group;
+    }
+    if (ch === "\\") return mathReadCommand(cur);
+    if (ch === "^" || ch === "_") return null;
+    if (/\d/.test(ch) || (ch === "." && /\d/.test(cur.src.charAt(cur.i + 1) || ""))) {
+      var nStart = cur.i;
+      cur.i += 1;
+      while (/\d|\./.test(mathPeek(cur))) cur.i += 1;
+      return mathEl("span", "math-numeral", cur.src.slice(nStart, cur.i));
+    }
+    if (/[A-Za-z]/.test(ch)) {
+      cur.i += 1;
+      return mathEl("span", "math-letter", ch);
+    }
+    cur.i += 1;
+    var glyph = ch === "-" ? "−" : ch;
+    return mathEl("span", mathClassForGlyph(glyph), glyph);
+  }
+
+  function mathReadCommand(cur) {
+    var name = mathReadCommandName(cur);
+    if (name === "frac" || name === "dfrac" || name === "tfrac") {
+      var frac = mathEl("span", "math-frac");
+      var num = mathEl("span", "math-num");
+      var den = mathEl("span", "math-den");
+      var numAtom = mathReadAtom(cur);
+      var denAtom = mathReadAtom(cur);
+      if (numAtom) num.appendChild(numAtom);
+      if (denAtom) den.appendChild(denAtom);
+      frac.appendChild(num);
+      frac.appendChild(den);
+      return frac;
+    }
+    if (name === "sqrt") {
+      var sqrt = mathEl("span", "math-sqrt");
+      sqrt.appendChild(mathEl("span", "math-radic", "√"));
+      var rad = mathEl("span", "math-radicand");
+      var body = mathReadAtom(cur);
+      if (body) rad.appendChild(body);
+      sqrt.appendChild(rad);
+      return sqrt;
+    }
+    if (name === "text" || name === "mathrm" || name === "mathbf" || name === "operatorname") {
+      var wrapped = mathReadAtom(cur);
+      return mathEl("span", "math-text", wrapped ? wrapped.textContent : "");
+    }
+    if (name === "left" || name === "right") {
+      var delim = mathPeek(cur);
+      if (!delim) return mathEl("span", "math-delim");
+      if (delim === "\\") {
+        var inner = mathReadCommandName(cur);
+        delim = inner || delim;
+      } else {
+        cur.i += 1;
+      }
+      if (delim === ".") return mathEl("span", "math-space");
+      return mathEl("span", "math-delim", delim);
+    }
+    if (name === "quad" || name === "qquad" || name === "," || name === ";" || name === "!" || name === " ") {
+      return mathEl("span", "math-space", "\u00a0");
+    }
+    if (Object.prototype.hasOwnProperty.call(MATH_GREEK, name)) {
+      return mathEl("span", "math-sym", MATH_GREEK[name]);
+    }
+    if (Object.prototype.hasOwnProperty.call(MATH_SYMBOLS, name)) {
+      var symbol = MATH_SYMBOLS[name];
+      return mathEl("span", mathClassForGlyph(symbol), symbol);
+    }
+    if (Object.prototype.hasOwnProperty.call(MATH_FUNCTIONS, name)) {
+      return mathEl("span", "math-fn", name);
+    }
+    if ("{}$%_&#".indexOf(name) >= 0) return mathEl("span", "math-sym", name);
+    if (name === "\\") return document.createElement("br");
+    if (/^[A-Za-z]+$/.test(name)) return mathEl("span", "math-fn", name);
+    return mathEl("span", "math-sym", name);
+  }
+
+  function mathAttachScript(base, kind, script) {
+    var wrap = mathEl("span", "math-scripted");
+    if (base) wrap.appendChild(base);
+    var tag = kind === "sup" ? "sup" : "sub";
+    var node = mathEl(tag, kind === "sup" ? "math-sup" : "math-sub");
+    if (script) node.appendChild(script);
+    wrap.appendChild(node);
+    return wrap;
+  }
+
+  function mathParseList(cur, stop, parent) {
+    while (cur.i < cur.src.length) {
+      if (stop && mathPeek(cur) === stop) {
+        cur.i += 1;
+        break;
+      }
+      var atom = mathReadAtom(cur);
+      if (!atom) {
+        if (stop && mathPeek(cur) === stop) cur.i += 1;
+        break;
+      }
+      while (mathPeek(cur) === "^" || mathPeek(cur) === "_") {
+        var kind = mathPeek(cur) === "^" ? "sup" : "sub";
+        cur.i += 1;
+        atom = mathAttachScript(atom, kind, mathReadAtom(cur));
+      }
+      parent.appendChild(atom);
+    }
+    return parent;
+  }
+
+  function appendMath(parent, tex, display) {
+    var wrap = mathEl(display ? "div" : "span", display ? "math-display" : "math-inline");
+    wrap.setAttribute("role", "math");
+    mathParseList(mathCursor(tex), null, wrap);
+    parent.appendChild(wrap);
+    return wrap;
+  }
+
+  function nextMath(src, start) {
+    var j = start;
+    var n = src.length;
+    while (j < n) {
+      if (src.indexOf("$$", j) === j) return { index: j, opener: "$$" };
+      if (src.indexOf("\\[", j) === j) return { index: j, opener: "\\[" };
+      if (src.indexOf("\\(", j) === j) return { index: j, opener: "\\(" };
+      if (src.charAt(j) === "$" && (j === 0 || src.charAt(j - 1) !== "\\")) {
+        return { index: j, opener: "$" };
+      }
+      j += 1;
+    }
+    return null;
+  }
+
+  function nextUnescapedDollar(src, start) {
+    var j = start;
+    while (j < src.length) {
+      if (src.indexOf("$$", j) === j) {
+        j += 2;
+        continue;
+      }
+      if (src.charAt(j) === "$" && src.charAt(j - 1) !== "\\") return j;
+      j += 1;
+    }
+    return -1;
+  }
+
+  function splitMathSegments(text) {
+    var src = String(text == null ? "" : text);
+    var out = [];
+    var i = 0;
+    while (i < src.length) {
+      var found = nextMath(src, i);
+      if (!found) {
+        out.push({ kind: "text", text: src.slice(i) });
+        break;
+      }
+      if (found.index > i) out.push({ kind: "text", text: src.slice(i, found.index) });
+      if (found.opener === "$$") {
+        var endD = src.indexOf("$$", found.index + 2);
+        if (endD < 0) {
+          out.push({ kind: "display", text: src.slice(found.index + 2) });
+          break;
+        }
+        out.push({ kind: "display", text: src.slice(found.index + 2, endD) });
+        i = endD + 2;
+      } else if (found.opener === "\\[") {
+        var endB = src.indexOf("\\]", found.index + 2);
+        if (endB < 0) {
+          out.push({ kind: "display", text: src.slice(found.index + 2) });
+          break;
+        }
+        out.push({ kind: "display", text: src.slice(found.index + 2, endB) });
+        i = endB + 2;
+      } else if (found.opener === "\\(") {
+        var endP = src.indexOf("\\)", found.index + 2);
+        if (endP < 0) {
+          out.push({ kind: "inline", text: src.slice(found.index + 2) });
+          break;
+        }
+        out.push({ kind: "inline", text: src.slice(found.index + 2, endP) });
+        i = endP + 2;
+      } else {
+        var endS = nextUnescapedDollar(src, found.index + 1);
+        if (endS < 0) {
+          out.push({ kind: "inline", text: src.slice(found.index + 1) });
+          break;
+        }
+        out.push({ kind: "inline", text: src.slice(found.index + 1, endS) });
+        i = endS + 1;
+      }
+    }
+    return out;
+  }
+
+  function texToPlain(text) {
+    var raw = String(text == null ? "" : text);
+    raw = raw.replace(/\$\$/g, "").replace(/\\\[/g, "").replace(/\\\]/g, "");
+    raw = raw.replace(/\\\(/g, "").replace(/\\\)/g, "");
+    raw = raw.replace(/\^\\circ/g, "°").replace(/\\circ/g, "°");
+    var fracRe = /\\(?:dfrac|tfrac|frac)\s*\{([^{}]*)\}\s*\{([^{}]*)\}/;
+    while (fracRe.test(raw)) raw = raw.replace(fracRe, "$1/$2");
+    Object.keys(MATH_GREEK).sort(function (a, b) { return b.length - a.length; }).forEach(function (name) {
+      raw = raw.split("\\" + name).join(MATH_GREEK[name]);
+    });
+    Object.keys(MATH_SYMBOLS).sort(function (a, b) { return b.length - a.length; }).forEach(function (name) {
+      raw = raw.split("\\" + name).join(MATH_SYMBOLS[name]);
+    });
+    Object.keys(MATH_FUNCTIONS).sort(function (a, b) { return b.length - a.length; }).forEach(function (name) {
+      raw = raw.replace(new RegExp("\\\\" + name + "(?![A-Za-z])", "g"), name);
+    });
+    raw = raw.replace(/\$/g, "").replace(/\\([A-Za-z]+)/g, "$1").replace(/[{}]/g, "");
+    return raw.replace(/\s+/g, " ").trim();
+  }
+
+  function isDisplayMathOpen(line) {
+    var trimmed = String(line || "").trim();
+    return trimmed.indexOf("$$") === 0 || trimmed.indexOf("\\[") === 0;
+  }
+
+  function consumeDisplayMath(lines, index) {
+    var first = String(lines[index] || "").trim();
+    var open = first.indexOf("$$") === 0 ? "$$" : "\\[";
+    var close = open === "$$" ? "$$" : "\\]";
+    var buf = [lines[index]];
+    var j = index;
+    var blob = buf.join("\n");
+    if (blob.indexOf(close, open.length) === -1) {
+      j += 1;
+      while (j < lines.length) {
+        buf.push(lines[j]);
+        blob = buf.join("\n");
+        if (blob.indexOf(close, open.length) !== -1) break;
+        j += 1;
+      }
+    }
+    var start = blob.indexOf(open);
+    var end = blob.indexOf(close, start + open.length);
+    var tex = end >= 0 ? blob.slice(start + open.length, end) : blob.slice(start + open.length);
+    return { tex: tex, next: j + 1 };
+  }
+
+  function appendInlineMarkup(parent, text) {
     var remaining = String(text == null ? "" : text);
     while (remaining) {
       var bold = BOLD_RE.exec(remaining);
@@ -414,6 +733,14 @@
         }
       }
       remaining = remaining.slice(next.match.index + next.match[0].length);
+    }
+  }
+
+  function appendInline(parent, text) {
+    var segs = splitMathSegments(text);
+    for (var s = 0; s < segs.length; s += 1) {
+      if (segs[s].kind === "text") appendInlineMarkup(parent, segs[s].text);
+      else appendMath(parent, segs[s].text, segs[s].kind === "display");
     }
   }
 
@@ -496,7 +823,7 @@
 
   function svgText(attrs, value) {
     var node = svgEl("text", attrs);
-    node.textContent = value == null ? "" : String(value);
+    node.textContent = texToPlain(value == null ? "" : String(value));
     return node;
   }
 
@@ -1220,6 +1547,7 @@
     var line = lines[index];
     if (!line || !line.trim()) return true;
     if (HEADING_RE.test(line) || UL_RE.test(line) || OL_RE.test(line) || isFenceLine(line)) return true;
+    if (isDisplayMathOpen(line)) return true;
     if (looksLikeTableRow(line) && index + 1 < lines.length && isTableSeparator(lines[index + 1])) return true;
     return false;
   }
@@ -1276,6 +1604,13 @@
           i += 1;
         }
         parent.appendChild(ol);
+        continue;
+      }
+
+      if (isDisplayMathOpen(line)) {
+        var display = consumeDisplayMath(lines, i);
+        appendMath(parent, display.tex, true);
+        i = display.next;
         continue;
       }
 
@@ -1338,4 +1673,7 @@
   global.renderAssistantReply = renderAssistantReply;
   global.drawChartSvg = drawChartSvg;
   global.drawFigureSvg = drawFigureSvg;
+  global.splitMathSegments = splitMathSegments;
+  global.appendMath = appendMath;
+  global.texToPlain = texToPlain;
 })(typeof window !== "undefined" ? window : this);

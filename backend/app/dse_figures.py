@@ -11,7 +11,7 @@ import math
 import re
 from typing import Any
 
-from .chat_format import parse_figure_spec
+from .chat_format import parse_figure_spec, tex_to_plain
 
 FIGURE_FENCE_MARK = "```figure"
 
@@ -586,10 +586,7 @@ _DIAMETER_RE = re.compile(
 
 
 def _plain_math_text(text: str | None) -> str:
-    raw = text or ""
-    raw = raw.replace("^\\circ", "°").replace("\\circ", "°").replace("^circ", "°")
-    raw = raw.replace("$", "")
-    return raw
+    return tex_to_plain(text or "")
 
 
 def format_degree(value: Any) -> str:

@@ -747,6 +747,8 @@ def test_dse_explain_uses_selected_year_topics(tmp_path, monkeypatch):
     assert "labelled interactive diagram" in user
     assert "```figure" in system
     assert "You MUST include at least one labelled diagram" in system
+    assert r"\frac{a}{b}" in system
+    assert r"\theta" in system
     assert "100% of named givens" in system
     assert "teaching scenario" in system
     payload = empty.json()
