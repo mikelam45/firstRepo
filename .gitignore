@@ -22,6 +22,10 @@ data/dse-ocr/
 data/dse-sessions.json
 data/image-jobs.json
 data/image-projects.json
+data/videos/
+data/video-refs/
+data/video-projects.json
+data/video-quotes.json
 data/rag-files.json
 data/openrouter.env
 *.db

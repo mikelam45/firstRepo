@@ -15,8 +15,8 @@
     <h1>Functions</h1>
     <p class="lede">
       Ask a question, translate, draft Cantonese script, or practise HKDSE Math with the saved text model.
-      Image and storyboard uses the OpenRouter Images API; those jobs are not sent as chat completions.
-      Video stays off this form.
+      Image and storyboard uses the OpenRouter Images API. Video generation uses the OpenRouter Videos API.
+      Those jobs are not sent as chat completions.
     </p>
 
     <div class="tabs" role="tablist" aria-label="Functions">
@@ -871,12 +871,211 @@
       <div class="image-gallery" id="image-gallery" hidden></div>
     </section>
 
-    <section class="unavailable" id="media-note" hidden aria-labelledby="media-title">
-      <h2 id="media-title">Not a chat completion</h2>
-      <p class="note">
-        Video generation is not sent through OpenRouter chat completions.
-        Choose a model for it on <a href="/setup">LLM setup</a>. This page does not run video jobs yet.
+    <section class="chat image-studio video-studio" id="video-panel" hidden aria-labelledby="video-title">
+      <h2 id="video-title">Video generation</h2>
+      <p class="meta">
+        Uses the saved video model on the OpenRouter Videos API, not chat completions.
+        A project holds up to 4 short movies (30–60 seconds each). Estimate cost and confirm before generate.
+        Merge stitches those clips locally with ffmpeg (no OpenRouter charge).
       </p>
+
+      <fieldset class="projects" id="video-projects" aria-labelledby="video-projects-title">
+        <legend id="video-projects-title">Video projects</legend>
+        <p class="meta">
+          Add a project, then upload character stills and generate up to 4 clips. Save keeps the camera and dialogue settings.
+        </p>
+        <div class="image-row">
+          <label class="field">Past projects
+            <select id="video-project-select" aria-label="Past video projects" disabled>
+              <option value="">No saved projects yet</option>
+            </select>
+          </label>
+          <label class="field">Project name
+            <input id="video-project-name" type="text" maxlength="120" autocomplete="off" placeholder="e.g. Harbour night short">
+          </label>
+        </div>
+        <div class="savebar">
+          <button type="button" id="video-project-add">Add new project</button>
+          <button type="button" class="secondary" id="video-project-save">Save</button>
+          <button type="button" class="secondary" id="video-project-new">Blank studio</button>
+          <button type="button" class="secondary" id="video-project-delete">Delete</button>
+          <span id="video-project-state" role="status"></span>
+        </div>
+      </fieldset>
+
+      <fieldset class="person" id="video-characters" aria-labelledby="video-characters-title">
+        <legend id="video-characters-title">Major actress and actor</legend>
+        <p class="meta">
+          Up to 3 characters. Each character can hold 5 jpeg, png, or webp stills (10 MB each).
+          Those photos are sent as OpenRouter input_references so the model keeps likeness.
+        </p>
+        <div id="video-character-cards"></div>
+        <input id="video-character-file" type="file" accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp" hidden>
+      </fieldset>
+
+      <fieldset class="guided" aria-labelledby="video-scene-title">
+        <legend id="video-scene-title">Scene</legend>
+        <label class="field">Title
+          <input id="video-title-input" type="text" autocomplete="off" placeholder="Short movie title">
+        </label>
+        <label class="field">Scene
+          <textarea id="video-scene" rows="3" placeholder="Where this happens, who is on screen, what they do"></textarea>
+        </label>
+        <label class="field">Prompt
+          <textarea id="video-prompt" rows="4" placeholder="Action, dialogue, mood. Camera terms below are added automatically."></textarea>
+        </label>
+        <label class="option cantonese-option">
+          <input type="checkbox" id="video-cantonese">
+          <span class="option-title">Speaks with a natural Hong Kong Cantonese accent</span>
+          <span class="detail">Added to the prompt. Models that support native audio (Hailuo 3, Kling v3.0) also set generate_audio. Kling then uses the with-audio list price.</span>
+        </label>
+        <div class="image-row">
+          <label class="field">Duration
+            <select id="video-duration">
+              <option value="30" selected>30 seconds</option>
+              <option value="35">35 seconds</option>
+              <option value="40">40 seconds</option>
+              <option value="45">45 seconds</option>
+              <option value="50">50 seconds</option>
+              <option value="55">55 seconds</option>
+              <option value="60">60 seconds (1 minute)</option>
+            </select>
+          </label>
+          <label class="field">Aspect ratio
+            <select id="video-aspect">
+              <option value="16:9" selected>Widescreen 16:9</option>
+              <option value="9:16">Vertical 9:16</option>
+              <option value="1:1">Square 1:1</option>
+            </select>
+          </label>
+        </div>
+        <p class="meta" id="video-duration-hint">
+          Provider clips are shorter than a minute, so a 30–60s movie is split into allowed lengths
+          (Hailuo 2.3: 6 or 10s; Hailuo 3: 5–15s; Kling v3.0: 3–15s) and stitched. A project stores up to 4 of these movies.
+        </p>
+      </fieldset>
+
+      <fieldset class="camera" aria-labelledby="video-camera-title">
+        <legend id="video-camera-title">基礎相機運動 (Basic Camera Movements)</legend>
+        <p class="meta">These lines are added to the prompt before generate. Combine Dolly and Zoom in opposite directions for a Hitchcock dolly zoom.</p>
+        <div class="camera-grid">
+          <div>
+            <p class="option-title">橫向平移 (Pan)</p>
+            <p class="detail">鏡頭水平轉動，常用於展現全景或追隨平移的主體。</p>
+            <div class="variance-levels" role="radiogroup" aria-label="Pan">
+              <label class="option"><input type="radio" name="video-pan" value="" checked> None</label>
+              <label class="option"><input type="radio" name="video-pan" value="left"> Left 向左</label>
+              <label class="option"><input type="radio" name="video-pan" value="right"> Right 向右</label>
+            </div>
+          </div>
+          <div>
+            <p class="option-title">縱向傾斜 (Tilt)</p>
+            <p class="detail">改變鏡頭的垂直角度，用以營造壓迫感或鳥瞰視角。</p>
+            <div class="variance-levels" role="radiogroup" aria-label="Tilt">
+              <label class="option"><input type="radio" name="video-tilt" value="" checked> None</label>
+              <label class="option"><input type="radio" name="video-tilt" value="up"> Up 向上仰視</label>
+              <label class="option"><input type="radio" name="video-tilt" value="down"> Down 向下俯視</label>
+            </div>
+          </div>
+          <div>
+            <p class="option-title">物理推進 (Dolly / Move)</p>
+            <p class="detail">模擬攝影機在軌道上的物理位移，背景透視會隨之改變。</p>
+            <div class="variance-levels" role="radiogroup" aria-label="Dolly">
+              <label class="option"><input type="radio" name="video-dolly" value="" checked> None</label>
+              <label class="option"><input type="radio" name="video-dolly" value="forward"> Forward 向前推進</label>
+              <label class="option"><input type="radio" name="video-dolly" value="backward"> Backward 向後拉遠</label>
+            </div>
+          </div>
+          <div>
+            <p class="option-title">光學變焦 (Zoom)</p>
+            <p class="detail">模擬鏡頭變更焦距。與 Dolly 反向組合可觸發推拉焦距 / 希區考克變焦。</p>
+            <div class="variance-levels" role="radiogroup" aria-label="Zoom">
+              <label class="option"><input type="radio" name="video-zoom" value="" checked> None</label>
+              <label class="option"><input type="radio" name="video-zoom" value="in"> + Zoom In 放大</label>
+              <label class="option"><input type="radio" name="video-zoom" value="out"> − Zoom Out 縮小</label>
+            </div>
+          </div>
+          <div>
+            <p class="option-title">鏡頭滾轉 (Roll)</p>
+            <p class="detail">讓畫面產生旋轉效果，常用於表現眩暈、混亂或夢境感。</p>
+            <div class="variance-levels" role="radiogroup" aria-label="Roll">
+              <label class="option"><input type="radio" name="video-roll" value="" checked> None</label>
+              <label class="option"><input type="radio" name="video-roll" value="cw"> CW 順時針旋轉</label>
+              <label class="option"><input type="radio" name="video-roll" value="ccw"> CCW 逆時針旋轉</label>
+            </div>
+          </div>
+        </div>
+      </fieldset>
+
+      <fieldset class="camera" aria-labelledby="video-advanced-title">
+        <legend id="video-advanced-title">進階動態與權重微調 (Advanced Motion &amp; Weights)</legend>
+        <label class="field">動態強度 (Motion Intensity)
+          <select id="video-intensity">
+            <option value="0">0 — smooth, locked-off</option>
+            <option value="1" selected>1 — gentle, stable</option>
+            <option value="2">2 — noticeable cinematic energy</option>
+            <option value="3">3 — high-tension, explosive</option>
+          </select>
+        </label>
+        <p class="meta">0 to 3. Low values keep the frame smooth; 3 is a large, explosive move.</p>
+        <label class="option">
+          <input type="checkbox" id="video-orientation-lock" checked>
+          <span class="option-title">主體朝向鎖定 (Character Orientation Lock)</span>
+          <span class="detail">剝離主體動作與相機運動，避免 Dolly / Zoom 時人物扭曲。</span>
+        </label>
+        <label class="option">
+          <input type="checkbox" id="video-interpolation">
+          <span class="option-title">首尾幀路徑補間 (First &amp; End Frame Interpolation)</span>
+          <span class="detail">圖生影：上傳起點與終點兩張不同焦距或角度的圖片，讓模型計算光學運鏡過渡。 Hailuo 2.3 only sends the first frame; Hailuo 3 and Kling take both.</span>
+        </label>
+        <div class="image-row" id="video-frame-row" hidden>
+          <div>
+            <p class="option-title">First frame</p>
+            <div class="ref-slots video-frame-slots" id="video-frame-first"></div>
+          </div>
+          <div>
+            <p class="option-title">End frame</p>
+            <div class="ref-slots video-frame-slots" id="video-frame-last"></div>
+          </div>
+        </div>
+        <input id="video-frame-file" type="file" accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp" hidden>
+      </fieldset>
+
+      <fieldset class="camera" aria-labelledby="video-modifiers-title">
+        <legend id="video-modifiers-title">提示詞輔助運鏡 (Cinematic Prompt Modifiers)</legend>
+        <p class="meta">Added to the Kling-style camera prompt. Tick any that apply.</p>
+        <div class="modifier-grid">
+          <label class="option"><input type="checkbox" name="video-modifier" value="handheld"> 手持微晃感 — Handheld camera shake / Unstable documentary style</label>
+          <label class="option"><input type="checkbox" name="video-modifier" value="steadicam"> 穩定追隨鏡頭 — Steadicam tracking shot / Smooth follow shot</label>
+          <label class="option"><input type="checkbox" name="video-modifier" value="whip_pan"> 高速甩鏡 — Fast whip pan / Motion blur transition</label>
+          <label class="option"><input type="checkbox" name="video-modifier" value="orbital"> 環繞運鏡 — 360-degree orbital shot / Arc shot around the subject</label>
+          <label class="option"><input type="checkbox" name="video-modifier" value="jib"> 搖臂上升感 — Jib crane shot lifting up / Drone rising shot</label>
+        </div>
+      </fieldset>
+
+      <fieldset class="output" aria-labelledby="video-clips-title">
+        <legend id="video-clips-title">Clips in this project</legend>
+        <p class="meta" id="video-clip-count">0/4 clips. Generate up to 4 short movies, then merge them.</p>
+        <div class="video-gallery" id="video-gallery" hidden></div>
+        <div class="savebar">
+          <button type="button" class="secondary" id="video-merge" disabled>Merge clips</button>
+          <span id="video-merge-state" role="status"></span>
+        </div>
+        <p class="meta" id="video-merged" hidden></p>
+      </fieldset>
+
+      <fieldset class="quote" id="video-quote-box" aria-labelledby="video-quote-title">
+        <legend id="video-quote-title">Estimated cost</legend>
+        <p class="meta">
+          Catalog list prices, not a live OpenRouter invoice. Confirm the estimate before a clip is generated.
+        </p>
+        <div id="video-quote-lines" hidden></div>
+        <div class="savebar">
+          <button type="button" id="video-quote">Estimate cost</button>
+          <button type="button" id="video-generate" disabled>Generate (confirm estimate)</button>
+          <span id="video-state" role="status"></span>
+        </div>
+      </fieldset>
     </section>
   </main>
   <script src="/static/chat_format.js?v=dse-math-formulas"></script>
@@ -912,7 +1111,14 @@
     const RAG_HINT = "Accepted: .pdf, .docx, .doc, .txt, .md, .xlsx, .xls, .csv, .json. Maximum 10 MB. .doc and .xls are stored, but text extraction needs a converted copy. Chat for RAG uses the extracted text as context.";
     const TRANSLATION_HINT = "Accepted: .pdf, .docx, .doc, .pptx, .ppt, .xlsx, .xls, .txt, .md. Maximum 10 MB. .ppt, .doc, and .xls are stored, but text extraction needs a converted copy. Chat translates these documents into the target language.";
     const DSE_HINT = "Accepted: .pdf, .docx, .doc, .txt, .md, .xlsx, .xls, .csv, .json. Maximum 10 MB. Isolated from RAG and translation. Chat for DSE Math uses these syllabus and notes extracts.";
-    const state = { catalog: null, saved: null, functionId: "rag_qa", files: [], refs: [], projects: [], currentProjectId: "" };
+    const state = {
+      catalog: null, saved: null, functionId: "rag_qa", files: [], refs: [],
+      projects: [], currentProjectId: "",
+      videoProjects: [], currentVideoProjectId: "", videoProject: null, videoQuote: null,
+    };
+    const VIDEO_MAX_CHARACTERS = 3;
+    const VIDEO_MAX_PHOTOS = 5;
+    const VIDEO_MAX_CLIPS = 4;
     const MAX_REFS = 5;
 
     function loadStoredGrounding() {
@@ -1661,7 +1867,9 @@
         line.appendChild(missing);
       } else {
         const text = document.createElement("span");
-        const multiplier = functionId === "image_gen" ? selectedPriceMultiplier() : 1;
+        const multiplier = functionId === "image_gen"
+          ? selectedPriceMultiplier()
+          : functionId === "video_gen" ? selectedVideoDuration() : 1;
         text.textContent = (fn ? fn.label : functionId) + " model: " + option.id
           + " · " + priceSummary(option.prices, multiplier)
           + " (recorded " + state.catalog.prices_recorded_on + ", not a live quote). ";
@@ -1684,6 +1892,7 @@
       }
       const text = isTextFunction(functionId);
       const isImage = functionId === "image_gen";
+      const isVideo = functionId === "video_gen";
       const showUpload = functionId === "rag_qa" || functionId === "translation"
         || (functionId === "dse_math" && selectedDseOption() !== "solve");
       const showGrounding = functionId === "rag_qa"
@@ -1694,7 +1903,11 @@
       document.getElementById("dse-controls").hidden = functionId !== "dse_math";
       document.getElementById("chat-panel").hidden = !text;
       document.getElementById("image-panel").hidden = !isImage;
-      document.getElementById("media-note").hidden = text || isImage;
+      document.getElementById("video-panel").hidden = !isVideo;
+      if (isVideo) {
+        loadVideoProjects().catch(function () {});
+        renderVideoStudio();
+      }
       document.getElementById("chat-send").textContent = functionId === "translation" ? "Translate" : "Send";
       if (functionId !== "dse_math") {
         document.getElementById("chat-send").hidden = false;
@@ -3078,6 +3291,13 @@
       return sel.count || 1;
     }
 
+    function selectedVideoDuration() {
+      const raw = Number((document.getElementById("video-duration") || {}).value || 30);
+      if (!raw || raw < 30) return 30;
+      if (raw > 60) return 60;
+      return raw;
+    }
+
     function updateBeatsVisibility() {
       const sel = selectedImageMode();
       document.getElementById("image-beats-field").hidden = sel.mode !== "storyboard";
@@ -3957,6 +4177,711 @@
       } finally {
         button.disabled = false;
       }
+    });
+
+    function videoStatus(kind, text) {
+      const node = document.getElementById("video-project-state");
+      if (!node) return;
+      node.className = kind || "";
+      node.textContent = text || "";
+    }
+
+    function videoGenStatus(kind, text) {
+      const node = document.getElementById("video-state");
+      if (!node) return;
+      node.className = kind || "";
+      node.textContent = text || "";
+    }
+
+    function currentVideoModelId() {
+      return (state.saved && state.saved.selection && state.saved.selection.video_gen) || "";
+    }
+
+    function radioValue(name) {
+      const picked = document.querySelector('input[name="' + name + '"]:checked');
+      return picked ? picked.value : "";
+    }
+
+    function setRadioValue(name, value) {
+      const wanted = String(value || "");
+      const nodes = document.querySelectorAll('input[name="' + name + '"]');
+      let matched = false;
+      nodes.forEach(function (node) {
+        if (node.value === wanted) {
+          node.checked = true;
+          matched = true;
+        }
+      });
+      if (!matched && nodes[0]) nodes[0].checked = true;
+    }
+
+    function selectedModifiers() {
+      return Array.from(document.querySelectorAll('input[name="video-modifier"]:checked')).map(function (node) {
+        return node.value;
+      });
+    }
+
+    function collectVideoDetail() {
+      return {
+        title: fieldValue("video-title-input"),
+        scene: (document.getElementById("video-scene") || {}).value || "",
+        prompt: (document.getElementById("video-prompt") || {}).value || "",
+        cantonese_accent: !!(document.getElementById("video-cantonese") || {}).checked,
+        duration_seconds: selectedVideoDuration(),
+        aspect_ratio: fieldValue("video-aspect") || "16:9",
+        pan: radioValue("video-pan"),
+        tilt: radioValue("video-tilt"),
+        dolly: radioValue("video-dolly"),
+        zoom: radioValue("video-zoom"),
+        roll: radioValue("video-roll"),
+        motion_intensity: Number(fieldValue("video-intensity") || 1),
+        character_orientation_lock: !!(document.getElementById("video-orientation-lock") || {}).checked,
+        interpolation: !!(document.getElementById("video-interpolation") || {}).checked,
+        cinematic_modifiers: selectedModifiers(),
+      };
+    }
+
+    function collectVideoBody() {
+      const detail = collectVideoDetail();
+      detail.project_id = state.currentVideoProjectId || "";
+      if (state.videoQuote && state.videoQuote.quote_id) detail.quote_id = state.videoQuote.quote_id;
+      return detail;
+    }
+
+    function invalidateVideoQuote() {
+      state.videoQuote = null;
+      const lines = document.getElementById("video-quote-lines");
+      if (lines) {
+        lines.hidden = true;
+        lines.replaceChildren();
+      }
+      const generate = document.getElementById("video-generate");
+      if (generate) generate.disabled = true;
+      if (state.functionId === "video_gen") renderChatModel();
+    }
+
+    function applyVideoDetail(detail) {
+      detail = detail || {};
+      setFieldValue("video-title-input", detail.title || "");
+      const scene = document.getElementById("video-scene");
+      if (scene) scene.value = detail.scene || "";
+      const prompt = document.getElementById("video-prompt");
+      if (prompt) prompt.value = detail.prompt || "";
+      const canto = document.getElementById("video-cantonese");
+      if (canto) canto.checked = !!detail.cantonese_accent;
+      const duration = document.getElementById("video-duration");
+      if (duration) duration.value = String(detail.duration_seconds || 30);
+      const aspect = document.getElementById("video-aspect");
+      if (aspect) aspect.value = detail.aspect_ratio || "16:9";
+      setRadioValue("video-pan", detail.pan);
+      setRadioValue("video-tilt", detail.tilt);
+      setRadioValue("video-dolly", detail.dolly);
+      setRadioValue("video-zoom", detail.zoom);
+      setRadioValue("video-roll", detail.roll);
+      const intensity = document.getElementById("video-intensity");
+      if (intensity) intensity.value = String(detail.motion_intensity == null ? 1 : detail.motion_intensity);
+      const lock = document.getElementById("video-orientation-lock");
+      if (lock) lock.checked = detail.character_orientation_lock !== false;
+      const interpolation = document.getElementById("video-interpolation");
+      if (interpolation) interpolation.checked = !!detail.interpolation;
+      const wanted = {};
+      (detail.cinematic_modifiers || []).forEach(function (item) { wanted[item] = true; });
+      document.querySelectorAll('input[name="video-modifier"]').forEach(function (node) {
+        node.checked = !!wanted[node.value];
+      });
+      syncVideoInterpolation();
+      invalidateVideoQuote();
+    }
+
+    function blankVideoStudio() {
+      state.currentVideoProjectId = "";
+      state.videoProject = null;
+      setFieldValue("video-project-name", "");
+      applyVideoDetail({});
+      renderVideoStudio();
+      const select = document.getElementById("video-project-select");
+      if (select) select.value = "";
+      videoStatus("", "Blank studio.");
+    }
+
+    function characterCard(character, index) {
+      const card = document.createElement("fieldset");
+      card.className = "person video-character";
+      card.dataset.slot = String(index);
+      const legend = document.createElement("legend");
+      legend.textContent = "Character " + (index + 1);
+      card.appendChild(legend);
+      const row = document.createElement("div");
+      row.className = "image-row";
+      const roleLabel = document.createElement("label");
+      roleLabel.className = "field";
+      roleLabel.appendChild(document.createTextNode("Role"));
+      const role = document.createElement("select");
+      role.className = "video-character-role";
+      [["actress", "Major actress"], ["actor", "Major actor"], ["supporting", "Supporting"]].forEach(function (pair) {
+        const option = document.createElement("option");
+        option.value = pair[0];
+        option.textContent = pair[1];
+        if ((character && character.role) === pair[0]) option.selected = true;
+        role.appendChild(option);
+      });
+      role.addEventListener("change", function () { saveVideoCharacterMeta(index); });
+      roleLabel.appendChild(role);
+      const nameLabel = document.createElement("label");
+      nameLabel.className = "field";
+      nameLabel.appendChild(document.createTextNode("Name"));
+      const name = document.createElement("input");
+      name.type = "text";
+      name.className = "video-character-name";
+      name.maxLength = 80;
+      name.autocomplete = "off";
+      name.placeholder = index === 0 ? "Lead actress" : index === 1 ? "Lead actor" : "Third character";
+      name.value = (character && character.name) || "";
+      name.addEventListener("change", function () { saveVideoCharacterMeta(index); });
+      nameLabel.appendChild(name);
+      row.appendChild(roleLabel);
+      row.appendChild(nameLabel);
+      card.appendChild(row);
+      const count = document.createElement("p");
+      count.className = "ref-count";
+      const photos = (character && character.photos) || [];
+      count.textContent = photos.length + "/" + VIDEO_MAX_PHOTOS;
+      card.appendChild(count);
+      const slots = document.createElement("div");
+      slots.className = "ref-slots";
+      for (let i = 0; i < VIDEO_MAX_PHOTOS; i += 1) {
+        const slot = document.createElement("button");
+        slot.type = "button";
+        slot.className = "ref-slot";
+        const photo = photos[i];
+        if (photo) {
+          slot.classList.add("filled");
+          const img = document.createElement("img");
+          img.alt = photo.name || "Character still";
+          img.src = photo.href || "";
+          slot.appendChild(img);
+          const remove = document.createElement("span");
+          remove.className = "remove";
+          remove.textContent = "Remove";
+          slot.appendChild(remove);
+          slot.addEventListener("click", function () { removeVideoPhoto(index, photo.id); });
+        } else {
+          slot.textContent = "Add photo " + (i + 1);
+          slot.addEventListener("click", function () { pickVideoPhoto(index); });
+        }
+        slots.appendChild(slot);
+      }
+      card.appendChild(slots);
+      return card;
+    }
+
+    function renderVideoCharacters() {
+      const host = document.getElementById("video-character-cards");
+      if (!host) return;
+      host.replaceChildren();
+      const characters = (state.videoProject && state.videoProject.characters) || [];
+      for (let slot = 0; slot < VIDEO_MAX_CHARACTERS; slot += 1) {
+        host.appendChild(characterCard(characters[slot] || { slot: slot, role: slot === 0 ? "actress" : slot === 1 ? "actor" : "supporting", photos: [] }, slot));
+      }
+    }
+
+    function renderVideoFrames() {
+      const detail = (state.videoProject && state.videoProject.detail) || {};
+      const frames = detail.frames || {};
+      ["first", "last"].forEach(function (kind) {
+        const host = document.getElementById("video-frame-" + kind);
+        if (!host) return;
+        host.replaceChildren();
+        const slot = document.createElement("button");
+        slot.type = "button";
+        slot.className = "ref-slot";
+        const photo = frames[kind];
+        if (photo) {
+          slot.classList.add("filled");
+          const img = document.createElement("img");
+          img.alt = kind + " frame";
+          img.src = photo.href || "";
+          slot.appendChild(img);
+          const remove = document.createElement("span");
+          remove.className = "remove";
+          remove.textContent = "Remove";
+          slot.appendChild(remove);
+          slot.addEventListener("click", function () { removeVideoFrame(kind); });
+        } else {
+          slot.textContent = kind === "first" ? "Upload first frame" : "Upload end frame";
+          slot.addEventListener("click", function () { pickVideoFrame(kind); });
+        }
+        host.appendChild(slot);
+      });
+    }
+
+    function renderVideoClips() {
+      const gallery = document.getElementById("video-gallery");
+      const count = document.getElementById("video-clip-count");
+      const merge = document.getElementById("video-merge");
+      const mergedNote = document.getElementById("video-merged");
+      const clips = (state.videoProject && state.videoProject.clips) || [];
+      if (count) count.textContent = clips.length + "/" + VIDEO_MAX_CLIPS + " clips. Generate up to 4 short movies, then merge them.";
+      if (merge) merge.disabled = clips.length < 2;
+      if (!gallery) return;
+      gallery.replaceChildren();
+      if (!clips.length) {
+        gallery.hidden = true;
+      } else {
+        gallery.hidden = false;
+        clips.forEach(function (clip, index) {
+          const figure = document.createElement("figure");
+          const video = document.createElement("video");
+          video.controls = true;
+          video.src = clip.href || "";
+          video.preload = "metadata";
+          figure.appendChild(video);
+          const caption = document.createElement("figcaption");
+          caption.textContent = "Clip " + (index + 1) + " · " + (clip.duration_seconds || "") + "s"
+            + (clip.total_usd ? " · $" + clip.total_usd : "");
+          figure.appendChild(caption);
+          gallery.appendChild(figure);
+        });
+      }
+      if (mergedNote) {
+        const merged = state.videoProject && state.videoProject.merged;
+        if (merged && merged.href) {
+          mergedNote.hidden = false;
+          mergedNote.replaceChildren();
+          mergedNote.appendChild(document.createTextNode("Merged movie ready. "));
+          const link = document.createElement("a");
+          link.href = merged.href;
+          link.textContent = "Download merge";
+          mergedNote.appendChild(link);
+        } else {
+          mergedNote.hidden = true;
+          mergedNote.textContent = "";
+        }
+      }
+    }
+
+    function renderVideoProjectSelect() {
+      const select = document.getElementById("video-project-select");
+      if (!select) return;
+      const projects = state.videoProjects || [];
+      select.replaceChildren();
+      const empty = document.createElement("option");
+      empty.value = "";
+      empty.textContent = projects.length ? "Choose a project" : "No saved projects yet";
+      select.appendChild(empty);
+      projects.forEach(function (project) {
+        const option = document.createElement("option");
+        option.value = project.id;
+        option.textContent = project.name + " (" + (project.clip_count || 0) + "/" + VIDEO_MAX_CLIPS + ")";
+        select.appendChild(option);
+      });
+      select.disabled = !projects.length;
+      select.value = state.currentVideoProjectId || "";
+    }
+
+    function renderVideoStudio() {
+      renderVideoProjectSelect();
+      renderVideoCharacters();
+      renderVideoFrames();
+      renderVideoClips();
+      syncVideoInterpolation();
+    }
+
+    function syncVideoInterpolation() {
+      const on = !!(document.getElementById("video-interpolation") || {}).checked;
+      const row = document.getElementById("video-frame-row");
+      if (row) row.hidden = !on;
+    }
+
+    async function loadVideoProjects() {
+      const response = await fetch("/api/videos/projects");
+      if (!response.ok) throw new Error("Could not list video projects");
+      const payload = await response.json();
+      state.videoProjects = Array.isArray(payload) ? payload : [];
+      renderVideoProjectSelect();
+    }
+
+    async function loadVideoProject(projectId) {
+      if (!projectId) return;
+      videoStatus("", "Loading…");
+      try {
+        const response = await fetch("/api/videos/projects/" + encodeURIComponent(projectId));
+        const payload = await response.json().catch(function () { return {}; });
+        if (!response.ok) {
+          videoStatus("error", typeof payload.detail === "string" ? payload.detail : "Could not load project.");
+          return;
+        }
+        state.currentVideoProjectId = payload.id;
+        state.videoProject = payload;
+        setFieldValue("video-project-name", payload.name || "");
+        applyVideoDetail(payload.detail || {});
+        renderVideoStudio();
+        videoStatus("", "Loaded “" + (payload.name || "project") + "”.");
+      } catch (error) {
+        videoStatus("error", "Could not load project.");
+      }
+    }
+
+    async function writeVideoProject(method, url, name, busyLabel, doneLabel) {
+      videoStatus("", busyLabel);
+      try {
+        const response = await fetch(url, {
+          method: method,
+          headers: authHeaders(true),
+          body: JSON.stringify({
+            name: name,
+            detail: collectVideoDetail(),
+            model_id: currentVideoModelId(),
+          }),
+        });
+        const payload = await response.json().catch(function () { return {}; });
+        if (!response.ok) {
+          videoStatus("error", typeof payload.detail === "string" ? payload.detail : "Save failed (" + response.status + ").");
+          return null;
+        }
+        state.currentVideoProjectId = payload.id;
+        state.videoProject = payload;
+        setFieldValue("video-project-name", payload.name || name);
+        await loadVideoProjects();
+        renderVideoStudio();
+        videoStatus("", doneLabel.replace("{name}", payload.name || name));
+        return payload;
+      } catch (error) {
+        videoStatus("error", "Save failed.");
+        return null;
+      }
+    }
+
+    async function addVideoProject() {
+      const name = fieldValue("video-project-name");
+      if (!name) {
+        videoStatus("error", "Enter a project name to add a new project.");
+        return;
+      }
+      await writeVideoProject("POST", "/api/videos/projects", name, "Adding…", "Added “{name}”.");
+    }
+
+    async function saveVideoProject() {
+      const name = fieldValue("video-project-name");
+      if (!name) {
+        videoStatus("error", "Enter a project name.");
+        return;
+      }
+      if (!state.currentVideoProjectId) {
+        await addVideoProject();
+        return;
+      }
+      await writeVideoProject(
+        "PUT",
+        "/api/videos/projects/" + encodeURIComponent(state.currentVideoProjectId),
+        name,
+        "Saving…",
+        "Saved “{name}”."
+      );
+    }
+
+    async function saveVideoCharacterMeta(slot) {
+      if (!state.currentVideoProjectId) {
+        videoStatus("error", "Add a project before uploading character stills.");
+        return;
+      }
+      const card = document.querySelector('.video-character[data-slot="' + slot + '"]');
+      if (!card) return;
+      const role = (card.querySelector(".video-character-role") || {}).value || "";
+      const name = (card.querySelector(".video-character-name") || {}).value || "";
+      try {
+        const response = await fetch(
+          "/api/videos/projects/" + encodeURIComponent(state.currentVideoProjectId) + "/characters/" + slot,
+          { method: "PUT", headers: authHeaders(true), body: JSON.stringify({ role: role, name: name }) }
+        );
+        const payload = await response.json().catch(function () { return {}; });
+        if (!response.ok) {
+          videoStatus("error", typeof payload.detail === "string" ? payload.detail : "Could not update character.");
+          return;
+        }
+        state.videoProject = payload;
+        invalidateVideoQuote();
+      } catch (error) {
+        videoStatus("error", "Could not update character.");
+      }
+    }
+
+    let videoPhotoSlot = 0;
+    let videoFrameKind = "first";
+
+    function pickVideoPhoto(slot) {
+      if (!state.currentVideoProjectId) {
+        videoStatus("error", "Add a project before uploading character stills.");
+        return;
+      }
+      videoPhotoSlot = slot;
+      const input = document.getElementById("video-character-file");
+      if (input) input.click();
+    }
+
+    function pickVideoFrame(kind) {
+      if (!state.currentVideoProjectId) {
+        videoStatus("error", "Add a project before uploading frames.");
+        return;
+      }
+      videoFrameKind = kind;
+      const input = document.getElementById("video-frame-file");
+      if (input) input.click();
+    }
+
+    async function uploadVideoPhoto(slot, file) {
+      const data = new FormData();
+      data.append("file", file);
+      const headers = authHeaders(false);
+      const response = await fetch(
+        "/api/videos/projects/" + encodeURIComponent(state.currentVideoProjectId) + "/characters/" + slot + "/photos",
+        { method: "POST", headers: headers, body: data }
+      );
+      const payload = await response.json().catch(function () { return {}; });
+      if (!response.ok) {
+        videoStatus("error", typeof payload.detail === "string" ? payload.detail : "Upload failed.");
+        return;
+      }
+      state.videoProject = payload;
+      renderVideoStudio();
+      invalidateVideoQuote();
+      videoStatus("", "Uploaded still for character " + (slot + 1) + ".");
+    }
+
+    async function removeVideoPhoto(slot, photoId) {
+      if (!state.currentVideoProjectId) return;
+      const response = await fetch(
+        "/api/videos/projects/" + encodeURIComponent(state.currentVideoProjectId)
+          + "/characters/" + slot + "/photos/" + encodeURIComponent(photoId),
+        { method: "DELETE", headers: authHeaders(false) }
+      );
+      const payload = await response.json().catch(function () { return {}; });
+      if (!response.ok) {
+        videoStatus("error", typeof payload.detail === "string" ? payload.detail : "Could not remove still.");
+        return;
+      }
+      state.videoProject = payload;
+      renderVideoStudio();
+      invalidateVideoQuote();
+    }
+
+    async function uploadVideoFrame(kind, file) {
+      const data = new FormData();
+      data.append("file", file);
+      const response = await fetch(
+        "/api/videos/projects/" + encodeURIComponent(state.currentVideoProjectId) + "/frames/" + kind,
+        { method: "POST", headers: authHeaders(false), body: data }
+      );
+      const payload = await response.json().catch(function () { return {}; });
+      if (!response.ok) {
+        videoStatus("error", typeof payload.detail === "string" ? payload.detail : "Frame upload failed.");
+        return;
+      }
+      state.videoProject = payload;
+      renderVideoStudio();
+      invalidateVideoQuote();
+    }
+
+    async function removeVideoFrame(kind) {
+      const response = await fetch(
+        "/api/videos/projects/" + encodeURIComponent(state.currentVideoProjectId) + "/frames/" + kind,
+        { method: "DELETE", headers: authHeaders(false) }
+      );
+      const payload = await response.json().catch(function () { return {}; });
+      if (!response.ok) {
+        videoStatus("error", typeof payload.detail === "string" ? payload.detail : "Could not remove frame.");
+        return;
+      }
+      state.videoProject = payload;
+      renderVideoStudio();
+      invalidateVideoQuote();
+    }
+
+    function renderQuote(quote) {
+      const host = document.getElementById("video-quote-lines");
+      const generate = document.getElementById("video-generate");
+      if (!host) return;
+      host.hidden = false;
+      host.replaceChildren();
+      const total = document.createElement("p");
+      total.className = "quote-total";
+      total.textContent = "Estimated cost: $" + quote.total_usd + " USD for "
+        + quote.billed_seconds + " billed seconds ("
+        + (quote.segments || []).join(" + ") + "s clips).";
+      host.appendChild(total);
+      const list = document.createElement("ul");
+      (quote.line_items || []).forEach(function (item) {
+        const li = document.createElement("li");
+        li.textContent = item.label + ": " + item.amount_usd + " " + item.unit
+          + " × " + item.quantity + " = $" + item.subtotal_usd;
+        list.appendChild(li);
+      });
+      host.appendChild(list);
+      const note = document.createElement("p");
+      note.className = "meta";
+      note.textContent = quote.note || "Catalog list prices, not a live invoice.";
+      host.appendChild(note);
+      if (generate) {
+        generate.disabled = false;
+        generate.textContent = "Generate — confirm $" + quote.total_usd;
+      }
+    }
+
+    async function estimateVideoCost() {
+      if (!state.currentVideoProjectId) {
+        videoGenStatus("error", "Add a project first.");
+        return;
+      }
+      videoGenStatus("", "Estimating…");
+      try {
+        const response = await fetch("/api/videos/quote", {
+          method: "POST",
+          headers: authHeaders(true),
+          body: JSON.stringify(collectVideoBody()),
+        });
+        const payload = await response.json().catch(function () { return {}; });
+        if (!response.ok) {
+          videoGenStatus("error", typeof payload.detail === "string" ? payload.detail : "Estimate failed.");
+          invalidateVideoQuote();
+          return;
+        }
+        state.videoQuote = payload;
+        renderQuote(payload);
+        videoGenStatus("", "Confirm the estimate to generate this clip.");
+      } catch (error) {
+        videoGenStatus("error", "Estimate failed.");
+      }
+    }
+
+    async function generateVideoClip() {
+      if (!state.videoQuote || !state.videoQuote.quote_id) {
+        videoGenStatus("error", "Estimate cost and confirm first.");
+        return;
+      }
+      const button = document.getElementById("video-generate");
+      const quoteButton = document.getElementById("video-quote");
+      if (button) button.disabled = true;
+      if (quoteButton) quoteButton.disabled = true;
+      videoGenStatus("", "Generating… this can take several minutes.");
+      try {
+        const response = await fetch("/api/videos/generate", {
+          method: "POST",
+          headers: authHeaders(true),
+          body: JSON.stringify(collectVideoBody()),
+        });
+        const payload = await response.json().catch(function () { return {}; });
+        if (!response.ok) {
+          videoGenStatus("error", typeof payload.detail === "string" ? payload.detail : "Generate failed.");
+          return;
+        }
+        state.videoProject = payload;
+        await loadVideoProjects();
+        renderVideoStudio();
+        invalidateVideoQuote();
+        const clips = payload.clips || [];
+        videoGenStatus("", "Generated clip " + clips.length + " of " + VIDEO_MAX_CLIPS + ".");
+      } catch (error) {
+        videoGenStatus("error", "Generate failed.");
+      } finally {
+        if (quoteButton) quoteButton.disabled = false;
+      }
+    }
+
+    async function mergeVideoClips() {
+      if (!state.currentVideoProjectId) return;
+      const button = document.getElementById("video-merge");
+      const status = document.getElementById("video-merge-state");
+      if (!window.confirm("Merge the generated clips locally with ffmpeg? There is no OpenRouter charge.")) {
+        return;
+      }
+      if (button) button.disabled = true;
+      if (status) {
+        status.className = "";
+        status.textContent = "Merging…";
+      }
+      try {
+        const response = await fetch(
+          "/api/videos/projects/" + encodeURIComponent(state.currentVideoProjectId) + "/merge",
+          { method: "POST", headers: authHeaders(false) }
+        );
+        const payload = await response.json().catch(function () { return {}; });
+        if (!response.ok) {
+          if (status) {
+            status.className = "error";
+            status.textContent = typeof payload.detail === "string" ? payload.detail : "Merge failed.";
+          }
+          return;
+        }
+        state.videoProject = payload;
+        renderVideoStudio();
+        if (status) {
+          status.className = "";
+          status.textContent = "Merged. No OpenRouter charge.";
+        }
+      } catch (error) {
+        if (status) {
+          status.className = "error";
+          status.textContent = "Merge failed.";
+        }
+      } finally {
+        if (button) button.disabled = ((state.videoProject && state.videoProject.clips) || []).length < 2;
+      }
+    }
+
+    document.getElementById("video-project-add").addEventListener("click", addVideoProject);
+    document.getElementById("video-project-save").addEventListener("click", saveVideoProject);
+    document.getElementById("video-project-new").addEventListener("click", blankVideoStudio);
+    document.getElementById("video-project-delete").addEventListener("click", async function () {
+      if (!state.currentVideoProjectId) return;
+      if (!window.confirm("Delete this video project and its stills and clips?")) return;
+      const response = await fetch(
+        "/api/videos/projects/" + encodeURIComponent(state.currentVideoProjectId),
+        { method: "DELETE", headers: authHeaders(false) }
+      );
+      if (!response.ok) {
+        videoStatus("error", "Delete failed.");
+        return;
+      }
+      blankVideoStudio();
+      await loadVideoProjects();
+      videoStatus("", "Deleted.");
+    });
+    document.getElementById("video-project-select").addEventListener("change", function (event) {
+      const id = event.target.value;
+      if (id) loadVideoProject(id);
+    });
+    document.getElementById("video-character-file").addEventListener("change", function (event) {
+      const file = event.target.files && event.target.files[0];
+      event.target.value = "";
+      if (file) uploadVideoPhoto(videoPhotoSlot, file);
+    });
+    document.getElementById("video-frame-file").addEventListener("change", function (event) {
+      const file = event.target.files && event.target.files[0];
+      event.target.value = "";
+      if (file) uploadVideoFrame(videoFrameKind, file);
+    });
+    document.getElementById("video-interpolation").addEventListener("change", function () {
+      syncVideoInterpolation();
+      invalidateVideoQuote();
+    });
+    document.getElementById("video-quote").addEventListener("click", estimateVideoCost);
+    document.getElementById("video-generate").addEventListener("click", generateVideoClip);
+    document.getElementById("video-merge").addEventListener("click", mergeVideoClips);
+    ["video-duration", "video-aspect", "video-intensity", "video-cantonese", "video-orientation-lock"].forEach(function (id) {
+      const node = document.getElementById(id);
+      if (node) node.addEventListener("change", invalidateVideoQuote);
+    });
+    document.getElementById("video-duration").addEventListener("change", function () {
+      if (state.functionId === "video_gen") renderChatModel();
+    });
+    ["video-pan", "video-tilt", "video-dolly", "video-zoom", "video-roll", "video-modifier"].forEach(function (name) {
+      document.querySelectorAll('input[name="' + name + '"]').forEach(function (node) {
+        node.addEventListener("change", invalidateVideoQuote);
+      });
+    });
+    ["video-title-input", "video-scene", "video-prompt"].forEach(function (id) {
+      const node = document.getElementById(id);
+      if (node) node.addEventListener("input", invalidateVideoQuote);
     });
 
     loadModels().then(() => {

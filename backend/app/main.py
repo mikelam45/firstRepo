@@ -88,6 +88,26 @@ from .images import (
     list_jobs,
     stored_image_path,
 )
+from .video_projects import (
+    VideoError,
+    create_project as create_video_project,
+    delete_character_photo,
+    delete_frame_image,
+    delete_project as delete_video_project,
+    get_project as get_video_project,
+    get_stored_clip,
+    get_stored_photo,
+    list_projects as list_video_projects,
+    save_character_photo,
+    save_frame_image,
+    update_character,
+    update_project as update_video_project,
+)
+from .videos import (
+    build_quote,
+    generate_video,
+    merge_project_clips,
+)
 from .openrouter_key import (
     normalize_submitted_key,
     openrouter_status_fields,
@@ -293,6 +313,42 @@ class ImageProjectIn(BaseModel):
     name: str = Field(default="", max_length=200)
     prompt_detail: dict[str, Any] = Field(default_factory=dict)
     model_id: str = ""
+
+
+class VideoProjectIn(BaseModel):
+    name: str = Field(default="", max_length=200)
+    detail: dict[str, Any] = Field(default_factory=dict)
+    characters: list[dict[str, Any]] | None = None
+    model_id: str = ""
+
+
+class VideoCharacterIn(BaseModel):
+    role: str = ""
+    name: str = ""
+
+
+class VideoQuoteIn(BaseModel):
+    project_id: str = ""
+    prompt: str = ""
+    title: str = ""
+    scene: str = ""
+    duration_seconds: int = 30
+    cantonese_accent: bool = False
+    generate_audio: bool | None = None
+    character_orientation_lock: bool = False
+    interpolation: bool = False
+    motion_intensity: int = 1
+    pan: str = ""
+    tilt: str = ""
+    dolly: str = ""
+    zoom: str = ""
+    roll: str = ""
+    cinematic_modifiers: list[str] = Field(default_factory=list)
+    aspect_ratio: str = "16:9"
+
+
+class VideoGenerateIn(VideoQuoteIn):
+    quote_id: str = ""
 
 
 def connect(settings: Settings) -> sqlite3.Connection:
@@ -977,6 +1033,260 @@ def get_image_file(
         media_type=media_type,
         content_disposition_type="attachment",
     )
+
+
+@app.get("/api/videos/projects")
+def get_video_projects() -> list[dict[str, object]]:
+    settings = get_settings()
+    return list_video_projects(settings.data_dir)
+
+
+@app.post("/api/videos/projects", status_code=201)
+def post_video_project(
+    body: VideoProjectIn,
+    authorization: str | None = Header(default=None),
+) -> dict[str, object]:
+    settings = get_settings()
+    require_write_access(settings, authorization)
+    try:
+        hidden = extra_hidden_ids()
+        return create_video_project(
+            settings.data_dir,
+            body.model_dump(),
+            extra_hidden=hidden,
+        )
+    except VideoError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+
+
+@app.get("/api/videos/projects/{project_id}")
+def get_video_project_detail(project_id: str) -> dict[str, object]:
+    settings = get_settings()
+    try:
+        return get_video_project(settings.data_dir, project_id)
+    except VideoError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+
+
+@app.put("/api/videos/projects/{project_id}")
+def put_video_project(
+    project_id: str,
+    body: VideoProjectIn,
+    authorization: str | None = Header(default=None),
+) -> dict[str, object]:
+    settings = get_settings()
+    require_write_access(settings, authorization)
+    try:
+        hidden = extra_hidden_ids()
+        return update_video_project(
+            settings.data_dir,
+            project_id,
+            body.model_dump(),
+            extra_hidden=hidden,
+        )
+    except VideoError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+
+
+@app.delete("/api/videos/projects/{project_id}")
+def delete_video_project_route(
+    project_id: str,
+    authorization: str | None = Header(default=None),
+) -> dict[str, object]:
+    settings = get_settings()
+    require_write_access(settings, authorization)
+    try:
+        return delete_video_project(settings.data_dir, project_id)
+    except VideoError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+
+
+@app.put("/api/videos/projects/{project_id}/characters/{slot}")
+def put_video_character(
+    project_id: str,
+    slot: int,
+    body: VideoCharacterIn,
+    authorization: str | None = Header(default=None),
+) -> dict[str, object]:
+    settings = get_settings()
+    require_write_access(settings, authorization)
+    try:
+        return update_character(
+            settings.data_dir,
+            project_id,
+            slot,
+            role=body.role,
+            name=body.name,
+        )
+    except VideoError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+
+
+@app.post("/api/videos/projects/{project_id}/characters/{slot}/photos", status_code=201)
+def post_video_character_photo(
+    project_id: str,
+    slot: int,
+    file: UploadFile = File(...),
+    authorization: str | None = Header(default=None),
+) -> dict[str, object]:
+    settings = get_settings()
+    require_write_access(settings, authorization)
+    filename = file.filename or ""
+    data = file.file.read()
+    try:
+        return save_character_photo(
+            settings.data_dir,
+            project_id,
+            slot,
+            filename=filename,
+            data=data,
+        )
+    except VideoError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+
+
+@app.delete("/api/videos/projects/{project_id}/characters/{slot}/photos/{photo_id}")
+def delete_video_character_photo_route(
+    project_id: str,
+    slot: int,
+    photo_id: str,
+    authorization: str | None = Header(default=None),
+) -> dict[str, object]:
+    settings = get_settings()
+    require_write_access(settings, authorization)
+    try:
+        return delete_character_photo(settings.data_dir, project_id, slot, photo_id)
+    except VideoError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+
+
+@app.post("/api/videos/projects/{project_id}/frames/{kind}", status_code=201)
+def post_video_frame(
+    project_id: str,
+    kind: str,
+    file: UploadFile = File(...),
+    authorization: str | None = Header(default=None),
+) -> dict[str, object]:
+    settings = get_settings()
+    require_write_access(settings, authorization)
+    filename = file.filename or ""
+    data = file.file.read()
+    try:
+        return save_frame_image(
+            settings.data_dir,
+            project_id,
+            kind,
+            filename=filename,
+            data=data,
+        )
+    except VideoError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+
+
+@app.delete("/api/videos/projects/{project_id}/frames/{kind}")
+def delete_video_frame_route(
+    project_id: str,
+    kind: str,
+    authorization: str | None = Header(default=None),
+) -> dict[str, object]:
+    settings = get_settings()
+    require_write_access(settings, authorization)
+    try:
+        return delete_frame_image(settings.data_dir, project_id, kind)
+    except VideoError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+
+
+@app.get("/api/videos/photos/{photo_id}")
+def get_video_photo(
+    photo_id: str,
+    authorization: str | None = Header(default=None),
+) -> FileResponse:
+    settings = get_settings()
+    require_write_access(settings, authorization)
+    try:
+        stored, filename, media_type = get_stored_photo(settings.data_dir, photo_id)
+    except VideoError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+    return FileResponse(
+        stored,
+        filename=filename,
+        media_type=media_type,
+        content_disposition_type="inline",
+    )
+
+
+@app.get("/api/videos/clips/{clip_id}/file")
+@app.get("/api/videos/merges/{clip_id}/file")
+def get_video_clip_file(
+    clip_id: str,
+    authorization: str | None = Header(default=None),
+) -> FileResponse:
+    settings = get_settings()
+    require_write_access(settings, authorization)
+    try:
+        stored, filename, media_type = get_stored_clip(settings.data_dir, clip_id)
+    except VideoError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+    return FileResponse(
+        stored,
+        filename=filename,
+        media_type=media_type,
+        content_disposition_type="attachment",
+    )
+
+
+@app.post("/api/videos/quote")
+def post_video_quote(
+    body: VideoQuoteIn,
+    authorization: str | None = Header(default=None),
+) -> dict[str, object]:
+    settings = get_settings()
+    require_write_access(settings, authorization)
+    try:
+        hidden = extra_hidden_ids()
+        selection = load_selection(settings.data_dir, extra_hidden=hidden)
+        return build_quote(
+            settings.data_dir,
+            body.model_dump(),
+            model_id=selection["video_gen"],
+            extra_hidden=hidden,
+        )
+    except VideoError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+
+
+@app.post("/api/videos/generate")
+def post_video_generate(
+    body: VideoGenerateIn,
+    authorization: str | None = Header(default=None),
+) -> dict[str, object]:
+    settings = get_settings()
+    require_write_access(settings, authorization)
+    try:
+        hidden = extra_hidden_ids()
+        selection = load_selection(settings.data_dir, extra_hidden=hidden)
+        return generate_video(
+            settings.data_dir,
+            body.model_dump(),
+            model_id=selection["video_gen"],
+            extra_hidden=hidden,
+        )
+    except (VideoError, ChatError) as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+
+
+@app.post("/api/videos/projects/{project_id}/merge")
+def post_video_merge(
+    project_id: str,
+    authorization: str | None = Header(default=None),
+) -> dict[str, object]:
+    settings = get_settings()
+    require_write_access(settings, authorization)
+    try:
+        return merge_project_clips(settings.data_dir, project_id)
+    except VideoError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
 
 @app.post("/api/prompt/enhance")

@@ -26,8 +26,8 @@ If `main` does not have these scripts yet, check out the current Mac development
 
 ```bash
 git fetch origin
-git checkout cursor/image-nano-seedream-1e46
-git pull origin cursor/image-nano-seedream-1e46
+git checkout cursor/video-studio-ui-1e46
+git pull origin cursor/video-studio-ui-1e46
 ```
 
 The first run creates `.venv`, installs `backend/requirements.txt`, and copies `.env.development.example` to `.env.development`. The server listens on `http://127.0.0.1:8099`. A second `scripts/dev.sh` replaces the previous development server on 8099; a foreign process on that port is left alone.
@@ -43,6 +43,22 @@ Google Gemini **text** ids stay out of the picker in Hong Kong. Defaults remain 
 The app resolves the key in this order: `OPENROUTER_API_KEY` in the process environment, then the file named by `OPENROUTER_ENV_FILE`, then `/Users/mikelam/firstRepo/openrouter_key/.env_RAG_portal`. `GET /api/models` includes `openrouter_configured` (`true` or `false`) and `openrouter_status` (`key_accepted`, `key_rejected`, or `not_configured`). The response never includes the key. When a key is configured, the server sends `GET https://openrouter.ai/api/v1/key` with `Authorization: Bearer` and a short timeout, and reports only that status. The public models list is not used for this check, because it answers without a key. The key endpoint's body can include a shortened label, so the app reads the HTTP status and nothing else. `GET /health` includes `openrouter_configured` and does not call OpenRouter.
 
 The LLM setup page (`/setup`) has an **OpenRouter connection** section above the model picker. It shows the status in plain language and `openrouter_configured`. It does not show the full key. After a save in that browser tab it may show a mask with the last four characters. `POST /api/openrouter/key` with `{ "api_key": "..." }` sets `OPENROUTER_API_KEY` in the server process, writes `OPENROUTER_API_KEY=...` to the Mac env file when that path or its parent exists (mode 0600), or to `$DATA_DIR/openrouter.env` on machines without `/Users/mikelam/firstRepo`, then runs the same key check. An empty body is `400` so a working key is not wiped. `POST /api/openrouter/test` retests the currently loaded key and returns `200` even when the key is rejected. Both POSTs are open in development. In production they require `Authorization: Bearer $PORTAL_API_TOKEN`, the same rule as `PUT /api/models`. Neither response includes the key.
+
+Do not pipe those URLs into `python3 -m json.tool` until the portal is up. An empty curl body makes Python print `Expecting value: line 1 column 1 (char 0)`. Start the server, then use the status script (it never prints the key):
+
+```bash
+cd /Users/mikelam/firstRepo/RAG_portal
+bash scripts/dev.sh
+```
+
+In a second Terminal tab:
+
+```bash
+cd /Users/mikelam/firstRepo/RAG_portal
+bash scripts/openrouter-status.sh
+```
+
+That prints whether `/Users/mikelam/firstRepo/openrouter_key/.env_RAG_portal` exists, whether OpenRouter accepted the key (`probe key_accepted`), and the portal `health` / `openrouter_test` JSON. If nothing is listening it says so instead of crashing json.tool.
 
 ```bash
 curl http://127.0.0.1:8099/health
@@ -64,7 +80,9 @@ Translation requires `target_language`: `en` (English), `zh_cn` (Simplified Chin
 
 `POST /api/images/references` stores up to 5 jpeg/png/webp files (10 MB each) under `$DATA_DIR/image-refs/` (gitignored). A sixth upload is `400`. `GET /api/images/references` lists them; `DELETE /api/images/references/{id}` removes one. Generate accepts `reference_ids` (max 5). Those become OpenRouter/FLUX.2 Pro `input_references`: `{ "type": "image_url", "image_url": { "url": "<https or data URL>" } }`. Portal `resolution` maps to `aspect_ratio`; portal `format` maps to `output_format`. Image jobs never use `/api/v1/chat/completions`.
 
-`GET /api/models`, `GET /api/rag/files`, `GET /api/dse/files`, `GET /api/images`, and `GET /api/images/references` are open in both modes. `PUT /api/models`, `POST /api/chat`, `POST /api/dse/ask`, `POST /api/dse/ocr`, `POST /api/dse/question`, `POST /api/dse/mark`, `POST /api/openrouter/key`, `POST /api/openrouter/test`, `POST /api/rag/files`, `POST /api/translation/files`, `POST /api/dse/files`, `GET /api/rag/files/{id}/content`, `GET /api/rag/files/{id}/translated`, `GET /api/translation/files/{id}/download`, `DELETE /api/rag/files/{id}`, `DELETE /api/dse/files/{id}`, `POST /api/images/generate`, `POST /api/prompt/enhance`, `GET /api/images/{id}/file`, `POST /api/images/references`, `GET /api/images/references/{id}`, and `DELETE /api/images/references/{id}` are open in development. In production they require `Authorization: Bearer $PORTAL_API_TOKEN`, the same rule as creating a note. The model-selection body is the function keys (`rag_qa`, `translation`, `cantonese_script`, `dse_math`, `image_gen`, `video_gen`) mapped to model ids from the catalog.
+Video generation posts to `https://openrouter.ai/api/v1/videos` with the saved `video_gen` model, the assembled prompt, `duration`, `aspect_ratio`, and optional `input_references` from uploaded character stills. A 30–60 second movie is split into provider-allowed clip lengths, each segment is polled until complete, then the segments are stitched locally with ffmpeg. Projects keep up to 3 characters with 5 stills each, first/end frame images for interpolation, basic camera movements (pan/tilt/dolly/zoom/roll), motion intensity, character orientation lock, cinematic modifiers, and a “natural Hong Kong Cantonese accent” option. `POST /api/videos/quote` returns a cost estimate that must be confirmed before `POST /api/videos/generate`; `POST /api/videos/projects/{id}/merge` concatenates generated clips with ffmpeg (no OpenRouter charge). Videos are stored under `$DATA_DIR/videos/`.
+
+`GET /api/models`, `GET /api/rag/files`, `GET /api/dse/files`, `GET /api/images`, and `GET /api/images/references` are open in both modes. `PUT /api/models`, `POST /api/chat`, `POST /api/dse/ask`, `POST /api/dse/ocr`, `POST /api/dse/question`, `POST /api/dse/mark`, `POST /api/openrouter/key`, `POST /api/openrouter/test`, `POST /api/rag/files`, `POST /api/translation/files`, `POST /api/dse/files`, `GET /api/rag/files/{id}/content`, `GET /api/rag/files/{id}/translated`, `GET /api/translation/files/{id}/download`, `DELETE /api/rag/files/{id}`, `DELETE /api/dse/files/{id}`, `POST /api/images/generate`, `POST /api/prompt/enhance`, `GET /api/images/{id}/file`, `POST /api/images/references`, `GET /api/images/references/{id}`, `DELETE /api/images/references/{id}`, `GET /api/videos/projects`, `POST /api/videos/projects`, `PUT /api/videos/projects/{id}`, `DELETE /api/videos/projects/{id}`, `POST /api/videos/projects/{id}/characters/{slot}/photos`, `DELETE /api/videos/projects/{id}/characters/{slot}/photos/{photo_id}`, `POST /api/videos/projects/{id}/frames/{kind}`, `DELETE /api/videos/projects/{id}/frames/{kind}`, `POST /api/videos/quote`, `POST /api/videos/generate`, `GET /api/videos/photos/{photo_id}`, `GET /api/videos/clips/{clip_id}/file`, and `POST /api/videos/projects/{id}/merge` are open in development. In production they require `Authorization: Bearer $PORTAL_API_TOKEN`, the same rule as creating a note. The model-selection body is the function keys (`rag_qa`, `translation`, `cantonese_script`, `dse_math`, `image_gen`, `video_gen`) mapped to model ids from the catalog.
 
 Tests:
 
