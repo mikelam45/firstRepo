@@ -171,6 +171,28 @@ def test_home_and_setup_are_distinct_html_pages(tmp_path, monkeypatch):
     assert 'id="dse-ocr-preview"' in home.text
     assert "Document upload" in home.text
     assert "Chat" in home.text
+    assert "Video generation" in home.text
+    assert 'id="video-panel"' in home.text
+    assert 'id="video-projects"' in home.text
+    assert 'id="video-character-cards"' in home.text
+    assert 'id="video-quote"' in home.text
+    assert 'id="video-generate"' in home.text
+    assert 'id="video-camera-title"' in home.text
+    assert 'id="video-advanced-title"' in home.text
+    assert 'id="video-modifiers-title"' in home.text
+    assert "Speaks with a natural Hong Kong Cantonese accent" in home.text
+    assert "橫向平移" in home.text
+    assert "縱向傾斜" in home.text
+    assert "物理推進" in home.text
+    assert "光學變焦" in home.text
+    assert "鏡頭滾轉" in home.text
+    assert "動態強度" in home.text
+    assert "主體朝向鎖定" in home.text
+    assert "首尾幀路徑補間" in home.text
+    assert "/api/videos/projects" in home.text
+    assert "/api/videos/quote" in home.text
+    assert "/api/videos/generate" in home.text
+    assert "This page does not run video jobs yet" not in home.text
     assert "OpenRouter connection" not in home.text
     assert 'data-options="rag_qa"' not in home.text
     assert 'id="grounding-control"' not in setup.text
