@@ -101,6 +101,9 @@ FORMAT_REPLY_INSTRUCTION = (
     "```\n"
     "A compact bar chart may use labels and values instead of series:\n"
     '{"type":"bar","title":"Test Scores","labels":["50","60","70"],"values":[2,3,5]}\n'
+    "A straight-line graph may use axes and [x, y] points:\n"
+    '{"type":"line","title":"3x + 2y = 12","axes":{"xmin":0,"xmax":5,"ymin":0,"ymax":7},'
+    '"series":[{"name":"Line","values":[[0,6],[4,0]]}]}\n'
     "Still write a short prose answer. Still use [source: filename] when grounded."
 )
 NO_DOCUMENTS_SYSTEM = (

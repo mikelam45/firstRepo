@@ -177,7 +177,7 @@ DSE_FIGURE_INSTRUCTION = (
     "receipt, a pizza slice, a window, a floor plan, or a slope on a hill). "
     "For each topic emit one fenced JSON block the page can draw:\n"
     "```figure\n"
-    '{"type":"geometry|coordinate|number_line|chart","title":"...","caption":"...",'
+    '{"type":"geometry|coordinate|number_line|chart|bar|line","title":"...","caption":"...",'
     '"interactive":true,'
     '"elements":[{"kind":"polygon","points":[[20,80],[80,80],[50,20]],"labels":["A","B","C"],"id":"tri"},'
     '{"kind":"segment","from":[20,80],"to":[80,80],"label":"6 cm","id":"ab"}],'
@@ -187,8 +187,9 @@ DSE_FIGURE_INSTRUCTION = (
     "sector (cx, cy, r, start, end in degrees, 0 at +x, clockwise), angle, point, "
     "label. coordinate uses data units and optional "
     '"axes":{"xmin":-2,"xmax":6,"ymin":-2,"ymax":6} with y up. '
-    "number_line uses min, max, marks, and points. chart uses labels and series "
-    "(bar, line, or pie), or a compact bar chart with labels and values. "
+    "number_line uses min, max, marks, and points. chart, bar, and line figures "
+    "draw as charts: labels + series, labels + values, or a line graph with axes "
+    "and series values as [x, y] points. "
     "Give elements an id so the student can click corresponding parts. "
     "Label given lengths and angles. Do not draw the hidden answer. "
     + DSE_GIVEN_LABEL_INSTRUCTION
@@ -235,7 +236,7 @@ DSE_CREATE_JSON_KEYS = (
 )
 DSE_CREATE_FIGURE_JSON = (
     "figure is required. Never set it to null. Use the same contract as a ```figure fence: "
-    '{"type":"geometry|coordinate|number_line|chart","title":"...","caption":"...",'
+    '{"type":"geometry|coordinate|number_line|chart|bar|line","title":"...","caption":"...",'
     '"interactive":true,'
     '"elements":[{"kind":"polygon","points":[[20,80],[80,80],[50,20]],'
     '"labels":["A","B","C"],"id":"tri"}]}. '

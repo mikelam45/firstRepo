@@ -67,6 +67,7 @@ def test_parse_chart_fence_accepts_bar_default_and_rejects_invalid():
         "series": [{"name": "Sales", "values": [1.0, 2.0]}],
         "x_label": "",
         "y_label": "Sales",
+        "caption": "",
     }
 
     pie = parse_chart_fence(
@@ -103,6 +104,38 @@ def test_parse_chart_fence_accepts_top_level_values():
     assert spec["series"] == [{"name": "Frequency", "values": [2.0, 3.0, 5.0, 4.0, 1.0]}]
     assert spec["x_label"] == "Score"
     assert spec["y_label"] == "Frequency"
+
+
+def test_parse_chart_fence_xy_line_points():
+    spec = parse_chart_fence(
+        '{"type":"line","title":"Graph of 3x + 2y = 12",'
+        '"axes":{"xmin":0,"xmax":5,"ymin":0,"ymax":7},'
+        '"series":[{"name":"Line","values":[[0,6],[2,3],[4,0]]}]}'
+    )
+    assert spec is not None
+    assert spec["type"] == "line"
+    assert spec["mode"] == "xy"
+    assert spec["title"] == "Graph of 3x + 2y = 12"
+    assert spec["series"][0]["points"] == [[0.0, 6.0], [2.0, 3.0], [4.0, 0.0]]
+    assert spec["axes"] == {"xmin": 0.0, "xmax": 5.0, "ymin": 0.0, "ymax": 7.0}
+    assert spec["x_label"] == "x"
+    assert spec["y_label"] == "y"
+
+
+def test_parse_figure_spec_bar_chart_type():
+    spec = parse_figure_spec(
+        '{"type": "bar", "title": "Bar chart", "labels": ["A", "B", "C"],'
+        ' "series": [{"name": "Value", "values": [4.0, 7.0, 5.0]}],'
+        ' "x_label": "", "y_label": "Value",'
+        ' "caption": "Read the heights from the chart."}'
+    )
+    assert spec is not None
+    assert spec["type"] == "bar"
+    assert spec["title"] == "Bar chart"
+    assert spec["labels"] == ["A", "B", "C"]
+    assert spec["series"][0]["values"] == [4.0, 7.0, 5.0]
+    assert spec["y_label"] == "Value"
+    assert spec["caption"] == "Read the heights from the chart."
 
 
 def test_parse_figure_spec_repairs_paren_labels_and_sss_action():
@@ -148,6 +181,7 @@ def test_format_instruction_avoids_only_and_documents_the_chart_fence():
     assert "```chart" in FORMAT_REPLY_INSTRUCTION
     assert '"type":"bar|line|pie"' in FORMAT_REPLY_INSTRUCTION
     assert '"values":[2,3,5]' in FORMAT_REPLY_INSTRUCTION
+    assert '"values":[[0,6],[4,0]]' in FORMAT_REPLY_INSTRUCTION
     assert "Markdown table" in FORMAT_REPLY_INSTRUCTION
     assert "[source: filename]" in FORMAT_REPLY_INSTRUCTION
     assert FORMAT_REPLY_INSTRUCTION in MIXED_SYSTEM
@@ -300,6 +334,8 @@ def test_functions_page_includes_table_chart_renderer(tmp_path, monkeypatch):
     assert "math-display" in script.text
     assert "drawChartSvg" in script.text
     assert "drawFigureSvg" in script.text
+    assert "drawXyLineChart" in script.text
+    assert "xyPoints" in script.text
     assert "repairJsonFence" in script.text
     assert "parseJsonFence" in script.text
     assert "Frequency" in script.text

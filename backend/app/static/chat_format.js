@@ -93,14 +93,15 @@
     var type = data.type == null || data.type === "" ? "bar" : String(data.type).toLowerCase();
     if (type !== "bar" && type !== "line" && type !== "pie") return null;
 
-    if (!Array.isArray(data.labels) || !data.labels.length) return null;
     var labels = [];
-    for (var i = 0; i < data.labels.length; i += 1) {
-      labels.push(String(data.labels[i]));
+    if (Array.isArray(data.labels)) {
+      for (var i = 0; i < data.labels.length; i += 1) {
+        labels.push(String(data.labels[i]));
+      }
     }
 
     if (!Array.isArray(data.series) || !data.series.length) {
-      var valuesRaw = data.values || data.data || data.counts;
+      var valuesRaw = data.values || data.data || data.counts || data.points;
       if (Array.isArray(valuesRaw)) {
         data.series = [{ name: data.series_name || data.y_label || "Frequency", values: valuesRaw }];
       } else {
@@ -108,48 +109,133 @@
       }
     }
     var series = [];
+    var xySeries = [];
     for (var s = 0; s < data.series.length; s += 1) {
       var row = data.series[s];
       if (!row || typeof row !== "object" || Array.isArray(row)) return null;
-      if (!Array.isArray(row.values) || row.values.length !== labels.length) return null;
+      var rowValues = Array.isArray(row.values) ? row.values : (row.points || row.coords);
+      var name = row.name == null ? "Series" : String(row.name);
+      var points = xyPoints(rowValues);
+      if (points) {
+        xySeries.push({ name: name, points: points });
+        continue;
+      }
+      if (!Array.isArray(rowValues)) return null;
+      if (!labels.length || rowValues.length !== labels.length) return null;
       var values = [];
-      for (var v = 0; v < row.values.length; v += 1) {
-        var number = typeof row.values[v] === "number" ? row.values[v] : Number(row.values[v]);
-        if (!isFinite(number)) return null;
+      for (var v = 0; v < rowValues.length; v += 1) {
+        var number = finiteNumber(rowValues[v]);
+        if (number == null) return null;
         values.push(number);
       }
-      series.push({
-        name: row.name == null ? "Series" : String(row.name),
-        values: values,
-      });
-    }
-
-    if (type === "pie") {
-      series = [series[0]];
+      series.push({ name: name, values: values });
     }
 
     var xLabel = data.x_label == null ? "" : String(data.x_label);
     var yLabel = data.y_label == null ? "" : String(data.y_label);
-    if (!yLabel && type === "bar" && series.length === 1) {
-      var seriesName = series[0].name;
-      yLabel = (!seriesName || seriesName === "Series" || seriesName === "Frequency")
-        ? "Frequency" : seriesName;
+    var caption = data.caption == null ? "" : String(data.caption).slice(0, MAX_CAPTION_CHARS);
+
+    if (xySeries.length && !series.length) {
+      if (type === "pie") return null;
+      if (!xLabel) xLabel = "x";
+      if (!yLabel) yLabel = "y";
+      return {
+        type: "line",
+        mode: "xy",
+        title: data.title == null ? "" : String(data.title),
+        labels: [],
+        series: xySeries,
+        axes: parseChartAxes(data) || axesFromXy(xySeries),
+        x_label: xLabel,
+        y_label: yLabel,
+        caption: caption,
+      };
     }
-    if (!xLabel && type === "bar" && labels.length) {
-      var numeric = true;
-      for (var n = 0; n < labels.length; n += 1) {
-        if (!/^\d+(\.\d+)?$/.test(String(labels[n]))) { numeric = false; break; }
+    if (series.length && !xySeries.length) {
+      if (type === "pie") series = [series[0]];
+      if (!yLabel && type === "bar" && series.length === 1) {
+        var seriesName = series[0].name;
+        yLabel = (!seriesName || seriesName === "Series" || seriesName === "Frequency")
+          ? "Frequency" : seriesName;
       }
-      if (numeric) xLabel = "Score";
+      if (!xLabel && type === "bar" && labels.length) {
+        var numeric = true;
+        for (var n = 0; n < labels.length; n += 1) {
+          if (!/^\d+(\.\d+)?$/.test(String(labels[n]))) { numeric = false; break; }
+        }
+        if (numeric) xLabel = "Score";
+      }
+      return {
+        type: type,
+        title: data.title == null ? "" : String(data.title),
+        labels: labels,
+        series: series,
+        x_label: xLabel,
+        y_label: yLabel,
+        caption: caption,
+      };
     }
+    return null;
+  }
+
+  function xyPoints(raw) {
+    if (!Array.isArray(raw) || raw.length < 2) return null;
+    var points = [];
+    for (var i = 0; i < raw.length; i += 1) {
+      var item = raw[i];
+      var x;
+      var y;
+      if (item && typeof item === "object" && !Array.isArray(item)) {
+        x = finiteNumber(item.x);
+        y = finiteNumber(item.y);
+      } else if (Array.isArray(item) && item.length >= 2) {
+        x = finiteNumber(item[0]);
+        y = finiteNumber(item[1]);
+      } else {
+        return null;
+      }
+      if (x == null || y == null) return null;
+      points.push([x, y]);
+    }
+    return points;
+  }
+
+  function parseChartAxes(data) {
+    var raw = data && data.axes && typeof data.axes === "object" && !Array.isArray(data.axes) ? data.axes : null;
+    if (!raw) return null;
+    var xmin = finiteNumber(raw.xmin);
+    var xmax = finiteNumber(raw.xmax);
+    var ymin = finiteNumber(raw.ymin);
+    var ymax = finiteNumber(raw.ymax);
+    if (xmin == null || xmax == null || ymin == null || ymax == null) return null;
+    if (xmin === xmax || ymin === ymax) return null;
+    if (xmin > xmax) { var sx = xmin; xmin = xmax; xmax = sx; }
+    if (ymin > ymax) { var sy = ymin; ymin = ymax; ymax = sy; }
+    return { xmin: xmin, xmax: xmax, ymin: ymin, ymax: ymax };
+  }
+
+  function axesFromXy(series) {
+    var xs = [];
+    var ys = [];
+    series.forEach(function (row) {
+      (row.points || []).forEach(function (pt) {
+        xs.push(pt[0]);
+        ys.push(pt[1]);
+      });
+    });
+    var xmin = xs.length ? Math.min.apply(null, xs) : 0;
+    var xmax = xs.length ? Math.max.apply(null, xs) : 1;
+    var ymin = ys.length ? Math.min.apply(null, ys) : 0;
+    var ymax = ys.length ? Math.max.apply(null, ys) : 1;
+    if (xmin >= 0) xmin = 0;
+    if (ymin >= 0) ymin = 0;
+    if (xmin === xmax) xmax = xmin + 1;
+    if (ymin === ymax) ymax = ymin + 1;
     return {
-      type: type,
-      title: data.title == null ? "" : String(data.title),
-      labels: labels,
-      series: series,
-      x_label: xLabel,
-      y_label: yLabel,
-      caption: data.caption == null ? "" : String(data.caption).slice(0, MAX_LABEL_CHARS),
+      xmin: xmin,
+      xmax: xmax + (xmax - xmin) * 0.08,
+      ymin: ymin,
+      ymax: ymax + (ymax - ymin) * 0.08,
     };
   }
 
@@ -322,18 +408,25 @@
     }
     if (!data || typeof data !== "object" || Array.isArray(data)) return null;
     var type = data.type == null || data.type === "" ? "geometry" : String(data.type).toLowerCase();
-    if (type !== "geometry" && type !== "coordinate" && type !== "number_line" && type !== "chart") {
+    if (type !== "geometry" && type !== "coordinate" && type !== "number_line"
+      && type !== "chart" && type !== "bar" && type !== "line" && type !== "pie") {
       return null;
     }
     var title = clipLabel(data.title);
     var caption = clipCaption(data.caption);
-    if (type === "chart") {
+    if (type === "chart" || type === "bar" || type === "line" || type === "pie") {
       var payload = {};
       Object.keys(data).forEach(function (key) { payload[key] = data[key]; });
-      if (String(payload.type || "").toLowerCase() === "chart") payload.type = "bar";
+      if (type === "chart") {
+        payload.type = "bar";
+        var first = Array.isArray(payload.series) && payload.series[0] && typeof payload.series[0] === "object"
+          ? (payload.series[0].values || payload.series[0].points)
+          : null;
+        if (xyPoints(first) || (payload.axes && typeof payload.axes === "object")) payload.type = "line";
+      }
       var chart = parseChartFence(JSON.stringify(payload));
       if (!chart) return null;
-      chart.caption = caption;
+      if (caption) chart.caption = caption;
       return chart;
     }
     if (type === "number_line") {
@@ -1182,8 +1275,115 @@
     return svg;
   }
 
+  function integerTicks(min, max, limit) {
+    var start = Math.ceil(min - 1e-9);
+    var end = Math.floor(max + 1e-9);
+    if (end < start) return [min, max];
+    var step = 1;
+    var count = end - start;
+    var cap = limit || 8;
+    if (count > cap) step = Math.ceil(count / cap);
+    var out = [];
+    for (var v = start; v <= end + 1e-9; v += step) out.push(v);
+    if (out.length < 2) return [min, max];
+    return out;
+  }
+
+  function drawXyLineChart(spec) {
+    var axes = spec.axes || { xmin: 0, xmax: 5, ymin: 0, ymax: 5 };
+    var width = 560;
+    var height = 360;
+    var pad = { top: spec.title ? 48 : 28, right: 28, bottom: spec.x_label ? 56 : 44, left: spec.y_label ? 56 : 44 };
+    var plotW = width - pad.left - pad.right;
+    var plotH = height - pad.top - pad.bottom;
+    var xOf = function (value) {
+      return pad.left + ((value - axes.xmin) / (axes.xmax - axes.xmin || 1)) * plotW;
+    };
+    var yOf = yScale(axes.ymin, axes.ymax, pad.top, plotH);
+    var svg = svgEl("svg", {
+      class: "chat-chart",
+      viewBox: "0 0 " + width + " " + height,
+      role: "img",
+      "aria-label": spec.title || "line graph",
+    });
+    svg.appendChild(svgEl("rect", {
+      width: width, height: height, fill: "var(--card)", rx: 8,
+    }));
+    if (spec.title) {
+      svg.appendChild(svgText({
+        x: width / 2, y: 20, "text-anchor": "middle", fill: "var(--ink)",
+        "font-size": "14", "font-weight": "650",
+      }, spec.title));
+    }
+    if (spec.series.length > 1) {
+      drawLegend(svg, spec.series, pad.left, spec.title ? 36 : 20);
+    }
+    var xTicks = integerTicks(axes.xmin, axes.xmax, 8);
+    var yTicks = integerTicks(axes.ymin, axes.ymax, 8);
+    yTicks.forEach(function (tick) {
+      var y = yOf(tick);
+      svg.appendChild(svgEl("line", {
+        x1: pad.left, x2: pad.left + plotW, y1: y, y2: y, stroke: "var(--line)",
+      }));
+      svg.appendChild(svgText({
+        x: pad.left - 6, y: y + 4, "text-anchor": "end", fill: "var(--muted)", "font-size": "11",
+      }, formatTick(tick)));
+    });
+    xTicks.forEach(function (tick) {
+      var x = xOf(tick);
+      svg.appendChild(svgEl("line", {
+        x1: x, x2: x, y1: pad.top, y2: pad.top + plotH, stroke: "var(--line)",
+      }));
+      svg.appendChild(svgText({
+        x: x, y: pad.top + plotH + 16, "text-anchor": "middle", fill: "var(--muted)", "font-size": "11",
+      }, formatTick(tick)));
+    });
+    svg.appendChild(svgEl("line", {
+      x1: pad.left, y1: pad.top, x2: pad.left, y2: pad.top + plotH, stroke: "var(--ink)",
+    }));
+    svg.appendChild(svgEl("line", {
+      x1: pad.left, y1: pad.top + plotH, x2: pad.left + plotW, y2: pad.top + plotH, stroke: "var(--ink)",
+    }));
+    spec.series.forEach(function (row, si) {
+      var color = SERIES_COLORS[si % SERIES_COLORS.length];
+      var pts = (row.points || []).map(function (pt) {
+        return { x: xOf(pt[0]), y: yOf(pt[1]), raw: pt };
+      });
+      if (pts.length) {
+        svg.appendChild(svgEl("polyline", {
+          points: pts.map(function (pt) { return pt.x + "," + pt.y; }).join(" "),
+          fill: "none",
+          stroke: color,
+          "stroke-width": 2.5,
+        }));
+      }
+      pts.forEach(function (pt) {
+        svg.appendChild(svgEl("circle", { cx: pt.x, cy: pt.y, r: 4, fill: color }));
+        var label = "(" + formatTick(pt.raw[0]) + ", " + formatTick(pt.raw[1]) + ")";
+        svg.appendChild(svgText({
+          x: pt.x + 8, y: pt.y - 8, fill: "var(--ink)", "font-size": "11",
+        }, label));
+      });
+    });
+    if (spec.x_label) {
+      svg.appendChild(svgText({
+        x: pad.left + plotW / 2, y: height - 10, "text-anchor": "middle",
+        fill: "var(--ink)", "font-size": "12",
+      }, spec.x_label));
+    }
+    if (spec.y_label) {
+      svg.appendChild(svgText({
+        x: 16, y: pad.top + plotH / 2, "text-anchor": "middle",
+        fill: "var(--ink)", "font-size": "12",
+        transform: "rotate(-90 16 " + (pad.top + plotH / 2) + ")",
+      }, spec.y_label));
+    }
+    return svg;
+  }
+
   function drawChartSvg(spec) {
     if (!spec) return null;
+    if (spec.mode === "xy") return drawXyLineChart(spec);
     if (spec.type === "pie") return drawPieChart(spec);
     return drawAxisChart(spec);
   }
