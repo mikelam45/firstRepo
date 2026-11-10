@@ -5,6 +5,7 @@ from fastapi.testclient import TestClient
 from app.catalog import DEFAULT_SELECTION
 from app.dse import (
     DEFAULT_DSE_PRACTICE_MESSAGE,
+    DEFAULT_EXPLAIN_TASK_PROMPT,
     NO_DSE_DOCUMENTS_STRICT_REPLY,
 )
 from app.main import PAGE, SETUP_PAGE, app
@@ -83,6 +84,14 @@ def test_functions_page_contains_dse_math(tmp_path, monkeypatch):
     assert 'id="dse-explain-level"' in home.text
     assert 'id="dse-explain-topic"' in home.text
     assert 'id="dse-explain-picked-list"' in home.text
+    assert 'id="dse-explain-prompt-style"' in home.text
+    assert 'id="dse-explain-prompt-default"' in home.text
+    assert 'id="dse-explain-prompt-custom"' in home.text
+    assert 'id="dse-explain-custom-prompt"' in home.text
+    assert "Default prompt" in home.text
+    assert "Customize prompt" in home.text
+    assert "3 examples with diagrams/figures/charts" in home.text
+    assert "2 easy, 2 mid" in home.text
     assert "addExplainTopicFromSelect" in home.text
     assert "formatCreatedQuestionText" in home.text
     assert "teaching scenario" in home.text
@@ -642,6 +651,9 @@ def test_page_has_three_mode_controls_and_s1_s6(tmp_path, monkeypatch):
     assert 'id="dse-explain-level"' in home.text
     assert 'id="dse-explain-topic"' in home.text
     assert 'id="dse-explain-picked-list"' in home.text
+    assert 'id="dse-explain-prompt-default"' in home.text
+    assert 'id="dse-explain-prompt-custom"' in home.text
+    assert "Customize prompt" in home.text
     assert "addExplainTopicFromSelect" in home.text
     assert "catalogTopicsFor" in home.text
     assert "renderDseCreateTopics" in home.text
@@ -743,8 +755,11 @@ def test_dse_explain_uses_selected_year_topics(tmp_path, monkeypatch):
     assert "Congruence" in system
     assert "Hong Kong secondary mathematics topics to explain" in system
     assert "S2 Pythagoras" in user
-    assert "real-life scenario" in user
-    assert "labelled interactive diagram" in user
+    assert DEFAULT_EXPLAIN_TASK_PROMPT in user
+    assert "3 examples with diagrams/figures/charts" in user
+    assert "2 easy, 2 mid" in user
+    assert "3 distinct worked examples" in system
+    assert "2 easy, 2 mid, and 2 hard" in system
     assert "```figure" in system
     assert "You MUST include at least one labelled diagram" in system
     assert r"\frac{a}{b}" in system
@@ -777,6 +792,45 @@ def test_dse_explain_uses_selected_year_topics(tmp_path, monkeypatch):
     )
     assert junior_m1.status_code == 400
     assert "S5" in junior_m1.json()["detail"]
+
+
+def test_dse_explain_custom_prompt_and_requires_text(tmp_path, monkeypatch):
+    _install_key(tmp_path, monkeypatch)
+    seen = _mock_chat(monkeypatch, reply="custom explanation")
+    client = _client(monkeypatch, tmp_path)
+    topic = "s2_comp_pythagoras_theorem_and_irrational_numbers"
+    missing = client.post(
+        "/api/chat",
+        json={
+            "function": "dse_math",
+            "mode": "explain",
+            "level": "S2",
+            "topics": [topic],
+            "explain_prompt_kind": "custom",
+        },
+    )
+    assert missing.status_code == 400
+    assert "custom prompt is required" in missing.json()["detail"]
+    assert seen["calls"] == 0
+
+    ok = client.post(
+        "/api/chat",
+        json={
+            "function": "dse_math",
+            "mode": "explain",
+            "level": "S2",
+            "topics": [topic],
+            "explain_prompt_kind": "custom",
+            "message": "Use pizza slices and a wet-market stall.",
+        },
+    )
+    assert ok.status_code == 200
+    system = seen["json"]["messages"][0]["content"]
+    user = seen["json"]["messages"][1]["content"]
+    assert "custom Explain prompt" in system
+    assert "Use pizza slices and a wet-market stall." in user
+    assert "S2 Pythagoras" in user
+    assert DEFAULT_EXPLAIN_TASK_PROMPT not in user
 
 
 def test_solve_figure_follows_question_not_topic():
