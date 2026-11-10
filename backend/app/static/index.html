@@ -109,7 +109,7 @@
           <label class="option">
             <input type="radio" name="dse-option" id="dse-option-explain" value="explain">
             <span class="option-title">3. Explain</span>
-            <span class="detail">Chat about a concept, grounded on uploaded syllabus and notes.</span>
+            <span class="detail">Pick topics, then use the default 3-examples / 6-questions prompt or write your own.</span>
           </label>
         </fieldset>
         <div class="language-row" id="dse-language-row">
@@ -230,6 +230,23 @@
           <p class="meta" id="dse-explain-level-hint">Compulsory S1 topics. Change the module or year to list a different set.</p>
           <ul class="dse-explain-picked-list" id="dse-explain-picked-list" hidden></ul>
           <p class="meta" id="dse-explain-picked">No topics selected. Choose a topic from the dropdown, then Send.</p>
+          <fieldset class="grounding" id="dse-explain-prompt-style" aria-labelledby="dse-explain-prompt-title">
+            <legend id="dse-explain-prompt-title">Prompt</legend>
+            <label class="option">
+              <input type="radio" name="dse-explain-prompt-kind" id="dse-explain-prompt-default" value="default" checked>
+              <span class="option-title">Default prompt</span>
+              <span class="detail">Explain each selected topic by 3 examples with diagrams/figures/charts and create 6 questions (2 easy, 2 mid &amp; 2 hard) and step by step solving it until reaching the answer.</span>
+            </label>
+            <label class="option">
+              <input type="radio" name="dse-explain-prompt-kind" id="dse-explain-prompt-custom" value="custom">
+              <span class="option-title">Customize prompt</span>
+              <span class="detail">Write your own instructions for how to explain the selected topics.</span>
+            </label>
+            <label class="field" id="dse-explain-custom-field" hidden>
+              Custom prompt
+              <textarea id="dse-explain-custom-prompt" rows="4" placeholder="How should the tutor explain these topics?"></textarea>
+            </label>
+          </fieldset>
         </div>
         <div class="dse-ocr" id="dse-ocr-controls">
           <p class="meta" id="dse-ocr-hint">
@@ -1123,8 +1140,11 @@
     const DSE_MODE_KEY = "dse-math-mode";
     const DSE_OPTION_KEY = "dse-math-option";
     const DSE_SOLVE_STYLE_KEY = "dse-math-solve-style";
+    const DSE_EXPLAIN_PROMPT_KEY = "dse-math-explain-prompt";
     const DSE_OPTIONS = ["solve", "create", "explain"];
     const DSE_SOLVE_STYLES = ["hints", "answer"];
+    const DSE_EXPLAIN_PROMPT_KINDS = ["default", "custom"];
+    const DEFAULT_EXPLAIN_TASK_PROMPT = "Explain each selected topic by 3 examples with diagrams/figures/charts and create 6 questions (2 easy, 2 mid & 2 hard) and step by step solving it until reaching the answer.";
     const DSE_MODES = ["practice", "explain", "guided_no_answer", "guided_with_answer", "create_and_mark"];
     const DEFAULT_TRANSLATION_MESSAGE = "Translate the uploaded documents.";
     const DEFAULT_DSE_PRACTICE_MESSAGE = "Generate a HKDSE Mathematics practice question.";
@@ -1284,6 +1304,34 @@
       } catch (error) {}
     }
 
+    function loadStoredDseExplainPromptKind() {
+      try {
+        const kind = localStorage.getItem(DSE_EXPLAIN_PROMPT_KEY);
+        if (DSE_EXPLAIN_PROMPT_KINDS.indexOf(kind) !== -1) return kind;
+      } catch (error) {}
+      return "default";
+    }
+
+    function persistDseExplainPromptKind(value) {
+      try {
+        localStorage.setItem(DSE_EXPLAIN_PROMPT_KEY, value);
+      } catch (error) {}
+    }
+
+    function selectedExplainPromptKind() {
+      const checked = document.querySelector('#dse-explain-prompt-style input[name="dse-explain-prompt-kind"]:checked');
+      const value = checked ? checked.value : "default";
+      return DSE_EXPLAIN_PROMPT_KINDS.indexOf(value) !== -1 ? value : "default";
+    }
+
+    function syncDseExplainPromptUi() {
+      const custom = selectedExplainPromptKind() === "custom";
+      const field = document.getElementById("dse-explain-custom-field");
+      const box = document.getElementById("dse-explain-custom-prompt");
+      if (field) field.hidden = !custom;
+      if (box) box.disabled = !custom;
+    }
+
     function selectedDseOption() {
       const checked = document.querySelector('#dse-mode-control input[name="dse-option"]:checked');
       const value = checked ? checked.value : "solve";
@@ -1312,6 +1360,11 @@
       document.querySelectorAll('#dse-solve-style input[name="dse-solve-style"]').forEach((input) => {
         input.checked = input.value === style;
       });
+      const promptKind = loadStoredDseExplainPromptKind();
+      document.querySelectorAll('#dse-explain-prompt-style input[name="dse-explain-prompt-kind"]').forEach((input) => {
+        input.checked = input.value === promptKind;
+      });
+      syncDseExplainPromptUi();
     }
 
     function dsePlaceholder(mode) {
@@ -1319,7 +1372,7 @@
       if (mode === "guided_with_answer") return "Paste a question for a full worked solution";
       if (mode === "create_and_mark") return "Type your attempt after a question is created";
       if (mode === "practice") return "Paste a question to grade, or ask to generate one";
-      return "Pick topics above, or type a follow-up question";
+      return "Pick topics, choose Default or Customize prompt, then Send. Type a follow-up here.";
     }
 
     function rememberDseSession(payload) {
@@ -1836,6 +1889,7 @@
         placeDseModuleField();
         loadDseCurriculum();
       }
+      if (explain) syncDseExplainPromptUi();
       syncChatChrome();
       syncChatLogs();
     }
@@ -2300,6 +2354,12 @@
     if (explainTopic) {
       explainTopic.addEventListener("change", addExplainTopicFromSelect);
     }
+    document.querySelectorAll('#dse-explain-prompt-style input[name="dse-explain-prompt-kind"]').forEach((input) => {
+      input.addEventListener("change", () => {
+        persistDseExplainPromptKind(selectedExplainPromptKind());
+        syncDseExplainPromptUi();
+      });
+    });
     const createLevel = document.getElementById("dse-level");
     if (createLevel) {
       createLevel.addEventListener("change", renderDseCreateTopics);
@@ -2412,7 +2472,16 @@
         if (state.functionId === "translation" && state.files.length) {
           message = DEFAULT_TRANSLATION_MESSAGE;
         } else if (state.functionId === "dse_math" && selectedDseOption() === "explain" && selectedExplainTopicIds().length) {
-          message = "Explain these topics: " + selectedExplainTopicLabels().join("; ") + ".";
+          if (selectedExplainPromptKind() === "custom") {
+            message = ((document.getElementById("dse-explain-custom-prompt") || {}).value || "").trim();
+            if (!message) {
+              status.className = "error";
+              status.textContent = "Enter a custom prompt, or switch to Default prompt.";
+              return;
+            }
+          } else {
+            message = DEFAULT_EXPLAIN_TASK_PROMPT;
+          }
         } else if (state.functionId === "dse_math" && selectedDseMode() === "guided_no_answer" && dseState.sessionId) {
           message = "Next hint";
         } else if (state.functionId === "dse_math" && selectedDseMode() === "guided_with_answer" && dseState.sessionId) {
@@ -2420,7 +2489,9 @@
         } else {
           status.className = "error";
           status.textContent = state.functionId === "dse_math" && selectedDseOption() === "explain"
-            ? "Pick a topic to explain, or type a question."
+            ? (selectedExplainPromptKind() === "custom"
+              ? "Enter a custom prompt, pick a topic, then Send."
+              : "Pick a topic to explain, or type a follow-up.")
             : state.functionId === "translation"
             ? "Enter text to translate or upload a document."
             : "Enter a message.";
@@ -2450,11 +2521,27 @@
         if (option === "explain") {
           const level = selectedExplainLevel();
           const topics = selectedExplainTopicIds();
+          const kind = selectedExplainPromptKind();
+          body.explain_prompt_kind = kind;
+          persistDseExplainPromptKind(kind);
           if (level) body.level = level;
           if (topics.length) {
             body.topics = topics;
+            const typed = document.getElementById("chat-message").value.trim();
+            const followUp = !!(dseBuckets.explain && dseBuckets.explain.sessionId && typed);
+            if (kind === "default" && !followUp && message.indexOf(DEFAULT_EXPLAIN_TASK_PROMPT) === -1) {
+              message = typed
+                ? DEFAULT_EXPLAIN_TASK_PROMPT + "\n\n" + typed
+                : DEFAULT_EXPLAIN_TASK_PROMPT;
+            }
+            if (kind === "custom" && !followUp) {
+              const custom = ((document.getElementById("dse-explain-custom-prompt") || {}).value || "").trim();
+              if (custom && message.indexOf(custom) === -1) {
+                message = typed ? custom + "\n\n" + typed : custom;
+              }
+            }
             const focus = "Explain these topics: " + selectedExplainTopicLabels().join("; ") + ".";
-            if (message.indexOf(focus) === -1) {
+            if (!followUp && message.indexOf(focus) === -1) {
               message = message ? message + "\n\n" + focus : focus;
             }
             body.message = message;

@@ -28,6 +28,10 @@ from .chat import (
 )
 from .dse import (
     DEFAULT_DSE_PRACTICE_MESSAGE,
+    DEFAULT_EXPLAIN_MESSAGE,
+    DEFAULT_EXPLAIN_TASK_PROMPT,
+    EXPLAIN_PROMPT_CUSTOM,
+    EXPLAIN_PROMPT_DEFAULT,
     GUIDED_MODES,
     MODE_CREATE_AND_MARK,
     MODE_EXPLAIN,
@@ -58,6 +62,7 @@ from .dse import (
     resolve_dse_module,
     resolve_dse_paper,
     resolve_dse_topic,
+    resolve_explain_prompt_kind,
     resolve_explain_topics,
     resolve_question_count,
     resolve_request_mode,
@@ -178,6 +183,7 @@ class ChatIn(BaseModel):
     module: str | None = None
     level: str | None = None
     topics: list[str] | None = None
+    explain_prompt_kind: str | None = None
     session_id: str | None = None
     attempt_text: str | None = None
     count: int | None = None
@@ -195,6 +201,7 @@ class DseAskIn(BaseModel):
     module: str | None = None
     level: str | None = None
     topics: list[str] | None = None
+    explain_prompt_kind: str | None = None
     session_id: str | None = None
     attempt_text: str | None = None
     count: int | None = None
@@ -490,6 +497,11 @@ def post_chat(
         dse_topics = (
             resolve_explain_topics(body.topics) if function_id == "dse_math" else []
         )
+        dse_explain_prompt_kind = (
+            resolve_explain_prompt_kind(body.explain_prompt_kind)
+            if function_id == "dse_math" and dse_mode == MODE_EXPLAIN
+            else EXPLAIN_PROMPT_DEFAULT
+        )
         dse_count = resolve_question_count(body.count) if function_id == "dse_math" else 1
         dse_session = None
         if function_id == "dse_math":
@@ -523,7 +535,13 @@ def post_chat(
                 elif dse_mode == MODE_CREATE_AND_MARK:
                     message = create_question_user_message(dse_count)
                 elif dse_mode == MODE_EXPLAIN and dse_topics:
-                    message = explain_user_message(dse_topics)
+                    if dse_explain_prompt_kind == EXPLAIN_PROMPT_CUSTOM:
+                        raise HTTPException(
+                            status_code=400, detail="custom prompt is required."
+                        )
+                    message = explain_user_message(
+                        dse_topics, prompt_kind=dse_explain_prompt_kind
+                    )
                 elif dse_mode == MODE_GUIDED_NO_ANSWER and dse_session is not None:
                     message = NEXT_HINT_USER_MESSAGE
                 elif dse_mode == MODE_GUIDED_WITH_ANSWER and stored_question:
@@ -532,6 +550,23 @@ def post_chat(
                     raise HTTPException(
                         status_code=400, detail="message must not be empty."
                     )
+            elif (
+                dse_mode == MODE_EXPLAIN
+                and dse_topics
+                and (
+                    dse_explain_prompt_kind == EXPLAIN_PROMPT_CUSTOM
+                    or message in {
+                        DEFAULT_EXPLAIN_TASK_PROMPT,
+                        DEFAULT_EXPLAIN_MESSAGE,
+                    }
+                    or DEFAULT_EXPLAIN_TASK_PROMPT in message
+                )
+            ):
+                message = explain_user_message(
+                    dse_topics,
+                    extra=message,
+                    prompt_kind=dse_explain_prompt_kind,
+                )
             elif (
                 dse_mode == MODE_GUIDED_NO_ANSWER
                 and dse_session is not None
@@ -561,6 +596,7 @@ def post_chat(
                 question=prompt_question,
                 reveal_mark_scheme=reveal_scheme,
                 question_count=dse_count,
+                explain_prompt_kind=dse_explain_prompt_kind,
             )
             if grounding == GROUNDING_STRICT and not sources:
                 result = recorded_model(function_id, model_id)
@@ -724,6 +760,7 @@ def post_dse_ask(
             module=body.module,
             level=body.level,
             topics=body.topics,
+            explain_prompt_kind=body.explain_prompt_kind,
             session_id=body.session_id,
             attempt_text=body.attempt_text,
             count=body.count,

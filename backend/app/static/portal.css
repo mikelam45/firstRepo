@@ -507,6 +507,17 @@ pre.chat-reply,
   min-width: 16rem;
   max-width: 100%;
 }
+#dse-explain-prompt-style {
+  margin-top: 12px;
+}
+#dse-explain-custom-field {
+  margin-top: 8px;
+}
+#dse-explain-custom-prompt {
+  width: 100%;
+  min-height: 6.5rem;
+  resize: vertical;
+}
 .dse-explain-picked-list {
   list-style: none;
   margin: 8px 0 0;

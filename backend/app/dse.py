@@ -121,6 +121,14 @@ ALLOWED_MODULES = {
     "m2": "Module 2 (M2): Algebra & Calculus",
 }
 DEFAULT_EXPLAIN_MESSAGE = "Explain the selected mathematics topics."
+DEFAULT_EXPLAIN_TASK_PROMPT = (
+    "Explain each selected topic by 3 examples with diagrams/figures/charts "
+    "and create 6 questions (2 easy, 2 mid & 2 hard) and step by step solving "
+    "it until reaching the answer."
+)
+EXPLAIN_PROMPT_DEFAULT = "default"
+EXPLAIN_PROMPT_CUSTOM = "custom"
+ALLOWED_EXPLAIN_PROMPT_KINDS = frozenset({EXPLAIN_PROMPT_DEFAULT, EXPLAIN_PROMPT_CUSTOM})
 EXPLAIN_TOPIC_BY_ID = TOPIC_BY_ID
 
 NO_DSE_DOCUMENTS_STRICT_REPLY = (
@@ -203,6 +211,20 @@ DSE_EXPLAIN_INSTRUCTION = (
     "Stay at the stated form (S1–S6); do not jump ahead unless asked. "
     "Show working; mark the final answer when you reach one. "
     + DSE_FIGURE_INSTRUCTION
+)
+DSE_EXPLAIN_DEFAULT_TASK_INSTRUCTION = (
+    "The user chose the default Explain prompt. For EACH selected topic you MUST: "
+    "(1) teach the idea with a short scenario; "
+    "(2) give 3 distinct worked examples, each with its own labelled ```figure or "
+    "```chart (diagrams, figures, or charts — never skip); "
+    "(3) create 6 new questions on that topic: 2 easy, 2 mid, and 2 hard; "
+    "(4) solve every one of those 6 questions step by step until 'Final answer:'. "
+    "Do not stop after one example. Follow-up turns may answer a shorter question "
+    "without repeating all 6 items."
+)
+DSE_EXPLAIN_CUSTOM_TASK_INSTRUCTION = (
+    "The user chose a custom Explain prompt. Follow that prompt for how to teach "
+    "the selected topics. Still include labelled ```figure or ```chart blocks."
 )
 DSE_GUIDED_NO_ANSWER_INSTRUCTION = (
     "Mode is Guided solve (no final answer yet). "
@@ -410,19 +432,37 @@ def explain_topic_labels(topic_ids: list[str]) -> list[str]:
     return labels
 
 
-def explain_user_message(topic_ids: list[str], extra: str = "") -> str:
+def resolve_explain_prompt_kind(value: str | None) -> str:
+    chosen = (value or EXPLAIN_PROMPT_DEFAULT).strip().lower()
+    if not chosen:
+        return EXPLAIN_PROMPT_DEFAULT
+    if chosen not in ALLOWED_EXPLAIN_PROMPT_KINDS:
+        raise ChatError(400, "explain_prompt_kind must be default or custom.")
+    return chosen
+
+
+def explain_user_message(
+    topic_ids: list[str],
+    extra: str = "",
+    *,
+    prompt_kind: str = EXPLAIN_PROMPT_DEFAULT,
+) -> str:
     labels = explain_topic_labels(topic_ids)
-    if not labels:
-        return extra.strip() or DEFAULT_EXPLAIN_MESSAGE
-    head = "Explain these topics: " + "; ".join(labels) + "."
+    head = "Explain these topics: " + "; ".join(labels) + "." if labels else ""
     extra = extra.strip()
-    if extra:
-        return extra + "\n\n" + head
-    return (
-        head
-        + " Teach each one at that school level with a real-life scenario, "
-        "a required labelled interactive diagram, and a worked example that uses the diagram."
-    )
+    kind = resolve_explain_prompt_kind(prompt_kind)
+    if kind == EXPLAIN_PROMPT_CUSTOM:
+        task = extra or DEFAULT_EXPLAIN_MESSAGE
+    else:
+        task = DEFAULT_EXPLAIN_TASK_PROMPT
+        if extra and extra not in {DEFAULT_EXPLAIN_TASK_PROMPT, DEFAULT_EXPLAIN_MESSAGE, head}:
+            if DEFAULT_EXPLAIN_TASK_PROMPT not in extra:
+                task = DEFAULT_EXPLAIN_TASK_PROMPT + "\n\n" + extra
+            else:
+                task = extra
+    if head and head not in task:
+        return f"{task}\n\n{head}" if task else head
+    return task or DEFAULT_EXPLAIN_MESSAGE
 
 
 def resolve_dse_difficulty(value: str | None) -> str | None:
@@ -497,7 +537,11 @@ def _language_instructions(target_language: str) -> list[str]:
     return [TRANSLATION_ENGLISH, "Write the explanation in English."]
 
 
-def _mode_instruction(mode: str, question_count: int = DEFAULT_QUESTION_COUNT) -> str:
+def _mode_instruction(
+    mode: str,
+    question_count: int = DEFAULT_QUESTION_COUNT,
+    explain_prompt_kind: str = EXPLAIN_PROMPT_DEFAULT,
+) -> str:
     if mode == MODE_GUIDED_NO_ANSWER:
         return DSE_GUIDED_NO_ANSWER_INSTRUCTION
     if mode == MODE_GUIDED_WITH_ANSWER:
@@ -506,7 +550,9 @@ def _mode_instruction(mode: str, question_count: int = DEFAULT_QUESTION_COUNT) -
         return create_question_instruction(question_count)
     if mode == MODE_PRACTICE:
         return DSE_PRACTICE_INSTRUCTION
-    return DSE_EXPLAIN_INSTRUCTION
+    if resolve_explain_prompt_kind(explain_prompt_kind) == EXPLAIN_PROMPT_CUSTOM:
+        return DSE_EXPLAIN_INSTRUCTION + " " + DSE_EXPLAIN_CUSTOM_TASK_INSTRUCTION
+    return DSE_EXPLAIN_INSTRUCTION + " " + DSE_EXPLAIN_DEFAULT_TASK_INSTRUCTION
 
 
 def dse_system_prompt(
@@ -524,13 +570,14 @@ def dse_system_prompt(
     has_extracts: bool = False,
     reveal_mark_scheme: str | None = None,
     question_count: int = DEFAULT_QUESTION_COUNT,
+    explain_prompt_kind: str = EXPLAIN_PROMPT_DEFAULT,
 ) -> str:
     if mode == MODE_GUIDED_NO_ANSWER:
         parts = [DSE_TUTOR_IDENTITY]
     else:
         parts = [DSE_TUTOR_BASE]
     parts.extend(_language_instructions(target_language))
-    parts.append(_mode_instruction(mode, question_count))
+    parts.append(_mode_instruction(mode, question_count, explain_prompt_kind))
     if level:
         parts.append(f"School level: {level} (Hong Kong secondary).")
     if module:
@@ -611,6 +658,7 @@ def build_dse_context(
     question: str | None = None,
     reveal_mark_scheme: str | None = None,
     question_count: int = DEFAULT_QUESTION_COUNT,
+    explain_prompt_kind: str = EXPLAIN_PROMPT_DEFAULT,
 ) -> tuple[list[dict[str, str]], list[dict[str, str]]]:
     extracts = load_extracts(data_dir, collection=COLLECTION_DSE_MATH)
     system = dse_system_prompt(
@@ -627,6 +675,7 @@ def build_dse_context(
         has_extracts=bool(extracts),
         reveal_mark_scheme=reveal_mark_scheme,
         question_count=question_count,
+        explain_prompt_kind=explain_prompt_kind,
     )
     sources: list[dict[str, str]] = []
     if extracts:

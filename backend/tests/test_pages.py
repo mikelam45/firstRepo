@@ -137,6 +137,13 @@ def test_home_and_setup_are_distinct_html_pages(tmp_path, monkeypatch):
     assert 'id="dse-explain-level"' in home.text
     assert 'id="dse-explain-topic"' in home.text
     assert 'id="dse-explain-picked-list"' in home.text
+    assert 'id="dse-explain-prompt-style"' in home.text
+    assert 'id="dse-explain-prompt-default"' in home.text
+    assert 'id="dse-explain-prompt-custom"' in home.text
+    assert 'id="dse-explain-custom-prompt"' in home.text
+    assert "Default prompt" in home.text
+    assert "Customize prompt" in home.text
+    assert "3 examples with diagrams/figures/charts" in home.text
     assert "addExplainTopicFromSelect" in home.text
     assert "catalogTopicsFor" in home.text
     assert "renderDseCreateTopics" in home.text
