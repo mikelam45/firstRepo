@@ -99,6 +99,8 @@ FORMAT_REPLY_INSTRUCTION = (
     '{"type":"bar|line|pie","title":"...","labels":["A","B"],'
     '"series":[{"name":"Series","values":[1,2]}]}\n'
     "```\n"
+    "A compact bar chart may use labels and values instead of series:\n"
+    '{"type":"bar","title":"Test Scores","labels":["50","60","70"],"values":[2,3,5]}\n'
     "Still write a short prose answer. Still use [source: filename] when grounded."
 )
 NO_DOCUMENTS_SYSTEM = (

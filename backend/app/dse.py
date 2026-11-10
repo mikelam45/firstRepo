@@ -188,7 +188,7 @@ DSE_FIGURE_INSTRUCTION = (
     "label. coordinate uses data units and optional "
     '"axes":{"xmin":-2,"xmax":6,"ymin":-2,"ymax":6} with y up. '
     "number_line uses min, max, marks, and points. chart uses labels and series "
-    "(bar, line, or pie). "
+    "(bar, line, or pie), or a compact bar chart with labels and values. "
     "Give elements an id so the student can click corresponding parts. "
     "Label given lengths and angles. Do not draw the hidden answer. "
     + DSE_GIVEN_LABEL_INSTRUCTION

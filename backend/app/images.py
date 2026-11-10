@@ -177,6 +177,13 @@ ENHANCE_SYSTEM = (
     "(composition, lighting, materials, camera). "
     "Return only the enhanced prompt, with no preamble or quotes."
 )
+VIDEO_ENHANCE_SYSTEM = (
+    "Rewrite the user's video prompt for a text-to-video model. "
+    "Keep the same story, characters, dialogue, and camera intent. "
+    "Add concrete cinematic detail (shot, motion, lighting, pacing, audio). "
+    "If Hong Kong Cantonese is requested, keep that instruction. "
+    "Return only the enhanced prompt, with no preamble or quotes."
+)
 MISSING_PROMPT_DETAIL = (
     "prompt or guided fields (subject, setting, background, objects, person, style, "
     "camera, lighting, notes) are required."
@@ -196,6 +203,7 @@ PROMPT_FIELDS: tuple[tuple[str, str], ...] = (
 PERSON_SLOT_BEFORE = "style"
 PERSON_PARTS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("sex", ("sex", "gender")),
+    ("age", ("age", "age_select", "age_group")),
     ("nationality", ("nationality", "ethnicity", "ethnicity_presentation")),
     ("height", ("person_height", "stature")),
     ("body figure", ("body_figure", "body", "body_type")),
@@ -420,6 +428,19 @@ def _first_text(mapping: dict[str, Any], keys: tuple[str, ...]) -> str:
     return ""
 
 
+def _person_age(mapping: dict[str, Any]) -> str:
+    selected = _first_text(mapping, ("age_select", "age_group"))
+    extra = _strip(mapping.get("age_years"))
+    if extra and extra.replace(".", "", 1).isdigit():
+        extra = f"{extra} years"
+    if selected and extra:
+        return f"{selected}, {extra}"
+    combined = _first_text(mapping, ("age",))
+    if combined:
+        return combined
+    return selected or extra
+
+
 def _person_height(mapping: dict[str, Any]) -> str:
     """Person stature. Pixel ``height`` stays an integer on the generate payload."""
     selected = _first_text(mapping, ("person_height", "stature"))
@@ -496,6 +517,7 @@ def _one_person_lines(
     """One Person / Clothing / Props / Action block. Empty fields omitted."""
     values = {
         "sex": _first_text(data, ("sex", "gender")),
+        "age": _person_age(data),
         "nationality": _first_text(data, ("nationality", "ethnicity", "ethnicity_presentation")),
         "height": _person_height(data),
         "body figure": _first_text(data, ("body_figure", "body", "body_type")),
@@ -1743,12 +1765,14 @@ def enhance_prompt(
     prompt: str,
     *,
     extra_hidden: frozenset[str] | set[str] | None = None,
+    kind: str = "image",
 ) -> dict[str, str]:
     text = prompt.strip()
     if not text:
         raise ImageError(400, "prompt is required.")
     if len(text) > MAX_PROMPT_CHARS:
         text = text[:MAX_PROMPT_CHARS]
+    system = VIDEO_ENHANCE_SYSTEM if str(kind or "").strip().lower() == "video" else ENHANCE_SYSTEM
     from .selection import load_selection
 
     selection = load_selection(data_dir, extra_hidden=extra_hidden)
@@ -1766,7 +1790,7 @@ def enhance_prompt(
             function_id="rag_qa",
             model_id=model_id,
             messages=[
-                {"role": "system", "content": ENHANCE_SYSTEM},
+                {"role": "system", "content": system},
                 {"role": "user", "content": text},
             ],
         )

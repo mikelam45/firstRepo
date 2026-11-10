@@ -50,14 +50,66 @@ def is_safe_href(href: str) -> bool:
     return bool(SAFE_HREF_RE.match((href or "").strip()))
 
 
+def repair_json_fence(text: str) -> str:
+    """Fix common model JSON slips so a chart/figure still draws.
+
+    Handles ``["A","B","C")`` (paren instead of ``]``) and trailing commas.
+    """
+    out: list[str] = []
+    stack: list[str] = []
+    in_str = False
+    escape = False
+    for ch in text:
+        if in_str:
+            out.append(ch)
+            if escape:
+                escape = False
+            elif ch == "\\":
+                escape = True
+            elif ch == '"':
+                in_str = False
+            continue
+        if ch == '"':
+            in_str = True
+            out.append(ch)
+            continue
+        if ch in "{[":
+            stack.append(ch)
+            out.append(ch)
+            continue
+        if ch in "}]":
+            if stack:
+                opener = stack.pop()
+                out.append("}" if opener == "{" else "]")
+            else:
+                out.append(ch)
+            continue
+        if ch == ")" and stack and stack[-1] == "[":
+            stack.pop()
+            out.append("]")
+            continue
+        out.append(ch)
+    repaired = "".join(out)
+    return re.sub(r",(\s*[}\]])", r"\1", repaired)
+
+
+def parse_json_fence(text: str) -> Any | None:
+    raw = (text or "").strip()
+    if not raw:
+        return None
+    for candidate in (raw, repair_json_fence(raw)):
+        try:
+            return json.loads(candidate)
+        except json.JSONDecodeError:
+            continue
+    return None
+
+
 def parse_chart_fence(body: str | None) -> dict[str, Any] | None:
     text = (body or "").strip()
     if not text:
         return None
-    try:
-        data = json.loads(text)
-    except json.JSONDecodeError:
-        return None
+    data = parse_json_fence(text)
     if not isinstance(data, dict):
         return None
 
@@ -73,7 +125,12 @@ def parse_chart_fence(body: str | None) -> dict[str, Any] | None:
 
     series_raw = data.get("series")
     if not isinstance(series_raw, list) or not series_raw:
-        return None
+        values_raw = data.get("values") or data.get("data") or data.get("counts")
+        if isinstance(values_raw, list):
+            series_name = data.get("series_name") or data.get("y_label") or "Frequency"
+            series_raw = [{"name": series_name, "values": values_raw}]
+        else:
+            return None
     series: list[dict[str, Any]] = []
     for row in series_raw:
         if not isinstance(row, dict) or not isinstance(row.get("values"), list):
@@ -100,7 +157,22 @@ def parse_chart_fence(body: str | None) -> dict[str, Any] | None:
         series = [series[0]]
 
     title = "" if data.get("title") is None else str(data.get("title"))
-    return {"type": chart_type, "title": title, "labels": labels, "series": series}
+    x_label = "" if data.get("x_label") is None else str(data.get("x_label"))
+    y_label = "" if data.get("y_label") is None else str(data.get("y_label"))
+    if not y_label and chart_type == "bar" and len(series) == 1:
+        series_name = series[0]["name"]
+        y_label = "Frequency" if series_name in {"", "Series", "Frequency"} else series_name
+    if not x_label and chart_type == "bar" and labels:
+        if all(str(item).replace(".", "", 1).isdigit() for item in labels):
+            x_label = "Score"
+    return {
+        "type": chart_type,
+        "title": title,
+        "labels": labels,
+        "series": series,
+        "x_label": x_label,
+        "y_label": y_label,
+    }
 
 
 def _finite_number(value: Any) -> float | None:
@@ -335,9 +407,8 @@ def parse_figure_spec(body: Any) -> dict[str, Any] | None:
         text = body.strip()
         if not text:
             return None
-        try:
-            data = json.loads(text)
-        except json.JSONDecodeError:
+        data = parse_json_fence(text)
+        if data is None:
             return None
     if not isinstance(data, dict):
         return None

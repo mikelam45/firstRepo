@@ -5,6 +5,7 @@ from app.chat_format import (
     markdown_table_to_html,
     parse_chart_fence,
     parse_figure_spec,
+    parse_json_fence,
     render_math_html,
     split_math_segments,
     tex_to_plain,
@@ -64,6 +65,8 @@ def test_parse_chart_fence_accepts_bar_default_and_rejects_invalid():
         "title": "",
         "labels": ["A", "B"],
         "series": [{"name": "Sales", "values": [1.0, 2.0]}],
+        "x_label": "",
+        "y_label": "Sales",
     }
 
     pie = parse_chart_fence(
@@ -88,6 +91,44 @@ def test_parse_chart_fence_accepts_bar_default_and_rejects_invalid():
     assert parse_chart_fence("") is None
 
 
+def test_parse_chart_fence_accepts_top_level_values():
+    spec = parse_chart_fence(
+        '{"type":"bar","title":"Test Scores","labels":["50","60","70","80","90"],'
+        '"values":[2,3,5,4,1]}'
+    )
+    assert spec is not None
+    assert spec["type"] == "bar"
+    assert spec["title"] == "Test Scores"
+    assert spec["labels"] == ["50", "60", "70", "80", "90"]
+    assert spec["series"] == [{"name": "Frequency", "values": [2.0, 3.0, 5.0, 4.0, 1.0]}]
+    assert spec["x_label"] == "Score"
+    assert spec["y_label"] == "Frequency"
+
+
+def test_parse_figure_spec_repairs_paren_labels_and_sss_action():
+    raw = (
+        '{"type":"geometry","title":"Congruent Triangles",'
+        '"caption":"Triangles ABC and DEF","interactive":true,'
+        '"elements":[{"kind":"polygon","points":[[20,80],[80,80],[50,20]],'
+        '"labels":["A","B","C"),"id":"tri1"},'
+        '{"kind":"polygon","points":[[120,80],[180,80],[150,20]],'
+        '"labels":["D","E","F"],"id":"tri2"}],'
+        '"actions":[{"id":"sss","label":"SSS","highlight":["tri1","tri2"],'
+        '"caption":"Triangles are congruent by SSS."}]}'
+    )
+    assert parse_json_fence(raw) is not None
+    spec = parse_figure_spec(raw)
+    assert spec is not None
+    assert spec["type"] == "geometry"
+    assert spec["title"] == "Congruent Triangles"
+    assert spec["interactive"] is True
+    assert spec["elements"][0]["labels"] == ["A", "B", "C"]
+    assert spec["elements"][0]["id"] == "tri1"
+    assert spec["elements"][1]["labels"] == ["D", "E", "F"]
+    assert spec["actions"][0]["label"] == "SSS"
+    assert spec["actions"][0]["highlight"] == ["tri1", "tri2"]
+
+
 def test_markdown_table_to_html_builds_escaped_table():
     html = markdown_table_to_html(
         "| Name | Qty |\n| --- | --- |\n| <b>x</b> | 2 |\n| B | 3 |"
@@ -106,6 +147,7 @@ def test_format_instruction_avoids_only_and_documents_the_chart_fence():
     assert "ONLY" not in FORMAT_REPLY_INSTRUCTION
     assert "```chart" in FORMAT_REPLY_INSTRUCTION
     assert '"type":"bar|line|pie"' in FORMAT_REPLY_INSTRUCTION
+    assert '"values":[2,3,5]' in FORMAT_REPLY_INSTRUCTION
     assert "Markdown table" in FORMAT_REPLY_INSTRUCTION
     assert "[source: filename]" in FORMAT_REPLY_INSTRUCTION
     assert FORMAT_REPLY_INSTRUCTION in MIXED_SYSTEM
@@ -258,6 +300,10 @@ def test_functions_page_includes_table_chart_renderer(tmp_path, monkeypatch):
     assert "math-display" in script.text
     assert "drawChartSvg" in script.text
     assert "drawFigureSvg" in script.text
+    assert "repairJsonFence" in script.text
+    assert "parseJsonFence" in script.text
+    assert "Frequency" in script.text
+    assert "x_label" in script.text
     assert "figureHasRound" in script.text
     assert "geometryBox" in script.text
     assert "rimY" in script.text

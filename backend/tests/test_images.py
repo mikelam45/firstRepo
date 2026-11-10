@@ -128,6 +128,12 @@ def test_page_has_five_reference_slots(tmp_path, monkeypatch):
     assert "Sex" in html
     assert 'id="image-sex"' in html
     assert 'id="image-sex-2"' in html
+    assert "Age" in html
+    assert 'id="image-age"' in html
+    assert 'id="image-age-2"' in html
+    assert 'id="image-age-years"' in html
+    assert "young adult" in html
+    assert "middle-aged" in html
     assert 'value="female"' in html
     assert 'value="male"' in html
     assert "Body figure" in html
@@ -504,6 +510,12 @@ def test_page_has_guided_fields_and_output_controls(tmp_path, monkeypatch):
     assert "Sex" in html
     assert 'id="image-sex"' in html
     assert 'id="image-sex-2"' in html
+    assert "Age" in html
+    assert 'id="image-age"' in html
+    assert 'id="image-age-2"' in html
+    assert 'id="image-age-years"' in html
+    assert "young adult" in html
+    assert "middle-aged" in html
     assert 'value="female"' in html
     assert 'value="male"' in html
     assert "Body figure" in html
@@ -741,6 +753,49 @@ def test_enhance_prompt_uses_text_chat_not_images(tmp_path, monkeypatch):
     assert response.json() == {"enhanced_prompt": "A cinematic still of a red panda."}
     assert seen["url"] == OPENROUTER_CHAT_URL
     assert seen["json"]["model"] == DEFAULT_SELECTION["rag_qa"]
+    assert seen["json"]["messages"][0]["content"].startswith("Rewrite the user's image prompt")
+    _assert_secret_absent(response.text)
+
+
+def test_enhance_prompt_video_kind_uses_video_system(tmp_path, monkeypatch):
+    _install_key(tmp_path, monkeypatch)
+    seen = {"calls": 0}
+
+    def fake_post(url, json=None, headers=None, timeout=None, follow_redirects=None, **kwargs):
+        if isinstance(url, str) and "/api/v1/images" in url:
+            raise AssertionError("prompt enhance must not call the Images API")
+        if isinstance(url, str) and "/api/v1/videos" in url:
+            raise AssertionError("prompt enhance must not call the Videos API")
+        seen["calls"] += 1
+        seen["url"] = url
+        seen["json"] = json
+
+        class Response:
+            status_code = 200
+
+            def json(self_inner):
+                return {
+                    "choices": [
+                        {
+                            "message": {
+                                "role": "assistant",
+                                "content": "A dolly-in close-up of two friends talking in Tsim Sha Tsui.",
+                            }
+                        }
+                    ]
+                }
+
+        return Response()
+
+    monkeypatch.setattr("app.chat.httpx.post", fake_post)
+    client = _client(monkeypatch, tmp_path)
+    response = client.post(
+        "/api/prompt/enhance",
+        json={"prompt": "two friends talking", "kind": "video"},
+    )
+    assert response.status_code == 200
+    assert "dolly-in" in response.json()["enhanced_prompt"]
+    assert seen["json"]["messages"][0]["content"].startswith("Rewrite the user's video prompt")
     _assert_secret_absent(response.text)
 
 
@@ -1218,6 +1273,18 @@ def test_assemble_prompt_sex_and_body_figure():
         }
     )
     assert "Person: sex female; body figure curvy" in via_aliases
+
+
+def test_assemble_prompt_age():
+    prompt = assemble_prompt(
+        {
+            "sex": "female",
+            "age_select": "adult",
+            "age_years": "28",
+            "style": "cinematic still",
+        }
+    )
+    assert "Person: sex female; age adult, 28 years" in prompt
 
 
 def test_assemble_prompt_two_persons_numbered_blocks():

@@ -29,15 +29,65 @@
     return /^(https?:\/\/|\/api\/rag\/|\/api\/translation\/)/i.test(String(href || "").trim());
   }
 
+  function repairJsonFence(text) {
+    var out = [];
+    var stack = [];
+    var inStr = false;
+    var escape = false;
+    for (var i = 0; i < text.length; i += 1) {
+      var ch = text.charAt(i);
+      if (inStr) {
+        out.push(ch);
+        if (escape) escape = false;
+        else if (ch === "\\") escape = true;
+        else if (ch === '"') inStr = false;
+        continue;
+      }
+      if (ch === '"') {
+        inStr = true;
+        out.push(ch);
+        continue;
+      }
+      if (ch === "{" || ch === "[") {
+        stack.push(ch);
+        out.push(ch);
+        continue;
+      }
+      if (ch === "}" || ch === "]") {
+        if (stack.length) {
+          var opener = stack.pop();
+          out.push(opener === "{" ? "}" : "]");
+        } else {
+          out.push(ch);
+        }
+        continue;
+      }
+      if (ch === ")" && stack.length && stack[stack.length - 1] === "[") {
+        stack.pop();
+        out.push("]");
+        continue;
+      }
+      out.push(ch);
+    }
+    return out.join("").replace(/,(\s*[}\]])/g, "$1");
+  }
+
+  function parseJsonFence(text) {
+    var raw = String(text == null ? "" : text).trim();
+    if (!raw) return null;
+    var candidates = [raw, repairJsonFence(raw)];
+    for (var c = 0; c < candidates.length; c += 1) {
+      try {
+        return JSON.parse(candidates[c]);
+      } catch (error) {}
+    }
+    return null;
+  }
+
   function parseChartFence(body) {
     var text = String(body == null ? "" : body).trim();
     if (!text) return null;
-    var data;
-    try {
-      data = JSON.parse(text);
-    } catch (error) {
-      return null;
-    }
+    var data = parseJsonFence(text);
     if (!data || typeof data !== "object" || Array.isArray(data)) return null;
 
     var type = data.type == null || data.type === "" ? "bar" : String(data.type).toLowerCase();
@@ -49,7 +99,14 @@
       labels.push(String(data.labels[i]));
     }
 
-    if (!Array.isArray(data.series) || !data.series.length) return null;
+    if (!Array.isArray(data.series) || !data.series.length) {
+      var valuesRaw = data.values || data.data || data.counts;
+      if (Array.isArray(valuesRaw)) {
+        data.series = [{ name: data.series_name || data.y_label || "Frequency", values: valuesRaw }];
+      } else {
+        return null;
+      }
+    }
     var series = [];
     for (var s = 0; s < data.series.length; s += 1) {
       var row = data.series[s];
@@ -71,11 +128,27 @@
       series = [series[0]];
     }
 
+    var xLabel = data.x_label == null ? "" : String(data.x_label);
+    var yLabel = data.y_label == null ? "" : String(data.y_label);
+    if (!yLabel && type === "bar" && series.length === 1) {
+      var seriesName = series[0].name;
+      yLabel = (!seriesName || seriesName === "Series" || seriesName === "Frequency")
+        ? "Frequency" : seriesName;
+    }
+    if (!xLabel && type === "bar" && labels.length) {
+      var numeric = true;
+      for (var n = 0; n < labels.length; n += 1) {
+        if (!/^\d+(\.\d+)?$/.test(String(labels[n]))) { numeric = false; break; }
+      }
+      if (numeric) xLabel = "Score";
+    }
     return {
       type: type,
       title: data.title == null ? "" : String(data.title),
       labels: labels,
       series: series,
+      x_label: xLabel,
+      y_label: yLabel,
       caption: data.caption == null ? "" : String(data.caption).slice(0, MAX_LABEL_CHARS),
     };
   }
@@ -244,11 +317,8 @@
     if (typeof body === "string") {
       var text = String(body || "").trim();
       if (!text) return null;
-      try {
-        data = JSON.parse(text);
-      } catch (error) {
-        return null;
-      }
+      data = parseJsonFence(text);
+      if (data == null) return null;
     }
     if (!data || typeof data !== "object" || Array.isArray(data)) return null;
     var type = data.type == null || data.type === "" ? "geometry" : String(data.type).toLowerCase();
@@ -858,8 +928,8 @@
 
   function drawAxisChart(spec) {
     var width = 560;
-    var height = 320;
-    var pad = { top: 44, right: 18, bottom: 52, left: 52 };
+    var height = 340;
+    var pad = { top: spec.title ? 48 : 28, right: 22, bottom: spec.x_label ? 64 : 48, left: spec.y_label ? 68 : 52 };
     var plotW = width - pad.left - pad.right;
     var plotH = height - pad.top - pad.bottom;
     var svg = svgEl("svg", {
@@ -884,7 +954,7 @@
         "font-weight": "650",
       }, spec.title));
     }
-    if (spec.series.length) {
+    if (spec.series.length > 1) {
       drawLegend(svg, spec.series, pad.left, spec.title ? 36 : 20);
     }
 
@@ -971,6 +1041,15 @@
             height: heightBar,
             fill: color,
           }));
+          var barTop = value >= 0 ? y : yBase + heightBar;
+          svg.appendChild(svgText({
+            x: x + Math.max(barW - 2, 1) / 2,
+            y: barTop - 6,
+            "text-anchor": "middle",
+            fill: "var(--ink)",
+            "font-size": "11",
+            "font-weight": "650",
+          }, formatTick(value)));
         });
       });
     }
@@ -984,6 +1063,25 @@
         "font-size": "11",
       }, truncateLabel(label, 12)));
     });
+    if (spec.x_label) {
+      svg.appendChild(svgText({
+        x: pad.left + plotW / 2,
+        y: height - 10,
+        "text-anchor": "middle",
+        fill: "var(--ink)",
+        "font-size": "12",
+      }, spec.x_label));
+    }
+    if (spec.y_label) {
+      svg.appendChild(svgText({
+        x: 16,
+        y: pad.top + plotH / 2,
+        "text-anchor": "middle",
+        fill: "var(--ink)",
+        "font-size": "12",
+        transform: "rotate(-90 16 " + (pad.top + plotH / 2) + ")",
+      }, spec.y_label));
+    }
     return svg;
   }
 
@@ -1335,8 +1433,16 @@
           stroke: "var(--ink)",
           "stroke-width": "2",
         }), el));
+        var cx = 0;
+        var cy = 0;
+        mapped.forEach(function (pt) { cx += pt.x; cy += pt.y; });
+        cx /= mapped.length || 1;
+        cy /= mapped.length || 1;
         mapped.forEach(function (pt, index) {
-          placeLabel(pt, el.labels && el.labels[index], 6, -6);
+          var dx = pt.x - cx;
+          var dy = pt.y - cy;
+          var len = Math.hypot(dx, dy) || 1;
+          placeLabel(pt, el.labels && el.labels[index], (dx / len) * 14, (dy / len) * 14);
         });
       } else if (el.kind === "segment" || el.kind === "arrow") {
         var a = mapPointToPx(el.from, bounds);

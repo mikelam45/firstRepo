@@ -177,6 +177,9 @@ def test_home_and_setup_are_distinct_html_pages(tmp_path, monkeypatch):
     assert 'id="video-character-cards"' in home.text
     assert 'id="video-quote"' in home.text
     assert 'id="video-generate"' in home.text
+    assert 'id="video-enhance"' in home.text
+    assert "enhanceVideoPrompt" in home.text
+    assert 'kind: "video"' in home.text
     assert 'id="video-camera-title"' in home.text
     assert 'id="video-advanced-title"' in home.text
     assert 'id="video-modifiers-title"' in home.text

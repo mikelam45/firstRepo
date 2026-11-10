@@ -395,6 +395,22 @@
             </label>
           </div>
           <div class="image-row">
+            <label class="field">Age
+              <select id="image-age">
+                <option value="" selected>Not specified</option>
+                <option value="child">child</option>
+                <option value="teen">teen</option>
+                <option value="young adult">young adult</option>
+                <option value="adult">adult</option>
+                <option value="middle-aged">middle-aged</option>
+                <option value="elderly">elderly</option>
+              </select>
+            </label>
+            <label class="field">Age (years)
+              <input id="image-age-years" type="text" inputmode="numeric" autocomplete="off" placeholder="e.g. 28">
+            </label>
+          </div>
+          <div class="image-row">
             <label class="field">Height
               <select id="image-person-height">
                 <option value="" selected>Not specified</option>
@@ -543,6 +559,22 @@
                 <option value="plus-size">plus-size</option>
                 <option value="fat">fat</option>
               </select>
+            </label>
+          </div>
+          <div class="image-row">
+            <label class="field">Age
+              <select id="image-age-2">
+                <option value="" selected>Not specified</option>
+                <option value="child">child</option>
+                <option value="teen">teen</option>
+                <option value="young adult">young adult</option>
+                <option value="adult">adult</option>
+                <option value="middle-aged">middle-aged</option>
+                <option value="elderly">elderly</option>
+              </select>
+            </label>
+            <label class="field">Age (years)
+              <input id="image-age-years-2" type="text" inputmode="numeric" autocomplete="off" placeholder="e.g. 28">
             </label>
           </div>
           <div class="image-row">
@@ -924,6 +956,10 @@
         <label class="field">Prompt
           <textarea id="video-prompt" rows="4" placeholder="Action, dialogue, mood. Camera terms below are added automatically."></textarea>
         </label>
+        <div class="savebar">
+          <button type="button" class="secondary" id="video-enhance">Enhance prompt</button>
+          <span id="video-enhance-state" role="status"></span>
+        </div>
         <label class="option cantonese-option">
           <input type="checkbox" id="video-cantonese">
           <span class="option-title">Speaks with a natural Hong Kong Cantonese accent</span>
@@ -1078,7 +1114,7 @@
       </fieldset>
     </section>
   </main>
-  <script src="/static/chat_format.js?v=dse-math-formulas"></script>
+  <script src="/static/chat_format.js?v=dse-chart-figures"></script>
   <script>
     const TEXT_FUNCTIONS = ["rag_qa", "translation", "cantonese_script", "dse_math"];
     const GROUNDING_KEY = "rag-grounding";
@@ -2797,6 +2833,7 @@
 
     const PERSON_INPUT_IDS = [
       "image-nationality", "image-nationality-other", "image-sex",
+      "image-age", "image-age-years",
       "image-person-height", "image-height-cm", "image-body",
       "image-hair-color", "image-hair-length", "image-hair-style",
       "image-eyes-size", "image-eyes-color", "image-nose-size", "image-nose-shape",
@@ -2834,6 +2871,14 @@
         return other && other !== selected ? selected + ", " + other : selected;
       }
       return other;
+    }
+
+    function personAge(index) {
+      const selected = personField("image-age", index);
+      let years = personField("image-age-years", index);
+      if (years && !/year/i.test(years) && /^\d+(\.\d+)?$/.test(years)) years = years + " years";
+      if (selected && years) return selected + ", " + years;
+      return selected || years;
     }
 
     function personHeight(index) {
@@ -2874,6 +2919,7 @@
     function personPromptLinesAt(index, labels) {
       const person = joinLabeled([
         ["sex", personField("image-sex", index)],
+        ["age", personAge(index)],
         ["nationality", personNationality(index)],
         ["height", personHeight(index)],
         ["body figure", personField("image-body", index)],
@@ -2935,6 +2981,10 @@
         nationality_other: personField("image-nationality-other", index),
         sex: personField("image-sex", index),
         gender: personField("image-sex", index),
+        age: personAge(index),
+        age_select: personField("image-age", index),
+        age_years: personField("image-age-years", index),
+        age_group: personField("image-age", index),
         person_height: personHeight(index),
         person_height_select: personField("image-person-height", index),
         height_cm: personField("image-height-cm", index),
@@ -3477,6 +3527,11 @@
       const suffix = personIdSuffix(index);
       applyNationality(data, index);
       setFieldValue("image-sex" + suffix, data.sex || data.gender || "");
+      const AGE_GROUPS = ["child", "teen", "young adult", "adult", "middle-aged", "elderly"];
+      const ageSelect = data.age_select || data.age_group
+        || (AGE_GROUPS.indexOf(data.age) >= 0 ? data.age : "");
+      setFieldValue("image-age" + suffix, ageSelect);
+      setFieldValue("image-age-years" + suffix, data.age_years || "");
       const heightSelect = data.person_height_select
         || (data.person_height === "short" || data.person_height === "average" || data.person_height === "tall"
           ? data.person_height : "");
@@ -4248,6 +4303,59 @@
       return detail;
     }
 
+    function assembleVideoPromptForEnhance() {
+      const title = fieldValue("video-title-input");
+      const scene = ((document.getElementById("video-scene") || {}).value || "").trim();
+      const prompt = ((document.getElementById("video-prompt") || {}).value || "").trim();
+      const parts = [];
+      if (title) parts.push(title);
+      if (scene) parts.push(scene);
+      if (prompt) parts.push(prompt);
+      if ((document.getElementById("video-cantonese") || {}).checked) {
+        parts.push("Dialogue speaks with a natural Hong Kong Cantonese accent.");
+      }
+      return parts.join("\n").trim();
+    }
+
+    async function enhanceVideoPrompt() {
+      const button = document.getElementById("video-enhance");
+      const status = document.getElementById("video-enhance-state");
+      const box = document.getElementById("video-prompt");
+      if (!button || !status || !box) return;
+      const prompt = assembleVideoPromptForEnhance();
+      if (!prompt) {
+        status.className = "error";
+        status.textContent = "Fill the scene or prompt first.";
+        return;
+      }
+      button.disabled = true;
+      status.className = "";
+      status.textContent = "Enhancing…";
+      try {
+        const response = await fetch("/api/prompt/enhance", {
+          method: "POST",
+          headers: authHeaders(true),
+          body: JSON.stringify({ prompt, kind: "video" }),
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          status.className = "error";
+          const detail = payload.detail;
+          status.textContent = typeof detail === "string" ? detail : "Enhance failed (" + response.status + ").";
+          return;
+        }
+        box.value = payload.enhanced_prompt || prompt;
+        status.className = "";
+        status.textContent = "Prompt enhanced.";
+        invalidateVideoQuote();
+      } catch (error) {
+        status.className = "error";
+        status.textContent = "Enhance failed.";
+      } finally {
+        button.disabled = false;
+      }
+    }
+
     function invalidateVideoQuote() {
       state.videoQuote = null;
       const lines = document.getElementById("video-quote-lines");
@@ -4867,6 +4975,8 @@
     document.getElementById("video-quote").addEventListener("click", estimateVideoCost);
     document.getElementById("video-generate").addEventListener("click", generateVideoClip);
     document.getElementById("video-merge").addEventListener("click", mergeVideoClips);
+    const videoEnhance = document.getElementById("video-enhance");
+    if (videoEnhance) videoEnhance.addEventListener("click", enhanceVideoPrompt);
     ["video-duration", "video-aspect", "video-intensity", "video-cantonese", "video-orientation-lock"].forEach(function (id) {
       const node = document.getElementById(id);
       if (node) node.addEventListener("change", invalidateVideoQuote);
