@@ -521,6 +521,19 @@ def test_post_key_creates_mac_parent_when_repo_exists(tmp_path, monkeypatch):
     assert not (tmp_path / "data" / "openrouter.env").exists()
 
 
+def test_openrouter_status_script_avoids_empty_json_tool():
+    script = (REPO_ROOT / "scripts" / "openrouter-status.sh").read_text(encoding="utf-8")
+    assert "Expecting value: line 1 column 1 (char 0)" in script
+    assert "empty body (nothing to parse as JSON)" in script
+    assert "/api/openrouter/test" in script
+    assert "MAC_OPENROUTER_KEY_FILE" in script
+    assert "bash scripts/dev.sh" in script
+    assert "python3 -m json.tool" in script
+    readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
+    assert "bash scripts/openrouter-status.sh" in readme
+    assert "Expecting value: line 1 column 1 (char 0)" in readme
+
+
 def test_page_has_openrouter_connection_controls(tmp_path, monkeypatch):
     client = _client(monkeypatch, tmp_path)
     page = client.get("/setup")

@@ -26,8 +26,8 @@ If `main` does not have these scripts yet, check out the current Mac development
 
 ```bash
 git fetch origin
-git checkout cursor/image-nano-seedream-1e46
-git pull origin cursor/image-nano-seedream-1e46
+git checkout cursor/video-studio-ui-1e46
+git pull origin cursor/video-studio-ui-1e46
 ```
 
 The first run creates `.venv`, installs `backend/requirements.txt`, and copies `.env.development.example` to `.env.development`. The server listens on `http://127.0.0.1:8099`. A second `scripts/dev.sh` replaces the previous development server on 8099; a foreign process on that port is left alone.
@@ -43,6 +43,22 @@ Google Gemini **text** ids stay out of the picker in Hong Kong. Defaults remain 
 The app resolves the key in this order: `OPENROUTER_API_KEY` in the process environment, then the file named by `OPENROUTER_ENV_FILE`, then `/Users/mikelam/firstRepo/openrouter_key/.env_RAG_portal`. `GET /api/models` includes `openrouter_configured` (`true` or `false`) and `openrouter_status` (`key_accepted`, `key_rejected`, or `not_configured`). The response never includes the key. When a key is configured, the server sends `GET https://openrouter.ai/api/v1/key` with `Authorization: Bearer` and a short timeout, and reports only that status. The public models list is not used for this check, because it answers without a key. The key endpoint's body can include a shortened label, so the app reads the HTTP status and nothing else. `GET /health` includes `openrouter_configured` and does not call OpenRouter.
 
 The LLM setup page (`/setup`) has an **OpenRouter connection** section above the model picker. It shows the status in plain language and `openrouter_configured`. It does not show the full key. After a save in that browser tab it may show a mask with the last four characters. `POST /api/openrouter/key` with `{ "api_key": "..." }` sets `OPENROUTER_API_KEY` in the server process, writes `OPENROUTER_API_KEY=...` to the Mac env file when that path or its parent exists (mode 0600), or to `$DATA_DIR/openrouter.env` on machines without `/Users/mikelam/firstRepo`, then runs the same key check. An empty body is `400` so a working key is not wiped. `POST /api/openrouter/test` retests the currently loaded key and returns `200` even when the key is rejected. Both POSTs are open in development. In production they require `Authorization: Bearer $PORTAL_API_TOKEN`, the same rule as `PUT /api/models`. Neither response includes the key.
+
+Do not pipe those URLs into `python3 -m json.tool` until the portal is up. An empty curl body makes Python print `Expecting value: line 1 column 1 (char 0)`. Start the server, then use the status script (it never prints the key):
+
+```bash
+cd /Users/mikelam/firstRepo/RAG_portal
+bash scripts/dev.sh
+```
+
+In a second Terminal tab:
+
+```bash
+cd /Users/mikelam/firstRepo/RAG_portal
+bash scripts/openrouter-status.sh
+```
+
+That prints whether `/Users/mikelam/firstRepo/openrouter_key/.env_RAG_portal` exists, whether OpenRouter accepted the key (`probe key_accepted`), and the portal `health` / `openrouter_test` JSON. If nothing is listening it says so instead of crashing json.tool.
 
 ```bash
 curl http://127.0.0.1:8099/health
