@@ -17,6 +17,9 @@ PROMPT_DETAIL = {
     "person_height_select": "average",
     "height_cm": "165",
     "sex": "female",
+    "age": "adult, 28 years",
+    "age_select": "adult",
+    "age_years": "28",
     "body": "athletic",
     "body_figure": "athletic",
     "hair_color": "black",
@@ -154,6 +157,9 @@ def test_create_list_get_restores_prompt_detail(tmp_path, monkeypatch):
     assert restored["background_attributes"] == PROMPT_DETAIL["background_attributes"]
     assert restored["object_action"] == "holding a cup"
     assert restored["sex"] == "female"
+    assert restored["age"] == "adult, 28 years"
+    assert restored["age_select"] == "adult"
+    assert restored["age_years"] == "28"
     assert restored["body_figure"] == "athletic"
     assert restored["output_resolution"] == "2K"
     assert restored["count_mode"] == "3"

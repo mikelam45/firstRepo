@@ -307,6 +307,7 @@ class ImageGenerateIn(BaseModel):
 
 class PromptEnhanceIn(BaseModel):
     prompt: str = ""
+    kind: str = "image"
 
 
 class ImageProjectIn(BaseModel):
@@ -1302,6 +1303,7 @@ def post_prompt_enhance(
             settings.data_dir,
             body.prompt,
             extra_hidden=hidden,
+            kind=body.kind,
         )
     except (ChatError, ImageError) as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc

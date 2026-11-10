@@ -17,7 +17,10 @@ MAX_POLYGON_POINTS = 16
 MAX_LABEL_CHARS = 48
 MAX_CAPTION_CHARS = 180
 MAX_SCENARIO_CHARS = 600
-ALLOWED_FIGURE_TYPES = frozenset({"geometry", "coordinate", "number_line", "chart"})
+ALLOWED_FIGURE_TYPES = frozenset(
+    {"geometry", "coordinate", "number_line", "chart", "bar", "line", "pie"}
+)
+CHART_FIGURE_TYPES = frozenset({"chart", "bar", "line", "pie"})
 ALLOWED_FIGURE_KINDS = frozenset(
     {
         "point",
@@ -50,14 +53,66 @@ def is_safe_href(href: str) -> bool:
     return bool(SAFE_HREF_RE.match((href or "").strip()))
 
 
+def repair_json_fence(text: str) -> str:
+    """Fix common model JSON slips so a chart/figure still draws.
+
+    Handles ``["A","B","C")`` (paren instead of ``]``) and trailing commas.
+    """
+    out: list[str] = []
+    stack: list[str] = []
+    in_str = False
+    escape = False
+    for ch in text:
+        if in_str:
+            out.append(ch)
+            if escape:
+                escape = False
+            elif ch == "\\":
+                escape = True
+            elif ch == '"':
+                in_str = False
+            continue
+        if ch == '"':
+            in_str = True
+            out.append(ch)
+            continue
+        if ch in "{[":
+            stack.append(ch)
+            out.append(ch)
+            continue
+        if ch in "}]":
+            if stack:
+                opener = stack.pop()
+                out.append("}" if opener == "{" else "]")
+            else:
+                out.append(ch)
+            continue
+        if ch == ")" and stack and stack[-1] == "[":
+            stack.pop()
+            out.append("]")
+            continue
+        out.append(ch)
+    repaired = "".join(out)
+    return re.sub(r",(\s*[}\]])", r"\1", repaired)
+
+
+def parse_json_fence(text: str) -> Any | None:
+    raw = (text or "").strip()
+    if not raw:
+        return None
+    for candidate in (raw, repair_json_fence(raw)):
+        try:
+            return json.loads(candidate)
+        except json.JSONDecodeError:
+            continue
+    return None
+
+
 def parse_chart_fence(body: str | None) -> dict[str, Any] | None:
     text = (body or "").strip()
     if not text:
         return None
-    try:
-        data = json.loads(text)
-    except json.JSONDecodeError:
-        return None
+    data = parse_json_fence(text)
     if not isinstance(data, dict):
         return None
 
@@ -67,40 +122,87 @@ def parse_chart_fence(body: str | None) -> dict[str, Any] | None:
         return None
 
     labels_raw = data.get("labels")
-    if not isinstance(labels_raw, list) or not labels_raw:
-        return None
-    labels = [str(item) for item in labels_raw]
+    labels = [str(item) for item in labels_raw] if isinstance(labels_raw, list) else []
 
     series_raw = data.get("series")
     if not isinstance(series_raw, list) or not series_raw:
-        return None
+        values_raw = data.get("values") or data.get("data") or data.get("counts") or data.get("points")
+        if isinstance(values_raw, list):
+            series_name = data.get("series_name") or data.get("y_label") or "Frequency"
+            series_raw = [{"name": series_name, "values": values_raw}]
+        else:
+            return None
+
+    xy_series: list[dict[str, Any]] = []
     series: list[dict[str, Any]] = []
     for row in series_raw:
-        if not isinstance(row, dict) or not isinstance(row.get("values"), list):
+        if not isinstance(row, dict):
             return None
-        values_raw = row["values"]
-        if len(values_raw) != len(labels):
+        values_raw = row.get("values")
+        if not isinstance(values_raw, list):
+            values_raw = row.get("points") or row.get("coords")
+        name = "Series" if row.get("name") is None else str(row.get("name"))
+        points = _xy_points(values_raw)
+        if points:
+            xy_series.append({"name": name, "points": points})
+            continue
+        if not isinstance(values_raw, list):
+            return None
+        if labels and len(values_raw) != len(labels):
+            return None
+        if not labels:
             return None
         values: list[float] = []
         for item in values_raw:
-            if isinstance(item, bool) or not isinstance(item, (int, float)):
-                try:
-                    number = float(item)
-                except (TypeError, ValueError):
-                    return None
-            else:
-                number = float(item)
-            if number != number or number in {float("inf"), float("-inf")}:
+            number = _finite_number(item)
+            if number is None:
                 return None
             values.append(number)
-        name = "Series" if row.get("name") is None else str(row.get("name"))
         series.append({"name": name, "values": values})
 
-    if chart_type == "pie":
-        series = [series[0]]
-
     title = "" if data.get("title") is None else str(data.get("title"))
-    return {"type": chart_type, "title": title, "labels": labels, "series": series}
+    x_label = "" if data.get("x_label") is None else str(data.get("x_label"))
+    y_label = "" if data.get("y_label") is None else str(data.get("y_label"))
+    caption = "" if data.get("caption") is None else str(data.get("caption"))[:MAX_CAPTION_CHARS]
+
+    if xy_series and not series:
+        if chart_type == "pie":
+            return None
+        axes = _parse_axes(data) or _axes_from_xy(xy_series)
+        if not x_label:
+            x_label = "x"
+        if not y_label:
+            y_label = "y"
+        return {
+            "type": "line",
+            "mode": "xy",
+            "title": title,
+            "labels": [],
+            "series": xy_series,
+            "axes": axes,
+            "x_label": x_label,
+            "y_label": y_label,
+            "caption": caption,
+        }
+    if series and not xy_series:
+        if chart_type == "pie":
+            series = [series[0]]
+        if not y_label and chart_type == "bar" and len(series) == 1:
+            series_name = series[0]["name"]
+            y_label = "Frequency" if series_name in {"", "Series", "Frequency"} else series_name
+        if not x_label and chart_type == "bar" and labels:
+            if all(str(item).replace(".", "", 1).isdigit() for item in labels):
+                x_label = "Score"
+        return {
+            "type": chart_type,
+            "title": title,
+            "labels": labels,
+            "series": series,
+            "x_label": x_label,
+            "y_label": y_label,
+            "caption": caption,
+        }
+    return None
 
 
 def _finite_number(value: Any) -> float | None:
@@ -135,6 +237,43 @@ def _attach_part(item: dict[str, Any], row: dict[str, Any]) -> dict[str, Any]:
     if caption:
         item["caption"] = caption
     return item
+
+
+def _xy_points(raw: Any) -> list[list[float]] | None:
+    if not isinstance(raw, list) or len(raw) < 2:
+        return None
+    points: list[list[float]] = []
+    for item in raw:
+        point = _point(item)
+        if not point:
+            return None
+        points.append(point)
+    return points
+
+
+def _axes_from_xy(series: list[dict[str, Any]]) -> dict[str, float]:
+    xs = [point[0] for row in series for point in row.get("points") or []]
+    ys = [point[1] for row in series for point in row.get("points") or []]
+    xmin = min(xs, default=0.0)
+    xmax = max(xs, default=1.0)
+    ymin = min(ys, default=0.0)
+    ymax = max(ys, default=1.0)
+    if xmin >= 0:
+        xmin = 0.0
+    if ymin >= 0:
+        ymin = 0.0
+    if xmin == xmax:
+        xmax = xmin + 1
+    if ymin == ymax:
+        ymax = ymin + 1
+    pad_x = (xmax - xmin) * 0.08
+    pad_y = (ymax - ymin) * 0.08
+    return {
+        "xmin": xmin,
+        "xmax": xmax + pad_x,
+        "ymin": ymin,
+        "ymax": ymax + pad_y,
+    }
 
 
 def _point(value: Any) -> list[float] | None:
@@ -335,9 +474,8 @@ def parse_figure_spec(body: Any) -> dict[str, Any] | None:
         text = body.strip()
         if not text:
             return None
-        try:
-            data = json.loads(text)
-        except json.JSONDecodeError:
+        data = parse_json_fence(text)
+        if data is None:
             return None
     if not isinstance(data, dict):
         return None
@@ -347,14 +485,21 @@ def parse_figure_spec(body: Any) -> dict[str, Any] | None:
         return None
     title = _clip_label(data.get("title"))
     caption = _clip_caption(data.get("caption"))
-    if figure_type == "chart":
+    if figure_type in CHART_FIGURE_TYPES:
         payload = dict(data)
-        if str(payload.get("type") or "").lower() == "chart":
+        if figure_type == "chart":
             payload["type"] = "bar"
+            series_raw = payload.get("series")
+            first_values = None
+            if isinstance(series_raw, list) and series_raw and isinstance(series_raw[0], dict):
+                first_values = series_raw[0].get("values") or series_raw[0].get("points")
+            if _xy_points(first_values) or isinstance(payload.get("axes"), dict):
+                payload["type"] = "line"
         chart = parse_chart_fence(json.dumps(payload))
         if chart is None:
             return None
-        chart["caption"] = caption
+        if caption:
+            chart["caption"] = caption
         return chart
     if figure_type == "number_line":
         return _parse_number_line(data, title, caption)
